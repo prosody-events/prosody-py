@@ -1,0 +1,17 @@
+[build-system]
+build-backend = "maturin"
+requires = ["maturin>=1.6,<2.0"]
+
+[project]
+classifiers = [
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Rust",
+]
+dynamic = ["version"]
+name = "prosody"
+requires-python = ">=3.8"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "python"
