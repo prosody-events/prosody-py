@@ -85,10 +85,11 @@ impl Message {
 
         // Format the string representation
         Ok(format!(
-            "Kafka message on topic '{}' (partition {}, offset {}): {}",
+            "Kafka message on topic '{}' (partition {}, offset {}, key '{}'): {}",
             self.topic(),
             self.partition(),
             self.offset(),
+            self.key(),
             truncated_payload
         ))
     }
