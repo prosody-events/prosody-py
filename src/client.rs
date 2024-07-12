@@ -1,5 +1,6 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::mem::take;
 use std::time::Duration;
 
 use prosody::consumer::{ConsumerConfiguration, ConsumerConfigurationBuilder, ProsodyConsumer};
@@ -11,15 +12,21 @@ use pyo3::types::{
 use pyo3::{pyclass, pymethods, Bound, PyAny, PyObject, PyResult, Python};
 use pythonize::depythonize_bound;
 use serde_json::Value;
+use tracing::info;
+
+use crate::handler::PythonHandler;
+use crate::RUNTIME;
 
 #[pyclass]
-pub struct Prosody {
+pub struct ProsodyClient {
     producer: ProsodyProducer,
     producer_config: ProducerConfiguration,
     consumer: ConsumerState,
 }
 
+#[derive(Default)]
 enum ConsumerState {
+    #[default]
     Unconfigured,
     Configured(ConsumerConfiguration),
     Running {
@@ -41,7 +48,8 @@ impl Display for ConsumerState {
 }
 
 #[pymethods]
-impl Prosody {
+impl ProsodyClient {
+    /// Initialize a new ProsodyClient with the given configuration.
     #[new]
     #[pyo3(signature = (**config))]
     fn new(config: Option<&Bound<PyDict>>) -> PyResult<Self> {
@@ -100,6 +108,18 @@ impl Prosody {
         try_build_config(&producer_builder, &consumer_builder)
     }
 
+    /// Send a message to a specified topic.
+    ///
+    /// # Parameters
+    ///
+    /// * `topic`: The topic to which the message should be sent.
+    /// * `key`: The key associated with the message.
+    /// * `payload`: The content of the message. This can be any
+    ///   JSON-serializable object.
+    ///
+    /// # Raises
+    ///
+    /// * `PyRuntimeError`: If there's an error sending the message.
     async fn send(&self, topic: String, key: String, payload: PyObject) -> PyResult<()> {
         let payload = Python::with_gil(|py| depythonize_bound::<Value>(payload.bind(py).clone()))?;
 
@@ -111,6 +131,89 @@ impl Prosody {
         Ok(())
     }
 
+    /// Get the current state of the consumer.
+    ///
+    /// # Returns
+    ///
+    /// A string representing the current state of the consumer.
+    /// Possible values are 'unconfigured', 'configured', or 'running'.
+    fn consumer_state(&self) -> String {
+        self.consumer.to_string()
+    }
+
+    /// Subscribe to messages using the provided handler.
+    ///
+    /// # Parameters
+    ///
+    /// * `handler`: An instance of a class that implements the
+    ///   AbstractMessageHandler interface. This handler will be called for each
+    ///   received message.
+    ///
+    /// # Raises
+    ///
+    /// * `PyRuntimeError`: If the consumer is not configured or is already
+    ///   subscribed.
+    fn subscribe(&mut self, handler: &Bound<PyAny>) -> PyResult<()> {
+        let _enter = RUNTIME.enter();
+        let config = match take(&mut self.consumer) {
+            ConsumerState::Unconfigured => {
+                return Err(PyRuntimeError::new_err(
+                    "consumer has not been configured; create a client with a valid consumer \
+                     configuration",
+                ));
+            }
+            ConsumerState::Configured(configuration) => configuration,
+            running @ ConsumerState::Running { .. } => {
+                self.consumer = running;
+                return Err(PyRuntimeError::new_err("consumer is already subscribed"));
+            }
+        };
+
+        let handler = PythonHandler::new(handler)?;
+
+        info!("initializing consumer");
+        let consumer = ProsodyConsumer::new(&config, handler).map_err(|error| {
+            PyRuntimeError::new_err(format!("failed to initialize consumer: {error:#}"))
+        })?;
+
+        self.consumer = ConsumerState::Running { consumer, config };
+        Ok(())
+    }
+
+    /// Unsubscribe from messages.
+    ///
+    /// This method shuts down the consumer and stops receiving messages.
+    ///
+    /// # Raises
+    ///
+    /// * `PyRuntimeError`: If the consumer is not configured or not currently
+    ///   subscribed.
+    async fn unsubscribe(&mut self) -> PyResult<()> {
+        let consumer = match take(&mut self.consumer) {
+            ConsumerState::Unconfigured => {
+                return Err(PyRuntimeError::new_err("consumer is not configured"));
+            }
+            configured @ ConsumerState::Configured(_) => {
+                self.consumer = configured;
+                return Err(PyRuntimeError::new_err("consumer is not subscribed"));
+            }
+            ConsumerState::Running { consumer, config } => {
+                self.consumer = ConsumerState::Configured(config);
+                consumer
+            }
+        };
+
+        info!("shutting down consumer");
+        consumer.shutdown().await;
+        Ok(())
+    }
+
+    /// Return a string representation of the ProsodyClient.
+    ///
+    /// # Returns
+    ///
+    /// A string representation of the ProsodyClient, including its current
+    /// state and configuration details.
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name: Bound<PyString> = slf.get_type().qualname()?;
         let slf = slf.borrow();
@@ -135,6 +238,12 @@ impl Prosody {
         ))
     }
 
+    /// Return a human-readable string description of the ProsodyClient.
+    ///
+    /// # Returns
+    ///
+    /// A human-readable string describing the ProsodyClient, its state,
+    /// and key configuration details.
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name: Bound<PyString> = slf.get_type().qualname()?;
         let slf = slf.borrow();
@@ -163,7 +272,7 @@ impl Prosody {
 fn try_build_config(
     producer_builder: &ProducerConfigurationBuilder,
     consumer_builder: &ConsumerConfigurationBuilder,
-) -> PyResult<Prosody> {
+) -> PyResult<ProsodyClient> {
     let producer_config = producer_builder
         .build()
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
@@ -176,7 +285,7 @@ fn try_build_config(
         Some(consumer_config) => ConsumerState::Configured(consumer_config),
     };
 
-    Ok(Prosody {
+    Ok(ProsodyClient {
         producer,
         producer_config,
         consumer,

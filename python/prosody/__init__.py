@@ -1,2 +1,2 @@
 from .handler import AbstractMessageHandler
-from .prosody import Message, Prosody
+from .prosody import Context, Message, ProsodyClient

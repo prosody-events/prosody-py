@@ -1,6 +1,7 @@
 //! Defines the `Message` struct and its associated methods for representing
 //! Kafka messages.
 
+use prosody::consumer::message::MessageContext;
 use prosody::{Key, Offset, Partition, Topic};
 use pyo3::types::PyAnyMethods;
 use pyo3::{pyclass, pymethods, PyObject, PyResult, PyTraverseError, PyVisit, Python};
@@ -11,12 +12,15 @@ use pyo3::{pyclass, pymethods, PyObject, PyResult, PyTraverseError, PyVisit, Pyt
 /// its topic, partition, offset, key, and payload.
 #[pyclass(frozen)]
 pub struct Message {
-    topic: Topic,
-    partition: Partition,
-    offset: Offset,
-    key: Key,
-    payload: PyObject,
+    pub topic: Topic,
+    pub partition: Partition,
+    pub offset: Offset,
+    pub key: Key,
+    pub payload: PyObject,
 }
+
+#[pyclass]
+pub struct Context(pub MessageContext);
 
 #[pymethods]
 impl Message {
