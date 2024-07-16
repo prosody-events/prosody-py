@@ -14,7 +14,7 @@ const HANDLER_CLASS_NAME: &str = "AbstractMessageHandler";
 
 #[derive(Clone)]
 pub struct PythonHandler {
-    handler: Arc<PyObject>,
+    pub handle_method: Arc<PyObject>,
 }
 
 impl PythonHandler {
@@ -30,8 +30,8 @@ impl PythonHandler {
             )));
         };
 
-        let handler = Arc::new(handler.getattr("handle")?.unbind());
-        Ok(Self { handler })
+        let handle_method = Arc::new(handler.getattr("handle")?.unbind());
+        Ok(Self { handle_method })
     }
 }
 
@@ -71,7 +71,7 @@ impl MessageHandler for PythonHandler {
                 payload,
             };
 
-            self.handler.call1(py, (context, message))?;
+            self.handle_method.call1(py, (context, message))?;
             uncommitted.commit();
 
             Ok(())

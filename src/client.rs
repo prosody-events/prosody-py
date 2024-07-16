@@ -9,7 +9,9 @@ use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{
     PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods, PyString, PyTypeMethods,
 };
-use pyo3::{pyclass, pymethods, Bound, PyAny, PyObject, PyResult, Python};
+use pyo3::{
+    pyclass, pymethods, Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python,
+};
 use pythonize::depythonize_bound;
 use serde_json::Value;
 use tracing::info;
@@ -32,6 +34,7 @@ enum ConsumerState {
     Running {
         consumer: ProsodyConsumer,
         config: ConsumerConfiguration,
+        handler: PythonHandler,
     },
 }
 
@@ -172,11 +175,16 @@ impl ProsodyClient {
         let handler = PythonHandler::new(handler)?;
 
         info!("initializing consumer");
-        let consumer = ProsodyConsumer::new(&config, handler).map_err(|error| {
+        let consumer = ProsodyConsumer::new(&config, handler.clone()).map_err(|error| {
             PyRuntimeError::new_err(format!("failed to initialize consumer: {error:#}"))
         })?;
 
-        self.consumer = ConsumerState::Running { consumer, config };
+        self.consumer = ConsumerState::Running {
+            consumer,
+            config,
+            handler,
+        };
+
         Ok(())
     }
 
@@ -197,7 +205,9 @@ impl ProsodyClient {
                 self.consumer = configured;
                 return Err(PyRuntimeError::new_err("consumer is not subscribed"));
             }
-            ConsumerState::Running { consumer, config } => {
+            ConsumerState::Running {
+                consumer, config, ..
+            } => {
                 self.consumer = ConsumerState::Configured(config);
                 consumer
             }
@@ -266,6 +276,26 @@ impl ProsodyClient {
             slf.producer_config.bootstrap_servers.join(","),
             consumer_properties
         ))
+    }
+
+    /// Traverses the Python objects contained in this Client.
+    ///
+    /// This method is used by Python's garbage collector to traverse
+    /// the object graph and detect cycles.
+    ///
+    /// Arguments:
+    ///     visit: A `PyVisit` object used to visit Python objects.
+    ///
+    /// Returns:
+    ///     Result<(), PyTraverseError>: Ok if traversal was successful, Err
+    ///     otherwise.
+    #[allow(clippy::needless_pass_by_value)]
+    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+        if let ConsumerState::Running { handler, .. } = &self.consumer {
+            visit.call(handler.handle_method.as_any())?;
+        }
+
+        Ok(())
     }
 }
 
