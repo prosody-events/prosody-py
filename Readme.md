@@ -9,7 +9,6 @@ handling strategies, and integrated OpenTelemetry support for distributed tracin
 - High-performance Kafka client powered by Rust
 - Support for both message production and consumption
 - Configurable operational modes: pipeline and low-latency
-- Customizable retry mechanisms and failure handling
 - Distributed tracing with OpenTelemetry integration
 - Efficient parallel processing with key-based ordering
 - Backpressure management through intelligent partition pausing
