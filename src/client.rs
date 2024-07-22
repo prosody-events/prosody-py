@@ -1,3 +1,10 @@
+//! Provides a Python-compatible Kafka client for message production and
+//! consumption.
+//!
+//! This module implements a `ProsodyClient` that interfaces with Kafka,
+//! supporting both message production and consumption. It offers configurable
+//! operational modes, retry mechanisms, and failure handling strategies.
+
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::mem::take;
@@ -24,6 +31,8 @@ use tracing::info;
 use crate::handler::PythonHandler;
 use crate::RUNTIME;
 
+/// A Python-compatible Kafka client that supports message production and
+/// consumption.
 #[pyclass]
 pub struct ProsodyClient {
     producer: ProsodyProducer,
@@ -31,9 +40,13 @@ pub struct ProsodyClient {
     consumer: ConsumerState,
 }
 
+/// Pipeline mode for the Prosody client.
 const PIPELINE_MODE: &str = "pipeline";
+
+/// Low-latency mode for the Prosody client.
 const LOW_LATENCY_MODE: &str = "low-latency";
 
+/// Operational modes for the Prosody client.
 #[derive(Copy, Clone, Debug, Default)]
 enum Mode {
     #[default]
@@ -62,6 +75,7 @@ impl FromStr for Mode {
     }
 }
 
+/// Configuration for different operational modes of the Prosody client.
 #[derive(Debug)]
 enum ModeConfiguration {
     Pipeline {
@@ -76,6 +90,7 @@ enum ModeConfiguration {
 }
 
 impl ModeConfiguration {
+    /// Returns the mode of the configuration.
     fn mode(&self) -> Mode {
         match self {
             ModeConfiguration::Pipeline { .. } => Mode::Pipeline,
@@ -83,6 +98,7 @@ impl ModeConfiguration {
         }
     }
 
+    /// Returns a reference to the consumer configuration.
     fn consumer(&self) -> &ConsumerConfiguration {
         match &self {
             ModeConfiguration::Pipeline { consumer, .. }
@@ -91,6 +107,7 @@ impl ModeConfiguration {
     }
 }
 
+/// Represents the current state of the consumer.
 #[derive(Default)]
 enum ConsumerState {
     #[default]
@@ -421,6 +438,26 @@ impl ProsodyClient {
     }
 }
 
+/// Attempts to build a `ProsodyClient` configuration based on the provided
+/// builders.
+///
+/// # Arguments
+///
+/// * `mode` - The operational mode for the client.
+/// * `producer_builder` - Builder for the producer configuration.
+/// * `consumer_builder` - Builder for the consumer configuration.
+/// * `retry_builder` - Builder for the retry configuration.
+/// * `failure_topic_builder` - Builder for the failure topic configuration.
+///
+/// # Returns
+///
+/// A `PyResult` containing the configured `ProsodyClient` if successful.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if producer configuration, retry configuration,
+/// or failure topic configuration fails.
+/// Returns a `PyRuntimeError` if producer initialization fails.
 fn try_build_config(
     mode: Mode,
     producer_builder: &ProducerConfigurationBuilder,
@@ -437,7 +474,7 @@ fn try_build_config(
     })?;
 
     let retry = retry_builder.build().map_err(|error| {
-        PyRuntimeError::new_err(format!(
+        PyValueError::new_err(format!(
             "failed to configure retry failure strategy: {error:#}"
         ))
     })?;
@@ -448,7 +485,7 @@ fn try_build_config(
             Mode::Pipeline => ModeConfiguration::Pipeline { consumer, retry },
             Mode::LowLatency => {
                 let failure_topic = failure_topic_builder.build().map_err(|error| {
-                    PyRuntimeError::new_err(format!(
+                    PyValueError::new_err(format!(
                         "failed to configure failure topic strategy: {error:#}"
                     ))
                 })?;
@@ -469,6 +506,19 @@ fn try_build_config(
     })
 }
 
+/// Extracts a vector of strings from a Python object.
+///
+/// # Arguments
+///
+/// * `value` - A Python object that is either a string or a list of strings.
+///
+/// # Returns
+///
+/// A `PyResult` containing a vector of strings.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the extraction fails.
 fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
     if let Ok(string) = value.extract::<String>() {
         return Ok(vec![string]);
@@ -477,6 +527,21 @@ fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
     value.extract()
 }
 
+/// Decodes a Python object into a Rust `Duration`.
+///
+/// # Arguments
+///
+/// * `value` - A Python object representing a duration (either a `timedelta` or
+///   a float).
+///
+/// # Returns
+///
+/// A `PyResult` containing the decoded `Duration`.
+///
+/// # Errors
+///
+/// Returns a `PyTypeError` if the input is neither a `timedelta` nor a float.
+/// Returns a `PyValueError` if the float conversion fails.
 fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
     if let Ok(delta) = value.downcast::<PyDelta>() {
         let days = u64::try_from(delta.get_days())?;
@@ -501,6 +566,19 @@ fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
     ))
 }
 
+/// Decodes an optional Python object into an optional Rust `Duration`.
+///
+/// # Arguments
+///
+/// * `value` - An optional Python object representing a duration.
+///
+/// # Returns
+///
+/// A `PyResult` containing an `Option<Duration>`.
+///
+/// # Errors
+///
+/// Propagates errors from `decode_duration`.
 fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> {
     Ok(if value.is_none() {
         None
@@ -509,6 +587,16 @@ fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> 
     })
 }
 
+/// Formats a slice of string-like values into a Python-style list
+/// representation.
+///
+/// # Arguments
+///
+/// * `value` - A slice of values that can be referenced as strings.
+///
+/// # Returns
+///
+/// A `String` representing the formatted list.
 fn format_list(value: &[impl AsRef<str>]) -> String {
     let items = value
         .iter()
