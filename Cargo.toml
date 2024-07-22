@@ -1,6 +1,12 @@
 [package]
+categories = ["api-bindings", "asynchronous", "database"]
+description = "Python bindings for the Prosody Kafka client library"
 edition = "2021"
+keywords = ["bindings", "client", "kafka", "prosody", "python"]
+license = "All rights reserved."
 name = "prosody-py"
+readme = "Readme.md"
+repository = "https://github.com/RealGeeks/prosody-py"
 version = "0.1.0"
 
 [lib]
