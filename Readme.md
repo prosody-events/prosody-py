@@ -1,4 +1,4 @@
-# Prosody: Python Bindings for High-Performance Kafka Client
+# Prosody: Python Bindings
 
 Prosody is a high-performance Python library that provides bindings to a Rust-based Kafka client. It offers a robust
 interface for producing and consuming Kafka messages with advanced features like configurable retry mechanisms, failure
