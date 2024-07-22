@@ -118,6 +118,28 @@ impl Display for ConsumerState {
 #[pymethods]
 impl ProsodyClient {
     /// Initialize a new ProsodyClient with the given configuration.
+    ///
+    /// Args:
+    ///     **config: Configuration options for the client. Key options include:
+    ///         bootstrap_servers: Kafka bootstrap servers
+    ///         mock: Use mock Kafka client for testing
+    ///         send_timeout: Timeout for message send operations
+    ///         group_id: Consumer group ID
+    ///         subscribed_topics: Topics to subscribe to
+    ///         max_uncommitted: Maximum number of uncommitted messages
+    ///         max_enqueued_per_key: Maximum enqueued messages per key
+    ///         partition_shutdown_timeout: Timeout for partition shutdown
+    ///         poll_interval: Interval between Kafka poll operations
+    ///         commit_interval: Interval between offset commit operations
+    ///         mode: Operating mode ('pipeline' or 'low-latency')
+    ///         retry_base: Base value for exponential backoff in retries
+    ///         max_retries: Maximum number of retries for failed operations
+    ///         max_retry_delay: Maximum delay between retries
+    ///         failure_topic: Topic for failed messages in low-latency mode
+    ///
+    /// Raises:
+    ///     ValueError: If the configuration is invalid.
+    ///     RuntimeError: If the client fails to initialize.
     #[new]
     #[pyo3(signature = (**config))]
     fn new(config: Option<&Bound<PyDict>>) -> PyResult<Self> {
@@ -213,16 +235,13 @@ impl ProsodyClient {
 
     /// Send a message to a specified topic.
     ///
-    /// # Parameters
+    /// Args:
+    ///     topic (str): The topic to which the message should be sent.
+    ///     key (str): The key associated with the message.
+    ///     payload: The content of the message (must be JSON-serializable).
     ///
-    /// * `topic`: The topic to which the message should be sent.
-    /// * `key`: The key associated with the message.
-    /// * `payload`: The content of the message. This can be any
-    ///   JSON-serializable object.
-    ///
-    /// # Raises
-    ///
-    /// * `PyRuntimeError`: If there's an error sending the message.
+    /// Raises:
+    ///     RuntimeError: If there's an error sending the message.
     async fn send(&self, topic: String, key: String, payload: PyObject) -> PyResult<()> {
         let payload = Python::with_gil(|py| depythonize_bound::<Value>(payload.bind(py).clone()))?;
 
@@ -236,26 +255,21 @@ impl ProsodyClient {
 
     /// Get the current state of the consumer.
     ///
-    /// # Returns
-    ///
-    /// A string representing the current state of the consumer.
-    /// Possible values are 'unconfigured', 'configured', or 'running'.
+    /// Returns:
+    ///     str: The current state ('unconfigured', 'configured', or 'running').
     fn consumer_state(&self) -> String {
         self.consumer.to_string()
     }
 
     /// Subscribe to messages using the provided handler.
     ///
-    /// # Parameters
+    /// Args:
+    ///     handler: An instance implementing the AbstractMessageHandler
+    /// interface.
     ///
-    /// * `handler`: An instance of a class that implements the
-    ///   AbstractMessageHandler interface. This handler will be called for each
-    ///   received message.
-    ///
-    /// # Raises
-    ///
-    /// * `PyRuntimeError`: If the consumer is not configured or is already
-    ///   subscribed.
+    /// Raises:
+    ///     RuntimeError: If the consumer is not configured or is already
+    ///     subscribed.
     fn subscribe(&mut self, handler: &Bound<PyAny>) -> PyResult<()> {
         let _enter = RUNTIME.enter();
         let config = match take(&mut self.consumer) {
@@ -303,14 +317,10 @@ impl ProsodyClient {
         Ok(())
     }
 
-    /// Unsubscribe from messages.
+    /// Unsubscribe from messages and shut down the consumer.
     ///
-    /// This method shuts down the consumer and stops receiving messages.
-    ///
-    /// # Raises
-    ///
-    /// * `PyRuntimeError`: If the consumer is not configured or not currently
-    ///   subscribed.
+    /// Raises:
+    ///     RuntimeError: If the consumer is not configured or not subscribed.
     async fn unsubscribe(&mut self) -> PyResult<()> {
         let consumer = match take(&mut self.consumer) {
             ConsumerState::Unconfigured => {
@@ -335,10 +345,8 @@ impl ProsodyClient {
 
     /// Return a string representation of the ProsodyClient.
     ///
-    /// # Returns
-    ///
-    /// A string representation of the ProsodyClient, including its current
-    /// state and configuration details.
+    /// Returns:
+    ///     str: A string representation of the ProsodyClient.
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name: Bound<PyString> = slf.get_type().qualname()?;
         let slf = slf.borrow();
@@ -367,10 +375,8 @@ impl ProsodyClient {
 
     /// Return a human-readable string description of the ProsodyClient.
     ///
-    /// # Returns
-    ///
-    /// A human-readable string describing the ProsodyClient, its state,
-    /// and key configuration details.
+    /// Returns:
+    ///     str: A human-readable description of the ProsodyClient.
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name: Bound<PyString> = slf.get_type().qualname()?;
         let slf = slf.borrow();
@@ -397,12 +403,9 @@ impl ProsodyClient {
         ))
     }
 
-    /// Traverses the Python objects contained in this Client.
+    /// Traverse Python objects contained in this Client for garbage collection.
     ///
-    /// This method is used by Python's garbage collector to traverse
-    /// the object graph and detect cycles.
-    ///
-    /// Arguments:
+    /// Args:
     ///     visit: A `PyVisit` object used to visit Python objects.
     ///
     /// Returns:
