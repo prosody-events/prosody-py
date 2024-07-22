@@ -51,29 +51,77 @@ await client.unsubscribe()
 
 ## Configuration
 
-The `ProsodyClient` constructor accepts various configuration options. These can be set either through constructor
-parameters or environment variables. Here's a table of available options:
+The `ProsodyClient` constructor accepts the following parameters:
 
-| Parameter                    | Environment Variable                 | Default    | Description                                  |
-|------------------------------|--------------------------------------|------------|----------------------------------------------|
-| `bootstrap_servers`          | `PROSODY_BOOTSTRAP_SERVERS`          | -          | Kafka bootstrap servers                      |
-| `group_id`                   | `PROSODY_GROUP_ID`                   | -          | Consumer group ID                            |
-| `subscribed_topics`          | `PROSODY_SUBSCRIBED_TOPICS`          | -          | Topics to subscribe to                       |
-| `max_uncommitted`            | `PROSODY_MAX_UNCOMMITTED`            | 32         | Maximum number of uncommitted messages       |
-| `max_enqueued_per_key`       | `PROSODY_MAX_ENQUEUED_PER_KEY`       | 8          | Maximum number of enqueued messages per key  |
-| `partition_shutdown_timeout` | `PROSODY_PARTITION_SHUTDOWN_TIMEOUT` | 5s         | Timeout for partition shutdown               |
-| `poll_interval`              | `PROSODY_POLL_INTERVAL`              | 100ms      | Interval between poll operations             |
-| `commit_interval`            | `PROSODY_COMMIT_INTERVAL`            | 1s         | Interval between commit operations           |
-| `send_timeout`               | `PROSODY_SEND_TIMEOUT`               | 1s         | Timeout for send operations in the producer  |
-| `mock`                       | `PROSODY_MOCK`                       | False      | Use mock Kafka brokers for testing           |
-| `retry_base`                 | `PROSODY_RETRY_BASE`                 | 2          | Exponential backoff base for retries         |
-| `max_retries`                | `PROSODY_MAX_RETRIES`                | 3          | Maximum number of retries                    |
-| `max_retry_delay`            | `PROSODY_RETRY_MAX_DELAY`            | 1m         | Maximum retry delay                          |
-| `failure_topic`              | `PROSODY_FAILURE_TOPIC`              | -          | Topic for failed messages                    |
-| `mode`                       | -                                    | "pipeline" | Operating mode ('pipeline' or 'low-latency') |
+# Prosody: Python Bindings for High-Performance Kafka Client
 
-Note: Time durations can be specified as integers (interpreted as milliseconds) or as strings (e.g., "5s", "100ms", "
-1m").
+[... previous sections remain unchanged ...]
+
+## Configuration
+
+The `ProsodyClient` constructor accepts the following parameters:
+
+- `bootstrap_servers` (`str | list[str]`)
+    - Kafka bootstrap servers
+    - Required
+
+- `group_id` (`str | None`)
+    - Consumer group ID
+    - Required for consumption
+
+- `subscribed_topics` (`str | list[str] | None`)
+    - Topics to subscribe to
+    - Required for consumption
+
+- `max_uncommitted` (`int | None`)
+    - Maximum number of uncommitted messages
+
+- `max_enqueued_per_key` (`int | None`)
+    - Maximum number of enqueued messages per key
+
+- `partition_shutdown_timeout` (`float | timedelta | None`)
+    - Timeout for partition shutdown
+
+- `poll_interval` (`float | timedelta | None`)
+    - Interval between poll operations
+
+- `commit_interval` (`float | timedelta | None`)
+    - Interval between commit operations
+
+- `send_timeout` (`float | timedelta | None`)
+    - Timeout for send operations in the producer
+
+- `mock` (`bool | None`)
+    - Use mock Kafka brokers for testing
+
+- `retry_base` (`int | None`)
+    - Exponential backoff base for retries
+
+- `max_retries` (`int | None`)
+    - Maximum number of retries
+
+- `max_retry_delay` (`float | timedelta | None`)
+    - Maximum retry delay
+
+- `failure_topic` (`str | None`)
+    - Topic for failed messages
+
+- `mode` (`str | None`)
+    - Operating mode ('pipeline' or 'low-latency')
+    - Default is 'pipeline'
+
+Key points:
+
+- `bootstrap_servers` is required.
+- `group_id` and `subscribed_topics` are required for consumption.
+- Time durations (`partition_shutdown_timeout`, `poll_interval`, `commit_interval`, `send_timeout`, `max_retry_delay`)
+  can be specified as float (in seconds) or timedelta.
+- Most parameters have default values and can be omitted.
+- All parameters except for mode can also be set via environment variables (e.g., `PROSODY_BOOTSTRAP_SERVERS`,
+  `PROSODY_GROUP_ID`, etc.). Mode cannot changed through the environment because it's inseparable from the application's
+  architecture.
+
+For detailed information about each parameter and its default value, refer to the API documentation.
 
 ## Advanced Usage
 
