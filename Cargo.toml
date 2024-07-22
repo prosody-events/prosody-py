@@ -9,10 +9,10 @@ name = "prosody"
 
 [dependencies]
 once_cell = "1.19"
-prosody = { git = "https://github.com/RealGeeks/prosody.git", branch = "python-compat" }               # replace once we have a package manager
+prosody = { git = "https://github.com/RealGeeks/prosody.git", rev = "e6f689bdece4dceb4fc639f2b00a0eae5b899b9a" } # replace once we have a package manager
 pyo3 = { version = "0.22", features = ["experimental-async"] }
 pyo3-log = "0.11"
-pythonize = { git = "https://github.com/HenningHolmDE/pythonize.git", branch = "update_to_pyo3_0.22" } # replace when released
+pythonize = { git = "https://github.com/HenningHolmDE/pythonize.git", branch = "update_to_pyo3_0.22" }           # replace when released
 serde_json = "1.0"
 tokio = { version = "1.38", features = ["rt-multi-thread"] }
 tracing = { version = "0.1", features = ["log"] }

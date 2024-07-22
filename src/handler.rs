@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use prosody::consumer::failure::FallibleHandler;
 use prosody::consumer::message::{ConsumerMessage, MessageContext};
-use prosody::consumer::MessageHandler;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
@@ -35,7 +35,7 @@ impl PythonHandler {
     }
 }
 
-impl MessageHandler for PythonHandler {
+impl FallibleHandler for PythonHandler {
     type Error = PyErr;
 
     async fn handle(
@@ -43,10 +43,11 @@ impl MessageHandler for PythonHandler {
         context: MessageContext,
         message: ConsumerMessage,
     ) -> Result<(), Self::Error> {
-        let topic = message.topic().into();
-        let partition = message.partition();
-        let offset = message.offset();
-        let (key, payload, uncommitted) = message.into_inner();
+        let topic = message.topic;
+        let partition = message.partition;
+        let offset = message.offset;
+        let key = message.key;
+        let payload = message.payload;
 
         Python::with_gil(|py| {
             let payload = match pythonize(py, &payload) {
@@ -56,7 +57,6 @@ impl MessageHandler for PythonHandler {
                         %topic, %partition, %offset, %key,
                         "unable to decode payload: {error:#}; discarding message"
                     );
-                    uncommitted.commit();
 
                     return Ok(());
                 }
@@ -72,8 +72,6 @@ impl MessageHandler for PythonHandler {
             };
 
             self.handle_method.call1(py, (context, message))?;
-            uncommitted.commit();
-
             Ok(())
         })
     }

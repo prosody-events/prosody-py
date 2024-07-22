@@ -1,3 +1,4 @@
+#![allow(clippy::multiple_crate_versions)]
 #![allow(missing_docs)] // todo: remove
 
 use once_cell::sync::Lazy;

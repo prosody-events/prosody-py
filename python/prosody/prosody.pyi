@@ -13,6 +13,12 @@ JSONValue: TypeAlias = Union[
     Dict[str, 'JSONValue']
 ]
 
+# Define a Duration type alias for time-related parameters
+Duration: TypeAlias = Union[float, timedelta]
+
+# Define a StringOrList type alias for parameters that accept either a string or a list of strings
+StringOrList: TypeAlias = Union[str, List[str]]
+
 
 class Context:
     ...
@@ -36,23 +42,28 @@ class Message:
 
 class AbstractMessageHandler(ABC):
     @abstractmethod
-    async def handle(self, context: Context, message: Message) -> str: ...
+    async def handle(self, context: Context, message: Message) -> None: ...
 
 
 class ProsodyClient:
     def __init__(
             self,
             *,
-            bootstrap_servers: Optional[Union[str, List[str]]] = None,
+            bootstrap_servers: Optional[StringOrList] = None,
             mock: Optional[bool] = None,
-            send_timeout: Optional[Union[float, timedelta]] = None,
+            send_timeout: Optional[Duration] = None,
             group_id: Optional[str] = None,
-            subscribed_topics: Optional[Union[str, List[str]]] = None,
+            subscribed_topics: Optional[StringOrList] = None,
             max_uncommitted: Optional[int] = None,
             max_enqueued_per_key: Optional[int] = None,
-            partition_shutdown_timeout: Optional[Union[float, timedelta]] = None,
-            poll_interval: Optional[Union[float, timedelta]] = None,
-            commit_interval: Optional[Union[float, timedelta]] = None
+            partition_shutdown_timeout: Optional[Duration] = None,
+            poll_interval: Optional[Duration] = None,
+            commit_interval: Optional[Duration] = None,
+            mode: Optional[str] = None,
+            retry_base: Optional[int] = None,
+            max_retries: Optional[int] = None,
+            max_retry_delay: Optional[Duration] = None,
+            failure_topic: Optional[str] = None
     ) -> None: ...
 
     async def send(self, topic: str, key: str, payload: Any) -> None: ...

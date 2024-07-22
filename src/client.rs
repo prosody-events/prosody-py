@@ -1,8 +1,13 @@
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::mem::take;
+use std::str::FromStr;
 use std::time::Duration;
 
+use prosody::consumer::failure::retry::{RetryConfiguration, RetryConfigurationBuilder};
+use prosody::consumer::failure::topic::{
+    FailureTopicConfiguration, FailureTopicConfigurationBuilder,
+};
 use prosody::consumer::{ConsumerConfiguration, ConsumerConfigurationBuilder, ProsodyConsumer};
 use prosody::producer::{ProducerConfiguration, ProducerConfigurationBuilder, ProsodyProducer};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
@@ -10,7 +15,7 @@ use pyo3::types::{
     PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods, PyString, PyTypeMethods,
 };
 use pyo3::{
-    pyclass, pymethods, Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python,
+    pyclass, pymethods, Bound, PyAny, PyErr, PyObject, PyResult, PyTraverseError, PyVisit, Python,
 };
 use pythonize::depythonize_bound;
 use serde_json::Value;
@@ -26,14 +31,74 @@ pub struct ProsodyClient {
     consumer: ConsumerState,
 }
 
+const PIPELINE_MODE: &str = "pipeline";
+const LOW_LATENCY_MODE: &str = "low-latency";
+
+#[derive(Copy, Clone, Debug, Default)]
+enum Mode {
+    #[default]
+    Pipeline,
+    LowLatency,
+}
+
+impl Display for Mode {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Mode::Pipeline => f.write_str(PIPELINE_MODE),
+            Mode::LowLatency => f.write_str(LOW_LATENCY_MODE),
+        }
+    }
+}
+
+impl FromStr for Mode {
+    type Err = PyErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            PIPELINE_MODE => Ok(Mode::Pipeline),
+            LOW_LATENCY_MODE => Ok(Mode::LowLatency),
+            unknown => Err(PyValueError::new_err(format!("unknown mode: '{unknown}'"))),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ModeConfiguration {
+    Pipeline {
+        consumer: ConsumerConfiguration,
+        retry: RetryConfiguration,
+    },
+    LowLatency {
+        consumer: ConsumerConfiguration,
+        retry: RetryConfiguration,
+        failure_topic: FailureTopicConfiguration,
+    },
+}
+
+impl ModeConfiguration {
+    fn mode(&self) -> Mode {
+        match self {
+            ModeConfiguration::Pipeline { .. } => Mode::Pipeline,
+            ModeConfiguration::LowLatency { .. } => Mode::LowLatency,
+        }
+    }
+
+    fn consumer(&self) -> &ConsumerConfiguration {
+        match &self {
+            ModeConfiguration::Pipeline { consumer, .. }
+            | ModeConfiguration::LowLatency { consumer, .. } => consumer,
+        }
+    }
+}
+
 #[derive(Default)]
 enum ConsumerState {
     #[default]
     Unconfigured,
-    Configured(ConsumerConfiguration),
+    Configured(ModeConfiguration),
     Running {
         consumer: ProsodyConsumer,
-        config: ConsumerConfiguration,
+        config: ModeConfiguration,
         handler: PythonHandler,
     },
 }
@@ -56,12 +121,25 @@ impl ProsodyClient {
     #[new]
     #[pyo3(signature = (**config))]
     fn new(config: Option<&Bound<PyDict>>) -> PyResult<Self> {
+        let mut mode = Mode::default();
         let mut producer_builder = ProducerConfiguration::builder();
         let mut consumer_builder = ConsumerConfiguration::builder();
+        let mut retry_builder = RetryConfiguration::builder();
+        let mut failure_topic_builder = FailureTopicConfiguration::builder();
 
         let Some(config) = config else {
-            return try_build_config(&producer_builder, &consumer_builder);
+            return try_build_config(
+                mode,
+                &producer_builder,
+                &consumer_builder,
+                &retry_builder,
+                &failure_topic_builder,
+            );
         };
+
+        if let Some(mode_str) = config.get_item("mode")? {
+            mode = mode_str.extract::<String>()?.parse()?;
+        }
 
         if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
             let bootstrap = string_or_vec(&bootstrap)?;
@@ -108,7 +186,29 @@ impl ProsodyClient {
             consumer_builder.commit_interval(decode_duration(&commit_interval)?);
         }
 
-        try_build_config(&producer_builder, &consumer_builder)
+        if let Some(retry_base) = config.get_item("retry_base")? {
+            retry_builder.base(retry_base.extract::<u8>()?);
+        }
+
+        if let Some(max_retries) = config.get_item("max_retries")? {
+            retry_builder.max_retries(max_retries.extract::<u32>()?);
+        }
+
+        if let Some(retry_max_delay) = config.get_item("max_retry_delay")? {
+            retry_builder.max_delay(decode_duration(&retry_max_delay)?);
+        }
+
+        if let Some(topic) = config.get_item("failure_topic")? {
+            failure_topic_builder.failure_topic(topic.extract::<String>()?);
+        }
+
+        try_build_config(
+            mode,
+            &producer_builder,
+            &consumer_builder,
+            &retry_builder,
+            &failure_topic_builder,
+        )
     }
 
     /// Send a message to a specified topic.
@@ -127,7 +227,7 @@ impl ProsodyClient {
         let payload = Python::with_gil(|py| depythonize_bound::<Value>(payload.bind(py).clone()))?;
 
         self.producer
-            .send(topic.as_str().into(), &key, payload)
+            .send([], topic.as_str().into(), &key, payload)
             .await
             .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
@@ -174,8 +274,23 @@ impl ProsodyClient {
 
         let handler = PythonHandler::new(handler)?;
 
-        info!("initializing consumer");
-        let consumer = ProsodyConsumer::new(&config, handler.clone()).map_err(|error| {
+        let consumer = match &config {
+            ModeConfiguration::Pipeline { consumer, retry } => {
+                ProsodyConsumer::pipeline_consumer(consumer, retry.clone(), handler.clone())
+            }
+            ModeConfiguration::LowLatency {
+                consumer,
+                retry,
+                failure_topic,
+            } => ProsodyConsumer::low_latency_consumer(
+                consumer,
+                retry.clone(),
+                failure_topic.clone(),
+                self.producer.clone(),
+                handler.clone(),
+            ),
+        }
+        .map_err(|error| {
             PyRuntimeError::new_err(format!("failed to initialize consumer: {error:#}"))
         })?;
 
@@ -231,10 +346,12 @@ impl ProsodyClient {
         let consumer_properties = match &slf.consumer {
             ConsumerState::Unconfigured => String::new(),
             ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
+                let consumer_config = config.consumer();
                 format!(
-                    ", subscribed={}, group_id={}",
-                    format_list(&config.subscribed_topics),
-                    config.group_id
+                    ", mode='{}', subscribed={}, group_id={}",
+                    config.mode(),
+                    format_list(&consumer_config.subscribed_topics),
+                    consumer_config.group_id
                 )
             }
         };
@@ -261,10 +378,12 @@ impl ProsodyClient {
         let consumer_properties = match &slf.consumer {
             ConsumerState::Unconfigured => String::new(),
             ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
+                let consumer_config = config.consumer();
                 format!(
-                    ", subscribed={}, group_id={}",
-                    config.subscribed_topics.join(","),
-                    config.group_id
+                    ", mode={}, subscribed={}, group_id={}",
+                    config.mode(),
+                    consumer_config.subscribed_topics.join(","),
+                    consumer_config.group_id
                 )
             }
         };
@@ -300,19 +419,44 @@ impl ProsodyClient {
 }
 
 fn try_build_config(
+    mode: Mode,
     producer_builder: &ProducerConfigurationBuilder,
     consumer_builder: &ConsumerConfigurationBuilder,
+    retry_builder: &RetryConfigurationBuilder,
+    failure_topic_builder: &FailureTopicConfigurationBuilder,
 ) -> PyResult<ProsodyClient> {
-    let producer_config = producer_builder
-        .build()
-        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    let producer_config = producer_builder.build().map_err(|error| {
+        PyValueError::new_err(format!("failed to configure producer: {error:#}"))
+    })?;
 
-    let producer = ProsodyProducer::new(&producer_config)
-        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    let producer = ProsodyProducer::new(&producer_config).map_err(|error| {
+        PyRuntimeError::new_err(format!("failed to initialize producer: {error:#}"))
+    })?;
+
+    let retry = retry_builder.build().map_err(|error| {
+        PyRuntimeError::new_err(format!(
+            "failed to configure retry failure strategy: {error:#}"
+        ))
+    })?;
 
     let consumer = match consumer_builder.build().ok() {
         None => ConsumerState::Unconfigured,
-        Some(consumer_config) => ConsumerState::Configured(consumer_config),
+        Some(consumer) => ConsumerState::Configured(match mode {
+            Mode::Pipeline => ModeConfiguration::Pipeline { consumer, retry },
+            Mode::LowLatency => {
+                let failure_topic = failure_topic_builder.build().map_err(|error| {
+                    PyRuntimeError::new_err(format!(
+                        "failed to configure failure topic strategy: {error:#}"
+                    ))
+                })?;
+
+                ModeConfiguration::LowLatency {
+                    consumer,
+                    retry,
+                    failure_topic,
+                }
+            }
+        }),
     };
 
     Ok(ProsodyClient {
