@@ -23,38 +23,28 @@ pip install prosody
 
 ## Quick Start
 
-### Producing Messages
-
-```python
-from prosody import ProsodyClient
-
-# Initialize the client
-client = ProsodyClient(bootstrap_servers="localhost:9092")
-
-# Send a message
-await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
-```
-
-### Consuming Messages
-
 ```python
 from prosody import ProsodyClient, AbstractMessageHandler, Context, Message
-
-
-class MyHandler(AbstractMessageHandler):
-    async def handle(self, context: Context, message: Message) -> None:
-        print(f"Received message: {message}")
-
 
 # Initialize the client
 client = ProsodyClient(
     bootstrap_servers="localhost:9092",
     group_id="my-consumer-group",
-    subscribed_topics="my-topic"
+    subscribed_topics=["my-topic"]
 )
+
+
+# Define a message handler
+class MyHandler(AbstractMessageHandler):
+    async def handle(self, context: Context, message: Message) -> None:
+        print(f"Received message: {message}")
+
 
 # Subscribe to messages
 client.subscribe(MyHandler())
+
+# Send a message
+await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
 
 # To stop consuming
 await client.unsubscribe()
@@ -96,9 +86,9 @@ indefinitely:
 ```python
 client = ProsodyClient(
     bootstrap_servers="localhost:9092",
-    retry_base=2,
-    max_retries=5,
-    max_retry_delay="1m"
+    mode="pipeline",
+    group_id="my-consumer-group",
+    subscribed_topics=["my-topic"]
 )
 ```
 
@@ -110,6 +100,8 @@ Low-latency mode prioritizes quick processing, sending persistently failing mess
 client = ProsodyClient(
     bootstrap_servers="localhost:9092",
     mode="low-latency",
+    group_id="my-consumer-group",
+    subscribed_topics=["my-topic"],
     failure_topic="failed-messages"
 )
 ```
