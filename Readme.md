@@ -53,14 +53,6 @@ await client.unsubscribe()
 
 The `ProsodyClient` constructor accepts the following parameters:
 
-# Prosody: Python Bindings for High-Performance Kafka Client
-
-[... previous sections remain unchanged ...]
-
-## Configuration
-
-The `ProsodyClient` constructor accepts the following parameters:
-
 - `bootstrap_servers` (`str | list[str]`)
     - Kafka bootstrap servers
     - Required
