@@ -53,54 +53,21 @@ await client.unsubscribe()
 
 The `ProsodyClient` constructor accepts the following parameters:
 
-- `bootstrap_servers` (`str | list[str]`)
-    - Kafka bootstrap servers
-    - Required
-
-- `group_id` (`str`)
-    - Consumer group ID
-    - Required for consumption
-
-- `subscribed_topics` (`str | list[str]`)
-    - Topics to subscribe to
-    - Required for consumption
-
-- `max_uncommitted` (`int`)
-    - Maximum number of uncommitted messages
-
-- `max_enqueued_per_key` (`int`)
-    - Maximum number of enqueued messages per key
-
-- `partition_shutdown_timeout` (`float | timedelta`)
-    - Timeout for partition shutdown
-
-- `poll_interval` (`float | timedelta`)
-    - Interval between poll operations
-
-- `commit_interval` (`float | timedelta`)
-    - Interval between commit operations
-
-- `send_timeout` (`float | timedelta`)
-    - Timeout for send operations in the producer
-
-- `mock` (`bool`)
-    - Use mock Kafka brokers for testing
-
-- `retry_base` (`int`)
-    - Exponential backoff base for retries
-
-- `max_retries` (`int`)
-    - Maximum number of retries
-
-- `max_retry_delay` (`float | timedelta`)
-    - Maximum retry delay
-
-- `failure_topic` (`str`)
-    - Topic for failed messages
-
-- `mode` (`str`)
-    - Operating mode ('pipeline' or 'low-latency')
-    - Default is 'pipeline'
+- `bootstrap_servers` (`str | list[str]`): Kafka bootstrap servers. Required.
+- `group_id` (`str`): Consumer group ID. Required for consumption.
+- `subscribed_topics` (`str | list[str]`): Topics to subscribe to. Required for consumption.
+- `max_uncommitted` (`int`): Maximum number of uncommitted messages.
+- `max_enqueued_per_key` (`int`): Maximum number of enqueued messages per key.
+- `partition_shutdown_timeout` (`float | timedelta`): Timeout for partition shutdown.
+- `poll_interval` (`float | timedelta`): Interval between poll operations.
+- `commit_interval` (`float | timedelta`): Interval between commit operations.
+- `send_timeout` (`float | timedelta`): Timeout for send operations in the producer.
+- `mock` (`bool`): Use mock Kafka brokers for testing.
+- `retry_base` (`int`): Exponential backoff base for retries.
+- `max_retries` (`int`): Maximum number of retries.
+- `max_retry_delay` (`float | timedelta`): Maximum retry delay.
+- `failure_topic` (`str`): Topic for failed messages.
+- `mode` (`str`): Operating mode ('pipeline' or 'low-latency'). Default is 'pipeline'.
 
 Key points:
 
