@@ -57,48 +57,48 @@ The `ProsodyClient` constructor accepts the following parameters:
     - Kafka bootstrap servers
     - Required
 
-- `group_id` (`str | None`)
+- `group_id` (`str`)
     - Consumer group ID
     - Required for consumption
 
-- `subscribed_topics` (`str | list[str] | None`)
+- `subscribed_topics` (`str | list[str]`)
     - Topics to subscribe to
     - Required for consumption
 
-- `max_uncommitted` (`int | None`)
+- `max_uncommitted` (`int`)
     - Maximum number of uncommitted messages
 
-- `max_enqueued_per_key` (`int | None`)
+- `max_enqueued_per_key` (`int`)
     - Maximum number of enqueued messages per key
 
-- `partition_shutdown_timeout` (`float | timedelta | None`)
+- `partition_shutdown_timeout` (`float | timedelta`)
     - Timeout for partition shutdown
 
-- `poll_interval` (`float | timedelta | None`)
+- `poll_interval` (`float | timedelta`)
     - Interval between poll operations
 
-- `commit_interval` (`float | timedelta | None`)
+- `commit_interval` (`float | timedelta`)
     - Interval between commit operations
 
-- `send_timeout` (`float | timedelta | None`)
+- `send_timeout` (`float | timedelta`)
     - Timeout for send operations in the producer
 
-- `mock` (`bool | None`)
+- `mock` (`bool`)
     - Use mock Kafka brokers for testing
 
-- `retry_base` (`int | None`)
+- `retry_base` (`int`)
     - Exponential backoff base for retries
 
-- `max_retries` (`int | None`)
+- `max_retries` (`int`)
     - Maximum number of retries
 
-- `max_retry_delay` (`float | timedelta | None`)
+- `max_retry_delay` (`float | timedelta`)
     - Maximum retry delay
 
-- `failure_topic` (`str | None`)
+- `failure_topic` (`str`)
     - Topic for failed messages
 
-- `mode` (`str | None`)
+- `mode` (`str`)
     - Operating mode ('pipeline' or 'low-latency')
     - Default is 'pipeline'
 
@@ -110,8 +110,8 @@ Key points:
   can be specified as float (in seconds) or timedelta.
 - Most parameters have default values and can be omitted.
 - All parameters except for mode can also be set via environment variables (e.g., `PROSODY_BOOTSTRAP_SERVERS`,
-  `PROSODY_GROUP_ID`, etc.). Mode cannot changed through the environment because it's inseparable from the application's
-  architecture.
+  `PROSODY_GROUP_ID`, etc.). Mode cannot be changed through the environment because it's inseparable from the
+  application's architecture.
 
 For detailed information about each parameter and its default value, refer to the API documentation.
 
