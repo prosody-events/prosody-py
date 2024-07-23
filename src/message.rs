@@ -15,6 +15,7 @@ pub struct Message {
     pub topic: Topic,
     pub partition: Partition,
     pub offset: Offset,
+    pub timestamp: PyObject,
     pub key: Key,
     pub payload: PyObject,
 }
@@ -46,6 +47,14 @@ impl Message {
     ///     int: The message offset.
     pub fn offset(&self) -> Offset {
         self.offset
+    }
+
+    /// Returns the timestamp of the message.
+    ///
+    /// Returns:
+    ///     datetime: The message timestamp.
+    pub fn timestamp(&self) -> &PyObject {
+        &self.timestamp
     }
 
     /// Returns the key of the message.
@@ -133,6 +142,7 @@ impl Message {
     ///     otherwise.
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+        visit.call(&self.timestamp)?;
         visit.call(&self.payload)?;
         Ok(())
     }

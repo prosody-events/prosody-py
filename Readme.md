@@ -152,5 +152,6 @@ Represents a Kafka message with methods to access its properties:
 - `topic() -> str`: Returns the topic of the message.
 - `partition() -> int`: Returns the partition of the message.
 - `offset() -> int`: Returns the offset of the message.
+- `timestamp() -> datetime`: Returns the timestamp of the message.
 - `key() -> str`: Returns the key of the message.
 - `payload() -> Any`: Returns the payload of the message.

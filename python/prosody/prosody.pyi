@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Any, List, Optional, Union, TypeAlias, Dict
 
 # Define a JSONValue type that represents all possible JSON-serializable values
@@ -30,6 +30,8 @@ class Message:
     def partition(self) -> int: ...
 
     def offset(self) -> int: ...
+
+    def timestamp(self) -> datetime: ...
 
     def key(self) -> str: ...
 
