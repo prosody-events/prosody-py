@@ -29,7 +29,7 @@ from prosody import ProsodyClient, AbstractMessageHandler, Context, Message
 client = ProsodyClient(
     bootstrap_servers="localhost:9092",
     group_id="my-consumer-group",
-    subscribed_topics=["my-topic"]
+    subscribed_topics="my-topic"
 )
 
 
@@ -94,7 +94,7 @@ client = ProsodyClient(
     bootstrap_servers="localhost:9092",
     mode="pipeline",
     group_id="my-consumer-group",
-    subscribed_topics=["my-topic"]
+    subscribed_topics="my-topic"
 )
 ```
 
@@ -107,7 +107,7 @@ client = ProsodyClient(
     bootstrap_servers="localhost:9092",
     mode="low-latency",
     group_id="my-consumer-group",
-    subscribed_topics=["my-topic"],
+    subscribed_topics="my-topic",
     failure_topic="failed-messages"
 )
 ```
