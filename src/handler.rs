@@ -12,8 +12,8 @@ use prosody::consumer::message::{ConsumerMessage, MessageContext};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
+use pyo3_asyncio_0_21::{into_future_with_locals, TaskLocals};
 use pythonize::pythonize;
-use tracing::error;
 
 use crate::message::{Context, Message};
 
@@ -29,6 +29,7 @@ const HANDLER_CLASS_NAME: &str = "AbstractMessageHandler";
 #[derive(Clone)]
 pub struct PythonHandler {
     pub handle_method: Arc<PyObject>,
+    pub locals: TaskLocals,
 }
 
 impl PythonHandler {
@@ -62,7 +63,14 @@ impl PythonHandler {
 
         // Extract and store the handle method
         let handle_method = Arc::new(handler.getattr("handle")?.unbind());
-        Ok(Self { handle_method })
+
+        // Capture the running event loop
+        let locals = TaskLocals::with_running_loop(handler.py())?.copy_context(handler.py())?;
+
+        Ok(Self {
+            handle_method,
+            locals,
+        })
     }
 }
 
@@ -92,20 +100,7 @@ impl FallibleHandler for PythonHandler {
         let key = message.key;
         let payload = message.payload;
 
-        Python::with_gil(|py| {
-            // Convert the payload to a Python object
-            let payload = match pythonize(py, &payload) {
-                Ok(payload) => payload,
-                Err(error) => {
-                    error!(
-                        %topic, %partition, %offset, %key,
-                        "unable to decode payload: {error:#}; discarding message"
-                    );
-
-                    return Ok(());
-                }
-            };
-
+        let future = Python::with_gil(|py| {
             // Create Context and Message objects for the Python handler
             let context = Context(context);
             let message = Message {
@@ -114,12 +109,19 @@ impl FallibleHandler for PythonHandler {
                 offset,
                 timestamp,
                 key,
-                payload,
+                payload: pythonize(py, &payload)?,
             };
 
             // Call the Python handle method
-            self.handle_method.call1(py, (context, message))?;
-            Ok(())
-        })
+            into_future_with_locals(
+                &self.locals,
+                self.handle_method
+                    .call1(py, (context, message))?
+                    .into_bound(py),
+            )
+        })?;
+
+        future.await?;
+        Ok(())
     }
 }

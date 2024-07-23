@@ -9,7 +9,7 @@
 #![warn(missing_docs)]
 
 use once_cell::sync::Lazy;
-use pyo3::types::{PyModule, PyModuleMethods};
+use pyo3::types::PyModule;
 use pyo3::{pymodule, Bound, PyResult};
 use tokio::runtime::Runtime;
 

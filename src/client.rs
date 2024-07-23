@@ -18,9 +18,7 @@ use prosody::consumer::failure::topic::{
 use prosody::consumer::{ConsumerConfiguration, ConsumerConfigurationBuilder, ProsodyConsumer};
 use prosody::producer::{ProducerConfiguration, ProducerConfigurationBuilder, ProsodyProducer};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::types::{
-    PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods, PyString, PyTypeMethods,
-};
+use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods, PyTypeMethods};
 use pyo3::{
     pyclass, pymethods, Bound, PyAny, PyErr, PyObject, PyResult, PyTraverseError, PyVisit, Python,
 };
@@ -365,7 +363,7 @@ impl ProsodyClient {
     /// Returns:
     ///     str: A string representation of the ProsodyClient.
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
-        let class_name: Bound<PyString> = slf.get_type().qualname()?;
+        let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
 
         let consumer_properties = match &slf.consumer {
@@ -373,7 +371,7 @@ impl ProsodyClient {
             ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
                 let consumer_config = config.consumer();
                 format!(
-                    ", mode='{}', subscribed={}, group_id={}",
+                    ", mode='{}', topics={}, group_id={}",
                     config.mode(),
                     format_list(&consumer_config.subscribed_topics),
                     consumer_config.group_id
@@ -395,7 +393,7 @@ impl ProsodyClient {
     /// Returns:
     ///     str: A human-readable description of the ProsodyClient.
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
-        let class_name: Bound<PyString> = slf.get_type().qualname()?;
+        let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
 
         let consumer_properties = match &slf.consumer {
@@ -403,7 +401,7 @@ impl ProsodyClient {
             ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
                 let consumer_config = config.consumer();
                 format!(
-                    ", mode={}, subscribed={}, group_id={}",
+                    ", mode={}, topics={}, group_id={}",
                     config.mode(),
                     consumer_config.subscribed_topics.join(","),
                     consumer_config.group_id
