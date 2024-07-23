@@ -834,6 +834,7 @@ dependencies = [
 name = "prosody-py"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "once_cell",
  "prosody",
  "pyo3",

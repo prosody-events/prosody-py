@@ -14,6 +14,7 @@ crate-type = ["cdylib"]
 name = "prosody"
 
 [dependencies]
+chrono = "0.4"
 once_cell = "1.19"
 prosody = { git = "https://github.com/RealGeeks/prosody.git", rev = "e6f689bdece4dceb4fc639f2b00a0eae5b899b9a" } # replace once we have a package manager
 pyo3 = { version = "0.22", features = ["chrono", "experimental-async"] }

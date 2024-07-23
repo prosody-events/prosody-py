@@ -11,7 +11,7 @@ use prosody::consumer::failure::FallibleHandler;
 use prosody::consumer::message::{ConsumerMessage, MessageContext};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
-use pyo3::{Bound, IntoPy, PyAny, PyErr, PyObject, PyResult, Python};
+use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
 use pythonize::pythonize;
 use tracing::error;
 
@@ -112,7 +112,7 @@ impl FallibleHandler for PythonHandler {
                 topic,
                 partition,
                 offset,
-                timestamp: timestamp.into_py(py),
+                timestamp,
                 key,
                 payload,
             };

@@ -1,6 +1,7 @@
 //! Defines the `Message` struct and its associated methods for representing
 //! Kafka messages.
 
+use chrono::{DateTime, Utc};
 use prosody::consumer::message::MessageContext;
 use prosody::{Key, Offset, Partition, Topic};
 use pyo3::types::PyAnyMethods;
@@ -15,7 +16,7 @@ pub struct Message {
     pub topic: Topic,
     pub partition: Partition,
     pub offset: Offset,
-    pub timestamp: PyObject,
+    pub timestamp: DateTime<Utc>,
     pub key: Key,
     pub payload: PyObject,
 }
@@ -53,8 +54,8 @@ impl Message {
     ///
     /// Returns:
     ///     datetime: The message timestamp.
-    pub fn timestamp(&self) -> &PyObject {
-        &self.timestamp
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        self.timestamp
     }
 
     /// Returns the key of the message.
@@ -142,7 +143,6 @@ impl Message {
     ///     otherwise.
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        visit.call(&self.timestamp)?;
         visit.call(&self.payload)?;
         Ok(())
     }
