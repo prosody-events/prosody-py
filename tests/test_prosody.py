@@ -11,10 +11,12 @@ class TestHandler(AbstractMessageHandler):
 
     def __init__(self):
         self.messages: List[Message] = []
+        self.message_count = 0
         self.message_received = asyncio.Event()
 
     async def handle(self, context: Context, message: Message) -> None:
         self.messages.append(message)
+        self.message_count += 1
         self.message_received.set()
 
 
@@ -101,9 +103,12 @@ async def test_multiple_messages(client):
         await client.send(test_topic, key, payload)
 
     # Wait for all messages to be received
-    for _ in messages:
-        await asyncio.wait_for(handler.message_received.wait(), timeout=5.0)
-        handler.message_received.clear()  # Reset the event for the next message
+    async def wait_for_messages():
+        while handler.message_count < len(messages):
+            await handler.message_received.wait()
+            handler.message_received.clear()
+
+    await asyncio.wait_for(wait_for_messages(), timeout=5.0)
 
     # Check if all messages were received
     assert len(handler.messages) == len(messages)
