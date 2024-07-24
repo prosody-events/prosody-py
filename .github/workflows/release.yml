@@ -23,12 +23,9 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
+      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
-          repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: 'false'
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -58,12 +55,9 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
+      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
-          repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: 'false'
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -89,12 +83,9 @@ jobs:
             target: x64
     steps:
       - uses: actions/checkout@v4
+      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
-          repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: 'false'
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -122,12 +113,9 @@ jobs:
             target: aarch64
     steps:
       - uses: actions/checkout@v4
+      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
-          repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: 'false'
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -147,12 +135,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
-          repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: 'false'
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
