@@ -109,8 +109,8 @@ client = ProsodyClient(
 ### Ensuring Idempotent Message Handlers
 
 Idempotent message handlers are crucial for maintaining data consistency, fault tolerance, and scalability when working
-with Kafka and Prosody. They ensure that processing a message multiple times has the same effect as processing it once,
-which is essential for handling redeliveries, restarts, and rebalancing.
+with distributed, event-based systems. They ensure that processing a message multiple times has the same effect as
+processing it once, which is essential for recovering from failures.
 
 Strategies for achieving idempotence:
 
