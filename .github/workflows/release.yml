@@ -29,13 +29,6 @@ jobs:
       - uses: de-vri-es/setup-git-credentials@v2
         with:
           credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
-      - name: Setup upterm session
-        uses: lhotari/action-upterm@v1
-        with:
-          ## limits ssh access and adds the ssh public key for the user which triggered the workflow
-          limit-access-to-actor: true
-          ## limits ssh access and adds the ssh public keys of the listed GitHub users
-          limit-access-to-users: joshg-rg
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -45,6 +38,9 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
+          docker-options: >-
+            -v /home/runner/.gitconfig:/root/.gitconfig:ro
+            -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -79,6 +75,9 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: musllinux_1_2
+          docker-options: >-
+            -v /home/runner/.gitconfig:/root/.gitconfig:ro
+            -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
