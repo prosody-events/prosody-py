@@ -4,11 +4,23 @@ requires = ["maturin>=1.6,<2.0"]
 
 [project]
 classifiers = [
+    "Development Status :: 4 :: Beta",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
 ]
+description = "High-performance Python bindings for a Rust-based Kafka client"
 dynamic = ["version"]
+keywords = ["async", "client", "distributed", "kafka", "messaging"]
 name = "prosody"
 requires-python = ">=3.8"
 
