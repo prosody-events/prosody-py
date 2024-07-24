@@ -31,6 +31,8 @@ jobs:
           credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -63,6 +65,8 @@ jobs:
           credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -92,6 +96,8 @@ jobs:
           credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -121,6 +127,8 @@ jobs:
           credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -140,6 +148,8 @@ jobs:
           credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build sdist
         uses: PyO3/maturin-action@v1
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           command: sdist
           args: --out dist
