@@ -37,7 +37,6 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
-          working-directory: /home/runner/work/prosody-py
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -71,7 +70,6 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: musllinux_1_2
-          working-directory: /home/runner/work/prosody-py
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -101,7 +99,6 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
-          working-directory: /home/runner/work/prosody-py
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -132,7 +129,6 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
-          working-directory: /home/runner/work/prosody-py
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -152,7 +148,6 @@ jobs:
         with:
           command: sdist
           args: --out dist
-          working-directory: /home/runner/work/prosody-py
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
