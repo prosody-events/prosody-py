@@ -45,7 +45,7 @@ client.subscribe(MyHandler())
 # Send a message
 await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
 
-# To stop consuming
+# To stop consuming and ensure all work is completed
 await client.unsubscribe()
 ```
 
@@ -123,6 +123,43 @@ same key. The Python bindings closely mirror the architecture of the underlying 
 - **Concurrent Processing**: Different keys can be processed concurrently, even within the same partition.
 - **Backpressure Management**: If a partition becomes backed up, Prosody will pause consumption from that specific
   partition.
+
+## Proper Shutdown
+
+Unsubscribe from topics before exiting your application. This ensures that:
+
+1. All in-flight work is completed and committed.
+2. Rebalancing is not delayed, allowing other consumers to quickly take over the partitions.
+3. Resources are properly released.
+
+To shut down the client, always call the `unsubscribe()` method:
+
+```python
+await client.unsubscribe()
+```
+
+Implement proper shutdown handling in your application, for example:
+
+```python
+import signal
+import asyncio
+
+
+async def shutdown(signal, loop):
+    print(f"Received exit signal {signal.name}...")
+    await client.unsubscribe()
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    [task.cancel() for task in tasks]
+    await asyncio.gather(*tasks, return_exceptions=True)
+    loop.stop()
+
+
+loop = asyncio.get_event_loop()
+signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
+for s in signals:
+    loop.add_signal_handler(
+        s, lambda s=s: asyncio.create_task(shutdown(s, loop)))
+```
 
 ## API Reference
 
