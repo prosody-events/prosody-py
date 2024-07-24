@@ -27,6 +27,7 @@ jobs:
         with:
           repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          clean: false
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -60,6 +61,7 @@ jobs:
         with:
           repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          clean: false
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -89,6 +91,7 @@ jobs:
         with:
           repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          clean: false
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -120,6 +123,7 @@ jobs:
         with:
           repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          clean: false
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -143,6 +147,7 @@ jobs:
         with:
           repository: RealGeeks/prosody
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          clean: false
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
