@@ -16,7 +16,7 @@ name = "prosody"
 [dependencies]
 chrono = "0.4"
 once_cell = "1.19"
-prosody = { git = "https://github.com/RealGeeks/prosody.git", rev = "dcd277bee7d70d5fb096f3a7021fd963d1f27e7b" } # replace once we have a package manager
+prosody = { git = "https://github.com/RealGeeks/prosody.git", rev = "3967e01854c2f937f81d6df982bdc313d4c86d6c" } # replace once we have a package manager
 pyo3 = { version = "0.21", features = ["chrono", "experimental-async"] }
 pyo3-asyncio-0-21 = { version = "0.21", features = ["tokio-runtime"] }
 pyo3-log = "0.11"
