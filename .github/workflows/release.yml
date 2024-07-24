@@ -28,7 +28,7 @@ jobs:
           python-version: 3.x
       - uses: de-vri-es/setup-git-credentials@v2
         with:
-          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
+          credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -62,7 +62,7 @@ jobs:
           python-version: 3.x
       - uses: de-vri-es/setup-git-credentials@v2
         with:
-          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
+          credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -93,7 +93,7 @@ jobs:
           architecture: ${{ matrix.platform.target }}
       - uses: de-vri-es/setup-git-credentials@v2
         with:
-          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
+          credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -124,7 +124,7 @@ jobs:
           python-version: 3.x
       - uses: de-vri-es/setup-git-credentials@v2
         with:
-          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
+          credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -145,7 +145,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: de-vri-es/setup-git-credentials@v2
         with:
-          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
+          credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         env:
