@@ -25,6 +25,7 @@ pip install prosody
 ```python
 from prosody import ProsodyClient, AbstractMessageHandler, Context, Message
 
+# Initialize the client with Kafka bootstrap servers, consumer group, and topics
 client = ProsodyClient(
     bootstrap_servers="localhost:9092",
     group_id="my-consumer-group",
@@ -32,16 +33,20 @@ client = ProsodyClient(
 )
 
 
+# Define a custom message handler
 class MyHandler(AbstractMessageHandler):
     async def handle(self, context: Context, message: Message) -> None:
+        # Process the received message
         print(f"Received message: {message}")
 
 
+# Subscribe to messages using the custom handler
 client.subscribe(MyHandler())
 
+# Send a message to a topic
 await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
 
-# Ensure proper shutdown
+# Ensure proper shutdown when done
 await client.unsubscribe()
 ```
 
@@ -75,9 +80,10 @@ Refer to the API documentation for detailed information on all parameters and th
 Pipeline mode is the default mode. Ensures ordered processing, retrying failed operations indefinitely:
 
 ```python
+# Initialize client in pipeline mode
 client = ProsodyClient(
     bootstrap_servers="localhost:9092",
-    mode="pipeline",
+    mode="pipeline",  # Explicitly set pipeline mode (this is the default)
     group_id="my-consumer-group",
     subscribed_topics="my-topic"
 )
@@ -88,12 +94,13 @@ client = ProsodyClient(
 Prioritizes quick processing, sending persistently failing messages to a failure topic:
 
 ```python
+# Initialize client in low-latency mode
 client = ProsodyClient(
     bootstrap_servers="localhost:9092",
-    mode="low-latency",
+    mode="low-latency",  # Set low-latency mode
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
-    failure_topic="failed-messages"
+    failure_topic="failed-messages"  # Specify a topic for failed messages
 )
 ```
 
@@ -142,6 +149,7 @@ Strategies for achieving idempotence:
 Always unsubscribe from topics before exiting your application:
 
 ```python
+# Ensure proper shutdown
 await client.unsubscribe()
 ```
 
@@ -160,13 +168,18 @@ import asyncio
 
 async def shutdown(signal, loop):
     print(f"Received exit signal {signal.name}...")
+    # Unsubscribe from Kafka topics
     await client.unsubscribe()
+    # Cancel all running tasks
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     [task.cancel() for task in tasks]
+    # Wait for all tasks to be cancelled
     await asyncio.gather(*tasks, return_exceptions=True)
+    # Stop the event loop
     loop.stop()
 
 
+# Set up signal handlers for graceful shutdown
 loop = asyncio.get_event_loop()
 signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
 for s in signals:
@@ -192,6 +205,7 @@ An abstract base class for user-defined handlers:
 class AbstractMessageHandler(ABC):
     @abstractmethod
     async def handle(self, context: Context, message: Message) -> None:
+        # Implement your message handling logic here
         pass
 ```
 
