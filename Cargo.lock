@@ -785,7 +785,7 @@ dependencies = [
 [[package]]
 name = "prosody"
 version = "0.1.0"
-source = "git+ssh://git@github.com/RealGeeks/prosody.git?rev=d7cfffb94e58e24b3734ee942a619b8a89adba07#d7cfffb94e58e24b3734ee942a619b8a89adba07"
+source = "git+https://github.com/RealGeeks/prosody.git?rev=d7cfffb94e58e24b3734ee942a619b8a89adba07#d7cfffb94e58e24b3734ee942a619b8a89adba07"
 dependencies = [
  "ahash",
  "chrono",
