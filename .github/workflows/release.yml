@@ -23,16 +23,12 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
-      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
-        with:
-          token: ${{ secrets.GH_ALL_REPOS_RW }}
-          name: rg-geekbot
-          actor: rg-geekbot
-          email: geekbot@hq.realgeeks.com
-          global: true
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -59,16 +55,12 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
-      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
-        with:
-          token: ${{ secrets.GH_ALL_REPOS_RW }}
-          name: rg-geekbot
-          actor: rg-geekbot
-          email: geekbot@hq.realgeeks.com
-          global: true
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -91,17 +83,13 @@ jobs:
             target: x64
     steps:
       - uses: actions/checkout@v4
-      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
-        with:
-          token: ${{ secrets.GH_ALL_REPOS_RW }}
-          name: rg-geekbot
-          actor: rg-geekbot
-          email: geekbot@hq.realgeeks.com
-          global: true
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
           architecture: ${{ matrix.platform.target }}
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -125,16 +113,12 @@ jobs:
             target: aarch64
     steps:
       - uses: actions/checkout@v4
-      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
-        with:
-          token: ${{ secrets.GH_ALL_REPOS_RW }}
-          name: rg-geekbot
-          actor: rg-geekbot
-          email: geekbot@hq.realgeeks.com
-          global: true
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -151,13 +135,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oleksiyrudenko/gha-git-credentials@v2-latest
+      - uses: de-vri-es/setup-git-credentials@v2
         with:
-          token: ${{ secrets.GH_ALL_REPOS_RW }}
-          name: rg-geekbot
-          actor: rg-geekbot
-          email: geekbot@hq.realgeeks.com
-          global: true
+          credentials: ${{ secrets.GH_ALL_REPOS_RW }}
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
