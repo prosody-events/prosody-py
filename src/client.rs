@@ -258,6 +258,8 @@ impl ProsodyClient {
     /// Raises:
     ///     RuntimeError: If there's an error sending the message.
     async fn send(&self, topic: String, key: String, payload: PyObject) -> PyResult<()> {
+        // because this is an async function, we can't hold a bound reference to the
+        // payload
         let payload = Python::with_gil(|py| depythonize_bound::<Value>(payload.bind(py).clone()))?;
 
         self.producer
