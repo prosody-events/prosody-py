@@ -30,7 +30,6 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          GITHUB_TOKEN: ${{ secrets.GH_ALL_REPOS_RW }}
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -63,7 +62,6 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          GITHUB_TOKEN: ${{ secrets.GH_ALL_REPOS_RW }}
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -93,7 +91,6 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          GITHUB_TOKEN: ${{ secrets.GH_ALL_REPOS_RW }}
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -123,7 +120,6 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          GITHUB_TOKEN: ${{ secrets.GH_ALL_REPOS_RW }}
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -143,7 +139,6 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          GITHUB_TOKEN: ${{ secrets.GH_ALL_REPOS_RW }}
         with:
           command: sdist
           args: --out dist
