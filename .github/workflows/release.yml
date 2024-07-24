@@ -26,6 +26,10 @@ jobs:
       - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          name: rg-geekbot
+          actor: rg-geekbot
+          email: geekbot@hq.realgeeks.com
+          global: true
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -58,6 +62,10 @@ jobs:
       - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          name: rg-geekbot
+          actor: rg-geekbot
+          email: geekbot@hq.realgeeks.com
+          global: true
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -86,6 +94,10 @@ jobs:
       - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          name: rg-geekbot
+          actor: rg-geekbot
+          email: geekbot@hq.realgeeks.com
+          global: true
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -116,6 +128,10 @@ jobs:
       - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          name: rg-geekbot
+          actor: rg-geekbot
+          email: geekbot@hq.realgeeks.com
+          global: true
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
@@ -138,6 +154,10 @@ jobs:
       - uses: oleksiyrudenko/gha-git-credentials@v2-latest
         with:
           token: ${{ secrets.GH_ALL_REPOS_RW }}
+          name: rg-geekbot
+          actor: rg-geekbot
+          email: geekbot@hq.realgeeks.com
+          global: true
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
