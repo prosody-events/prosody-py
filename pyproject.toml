@@ -12,6 +12,13 @@ dynamic = ["version"]
 name = "prosody"
 requires-python = ">=3.8"
 
+[project.optional-dependencies]
+dev = ["pytest-asyncio>=0.21.0", "pytest>=7.3.1"]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
