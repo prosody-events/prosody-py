@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+[a-z0-9]*"
   workflow_dispatch:
 
 permissions:
@@ -170,11 +170,15 @@ jobs:
     needs: [ linux, musllinux, windows, macos, sdist ]
     steps:
       - uses: actions/download-artifact@v4
+      - name: Setup upterm session
+        uses: lhotari/action-upterm@v1
+        with:
+          limit-access-to-actor: true
       - name: Publish to Gemfury
         uses: PyO3/maturin-action@v1
         env:
           REPOSITORY_URL: https://push.fury.io/realgeeks/
-          MATURIN_PYPI_TOKEN: ${{ secrets.FURY_TOKEN }}
+          MATURIN_USERNAME: ${{ secrets.FURY_TOKEN }}
         with:
           command: upload
           args: --non-interactive --skip-existing wheels-*/*
