@@ -174,8 +174,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           MATURIN_REPOSITORY_URL: https://push.fury.io/realgeeks/
-          MATURIN_USERNAME: __token__
-          MATURIN_PASSWORD: ${{ secrets.FURY_TOKEN }}
+          MATURIN_PYPI_TOKEN: ${{ secrets.GEMFURY_PUSH_TOKEN }}
         with:
           command: upload
           args: --non-interactive --verbose --skip-existing wheels-*/*
