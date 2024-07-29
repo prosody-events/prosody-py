@@ -173,7 +173,7 @@ jobs:
       - name: Publish to Gemfury
         uses: PyO3/maturin-action@v1
         env:
-          REPOSITORY_URL: https://pypi.fury.io/REDACTED/realgeeks/
+          REPOSITORY_URL: https://push.fury.io/realgeeks/
           MATURIN_PYPI_TOKEN: ${{ secrets.FURY_TOKEN }}
         with:
           command: upload
