@@ -173,7 +173,8 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           MATURIN_REPOSITORY_URL: https://realgeeks.jfrog.io/artifactory/api/pypi/dev-pypi
-          MATURIN_PYPI_TOKEN: ${{ secrets.ARTIFACTORY_CI_REF_TOKEN }}
+          MATURIN_USERNAME: ${{ secrets.ARTIFACTORY_CI_USERNAME }}
+          MATURIN_PASSWORD: ${{ secrets.ARTIFACTORY_CI_TOKEN }}
         with:
           command: upload
           args: --non-interactive --skip-existing wheels-*/*
