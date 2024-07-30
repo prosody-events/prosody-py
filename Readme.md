@@ -159,32 +159,47 @@ This ensures:
 2. Quick rebalancing, allowing other consumers to take over partitions
 3. Proper release of resources
 
-Implement shutdown handling in your application:
+Implement shutdown handling in your application using an asyncio event:
 
 ```python
-import signal
 import asyncio
+import signal
+from prosody import ProsodyClient
 
 
-async def shutdown(signal, loop):
-    print(f"Received exit signal {signal.name}...")
-    # Unsubscribe from Kafka topics
+async def main():
+    # Create an event to signal when to shut down
+    shutdown_event = asyncio.Event()
+
+    # Set up signal handlers
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        asyncio.get_running_loop().add_signal_handler(
+            sig, lambda s=sig: asyncio.create_task(shutdown(shutdown_event, s))
+        )
+
+    client = ProsodyClient(
+        bootstrap_servers="localhost:9092",
+        group_id="my-consumer-group",
+        subscribed_topics="my-topic"
+    )
+
+    # Subscribe to messages using your custom handler
+    client.subscribe(MyHandler())
+
+    # Wait for the shutdown event
+    await shutdown_event.wait()
+
+    # Unsubscribe
     await client.unsubscribe()
-    # Cancel all running tasks
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    [task.cancel() for task in tasks]
-    # Wait for all tasks to be cancelled
-    await asyncio.gather(*tasks, return_exceptions=True)
-    # Stop the event loop
-    loop.stop()
 
 
-# Set up signal handlers for graceful shutdown
-loop = asyncio.get_event_loop()
-signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
-for s in signals:
-    loop.add_signal_handler(
-        s, lambda s=s: asyncio.create_task(shutdown(s, loop)))
+async def shutdown(event: asyncio.Event, signal: signal.Signals):
+    print(f"Received signal {signal.name}. Initiating shutdown...")
+    event.set()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
 ```
 
 ## API Reference
