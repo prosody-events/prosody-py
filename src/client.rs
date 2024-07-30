@@ -29,8 +29,61 @@ use tracing::info;
 use crate::handler::PythonHandler;
 use crate::RUNTIME;
 
-/// A Python-compatible Kafka client that supports message production and
-/// consumption.
+/// A client for interacting with Kafka using the Prosody library.
+///
+/// Args:
+///     bootstrap_servers (Optional[Union[str, List[str]]]):
+///         A string or list of 'host[:port]' strings that the producer
+///         should contact to bootstrap initial cluster metadata.
+///         Default is None.
+///     mock (Optional[bool]):
+///         If True, uses a mock Kafka client for testing.
+///         Default is None.
+///     send_timeout (Optional[Union[float, timedelta]]):
+///         The timeout for message send operations.
+///         Default is None.
+///     group_id (Optional[str]):
+///         The name of the consumer group to join for dynamic partition
+///         assignment and offset commits. Default is None.
+///     subscribed_topics (Optional[Union[str, List[str]]]):
+///         A string or list of strings naming topics to which to subscribe.
+///         Default is None.
+///     max_uncommitted (Optional[int]):
+///         The maximum number of uncommitted messages.
+///         Default is None.
+///     max_enqueued_per_key (Optional[int]):
+///         The maximum number of enqueued messages per key.
+///         Default is None.
+///     partition_shutdown_timeout (Optional[Union[float, timedelta]]):
+///         The timeout for partition shutdown.
+///         Default is None.
+///     poll_interval (Optional[Union[float, timedelta]]):
+///         The time to wait between polling for new messages.
+///         Default is None.
+///     commit_interval (Optional[Union[float, timedelta]]):
+///         The time between offset commit operations.
+///         Default is None.
+///     mode (Optional[str]):
+///         The operating mode for the client. Can be 'pipeline' or
+///         'low-latency'. Default is None.
+///     retry_base (Optional[int]):
+///         The base value for exponential backoff in retries.
+///         Default is None.
+///     max_retries (Optional[int]):
+///         The maximum number of retries for failed operations.
+///         Default is None.
+///     max_retry_delay (Optional[Union[float, timedelta]]):
+///         The maximum delay between retries.
+///         Default is None.
+///     failure_topic (Optional[str]):
+///         The topic to which failed messages are sent in low-latency mode.
+///         Default is None.
+///
+/// Raises:
+///     ValueError: If the configuration is invalid, e.g., invalid bootstrap
+///         servers, incompatible mode and failure topic settings.
+///     RuntimeError: If the client fails to initialize, e.g., cannot
+///         connect to Kafka servers.
 #[pyclass]
 pub struct ProsodyClient {
     producer: ProsodyProducer,
@@ -132,61 +185,6 @@ impl Display for ConsumerState {
 
 #[pymethods]
 impl ProsodyClient {
-    /// A client for interacting with Kafka using the Prosody library.
-    ///
-    /// Args:
-    ///     bootstrap_servers (Optional[Union[str, List[str]]]):
-    ///         A string or list of 'host[:port]' strings that the producer
-    ///         should contact to bootstrap initial cluster metadata.
-    ///         Default is None.
-    ///     mock (Optional[bool]):
-    ///         If True, uses a mock Kafka client for testing.
-    ///         Default is None.
-    ///     send_timeout (Optional[Union[float, timedelta]]):
-    ///         The timeout for message send operations.
-    ///         Default is None.
-    ///     group_id (Optional[str]):
-    ///         The name of the consumer group to join for dynamic partition
-    ///         assignment and offset commits. Default is None.
-    ///     subscribed_topics (Optional[Union[str, List[str]]]):
-    ///         A string or list of strings naming topics to which to subscribe.
-    ///         Default is None.
-    ///     max_uncommitted (Optional[int]):
-    ///         The maximum number of uncommitted messages.
-    ///         Default is None.
-    ///     max_enqueued_per_key (Optional[int]):
-    ///         The maximum number of enqueued messages per key.
-    ///         Default is None.
-    ///     partition_shutdown_timeout (Optional[Union[float, timedelta]]):
-    ///         The timeout for partition shutdown.
-    ///         Default is None.
-    ///     poll_interval (Optional[Union[float, timedelta]]):
-    ///         The time to wait between polling for new messages.
-    ///         Default is None.
-    ///     commit_interval (Optional[Union[float, timedelta]]):
-    ///         The time between offset commit operations.
-    ///         Default is None.
-    ///     mode (Optional[str]):
-    ///         The operating mode for the client. Can be 'pipeline' or
-    ///         'low-latency'. Default is None.
-    ///     retry_base (Optional[int]):
-    ///         The base value for exponential backoff in retries.
-    ///         Default is None.
-    ///     max_retries (Optional[int]):
-    ///         The maximum number of retries for failed operations.
-    ///         Default is None.
-    ///     max_retry_delay (Optional[Union[float, timedelta]]):
-    ///         The maximum delay between retries.
-    ///         Default is None.
-    ///     failure_topic (Optional[str]):
-    ///         The topic to which failed messages are sent in low-latency mode.
-    ///         Default is None.
-    ///
-    /// Raises:
-    ///     ValueError: If the configuration is invalid, e.g., invalid bootstrap
-    ///         servers, incompatible mode and failure topic settings.
-    ///     RuntimeError: If the client fails to initialize, e.g., cannot
-    ///         connect to Kafka servers.
     #[new]
     #[pyo3(signature = (**config))]
     fn new(config: Option<&Bound<PyDict>>) -> PyResult<Self> {
