@@ -5,29 +5,34 @@
 //! supporting both message production and consumption. It offers configurable
 //! operational modes, retry mechanisms, and failure handling strategies.
 
-use std::fmt;
-use std::fmt::{Display, Formatter};
 use std::mem::take;
-use std::str::FromStr;
-use std::time::Duration;
 
-use prosody::consumer::failure::retry::{RetryConfiguration, RetryConfigurationBuilder};
-use prosody::consumer::failure::topic::{
-    FailureTopicConfiguration, FailureTopicConfigurationBuilder,
-};
-use prosody::consumer::{ConsumerConfiguration, ConsumerConfigurationBuilder, ProsodyConsumer};
-use prosody::producer::{ProducerConfiguration, ProducerConfigurationBuilder, ProsodyProducer};
-use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods, PyTypeMethods};
+use prosody::consumer::failure::retry::RetryConfiguration;
+use prosody::consumer::failure::topic::FailureTopicConfiguration;
+use prosody::consumer::{ConsumerConfiguration, ProsodyConsumer};
+use prosody::producer::{ProducerConfiguration, ProsodyProducer};
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyTypeMethods};
 use pyo3::{
-    pyclass, pymethods, Bound, PyAny, PyErr, PyObject, PyResult, PyTraverseError, PyVisit, Python,
+    pyclass, pymethods, Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python,
 };
 use pythonize::depythonize_bound;
 use serde_json::Value;
 use tracing::info;
 
+use crate::client::config::{
+    decode_duration, decode_optional_duration, string_or_vec, try_build_config,
+};
+use crate::client::format::format_list;
+use crate::client::mode::{Mode, ModeConfiguration};
+use crate::client::state::ConsumerState;
 use crate::handler::PythonHandler;
 use crate::RUNTIME;
+
+mod config;
+mod format;
+mod mode;
+mod state;
 
 /// Pipeline mode for the Prosody client.
 const PIPELINE_MODE: &str = "pipeline";
@@ -41,92 +46,6 @@ pub struct ProsodyClient {
     producer: ProsodyProducer,
     producer_config: ProducerConfiguration,
     consumer: ConsumerState,
-}
-
-/// Operational modes for the Prosody client.
-#[derive(Copy, Clone, Debug, Default)]
-enum Mode {
-    #[default]
-    Pipeline,
-    LowLatency,
-}
-
-impl Display for Mode {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Mode::Pipeline => f.write_str(PIPELINE_MODE),
-            Mode::LowLatency => f.write_str(LOW_LATENCY_MODE),
-        }
-    }
-}
-
-impl FromStr for Mode {
-    type Err = PyErr;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            PIPELINE_MODE => Ok(Mode::Pipeline),
-            LOW_LATENCY_MODE => Ok(Mode::LowLatency),
-            unknown => Err(PyValueError::new_err(format!("unknown mode: '{unknown}'"))),
-        }
-    }
-}
-
-/// Configuration for different operational modes of the Prosody client.
-#[derive(Debug)]
-enum ModeConfiguration {
-    Pipeline {
-        consumer: ConsumerConfiguration,
-        retry: RetryConfiguration,
-    },
-    LowLatency {
-        consumer: ConsumerConfiguration,
-        retry: RetryConfiguration,
-        failure_topic: FailureTopicConfiguration,
-    },
-}
-
-impl ModeConfiguration {
-    /// Returns the mode of the configuration.
-    fn mode(&self) -> Mode {
-        match self {
-            ModeConfiguration::Pipeline { .. } => Mode::Pipeline,
-            ModeConfiguration::LowLatency { .. } => Mode::LowLatency,
-        }
-    }
-
-    /// Returns a reference to the consumer configuration.
-    fn consumer(&self) -> &ConsumerConfiguration {
-        match self {
-            ModeConfiguration::Pipeline { consumer, .. }
-            | ModeConfiguration::LowLatency { consumer, .. } => consumer,
-        }
-    }
-}
-
-/// Current state of the consumer.
-#[derive(Default)]
-enum ConsumerState {
-    #[default]
-    Unconfigured,
-    Configured(ModeConfiguration),
-    Running {
-        consumer: ProsodyConsumer,
-        config: ModeConfiguration,
-        handler: PythonHandler,
-    },
-}
-
-impl Display for ConsumerState {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let state = match self {
-            ConsumerState::Unconfigured => "unconfigured",
-            ConsumerState::Configured(_) => "configured",
-            ConsumerState::Running { .. } => "running",
-        };
-
-        f.write_str(state)
-    }
 }
 
 #[pymethods]
@@ -154,6 +73,7 @@ impl ProsodyClient {
         let mut retry_builder = RetryConfiguration::builder();
         let mut failure_topic_builder = FailureTopicConfiguration::builder();
 
+        // If no config is provided, build with default settings
         let Some(config) = config else {
             return try_build_config(
                 mode,
@@ -286,6 +206,8 @@ impl ProsodyClient {
     /// already subscribed.
     fn subscribe(&mut self, handler: &Bound<PyAny>) -> PyResult<()> {
         let _enter = RUNTIME.enter();
+
+        // Extract the configuration or return an error if not in the correct state
         let config = match take(&mut self.consumer) {
             ConsumerState::Unconfigured => {
                 return Err(PyRuntimeError::new_err(
@@ -425,10 +347,6 @@ impl ProsodyClient {
     /// Traverses Python objects contained in this Client for garbage
     /// collection.
     ///
-    /// This method is called by Python's garbage collector to traverse
-    /// Python objects that are part of this client. It ensures that
-    /// Python objects referenced by the client are properly tracked.
-    ///
     /// # Arguments
     ///
     /// * `visit` - A `PyVisit` object used to visit Python objects.
@@ -446,173 +364,4 @@ impl ProsodyClient {
 
         Ok(())
     }
-}
-
-/// Attempts to build a `ProsodyClient` configuration based on the provided
-/// builders.
-///
-/// # Arguments
-///
-/// * `mode` - The operational mode for the client.
-/// * `producer_builder` - Builder for the producer configuration.
-/// * `consumer_builder` - Builder for the consumer configuration.
-/// * `retry_builder` - Builder for the retry configuration.
-/// * `failure_topic_builder` - Builder for the failure topic configuration.
-///
-/// # Returns
-///
-/// A `PyResult` containing the configured `ProsodyClient` if successful.
-///
-/// # Errors
-///
-/// Returns a `PyValueError` if producer configuration, retry configuration,
-/// or failure topic configuration fails.
-/// Returns a `PyRuntimeError` if producer initialization fails.
-fn try_build_config(
-    mode: Mode,
-    producer_builder: &ProducerConfigurationBuilder,
-    consumer_builder: &ConsumerConfigurationBuilder,
-    retry_builder: &RetryConfigurationBuilder,
-    failure_topic_builder: &FailureTopicConfigurationBuilder,
-) -> PyResult<ProsodyClient> {
-    let producer_config = producer_builder.build().map_err(|error| {
-        PyValueError::new_err(format!("failed to configure producer: {error:#}"))
-    })?;
-
-    let producer = ProsodyProducer::new(&producer_config).map_err(|error| {
-        PyRuntimeError::new_err(format!("failed to initialize producer: {error:#}"))
-    })?;
-
-    let retry = retry_builder.build().map_err(|error| {
-        PyValueError::new_err(format!(
-            "failed to configure retry failure strategy: {error:#}"
-        ))
-    })?;
-
-    let consumer = match consumer_builder.build().ok() {
-        None => ConsumerState::Unconfigured,
-        Some(consumer) => ConsumerState::Configured(match mode {
-            Mode::Pipeline => ModeConfiguration::Pipeline { consumer, retry },
-            Mode::LowLatency => {
-                let failure_topic = failure_topic_builder.build().map_err(|error| {
-                    PyValueError::new_err(format!(
-                        "failed to configure failure topic strategy: {error:#}"
-                    ))
-                })?;
-
-                ModeConfiguration::LowLatency {
-                    consumer,
-                    retry,
-                    failure_topic,
-                }
-            }
-        }),
-    };
-
-    Ok(ProsodyClient {
-        producer,
-        producer_config,
-        consumer,
-    })
-}
-
-/// Extracts a vector of strings from a Python object.
-///
-/// # Arguments
-///
-/// * `value` - A Python object that is either a string or a list of strings.
-///
-/// # Returns
-///
-/// A `PyResult` containing a vector of strings.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if the extraction fails.
-fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
-    if let Ok(string) = value.extract::<String>() {
-        return Ok(vec![string]);
-    }
-
-    value.extract()
-}
-
-/// Decodes a Python object into a Rust `Duration`.
-///
-/// # Arguments
-///
-/// * `value` - A Python object representing a duration (either a `timedelta` or
-///   a float).
-///
-/// # Returns
-///
-/// A `PyResult` containing the decoded `Duration`.
-///
-/// # Errors
-///
-/// Returns a `PyTypeError` if the input is neither a `timedelta` nor a float.
-/// Returns a `PyValueError` if the float conversion fails.
-fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
-    if let Ok(delta) = value.downcast::<PyDelta>() {
-        let days = u64::try_from(delta.get_days())?;
-        let seconds = u64::try_from(delta.get_seconds())?;
-        let micros = u64::try_from(delta.get_microseconds())?;
-
-        let mut duration = Duration::from_secs(days * 24 * 60 * 60);
-        duration += Duration::from_secs(seconds);
-        duration += Duration::from_micros(micros);
-        return Ok(duration);
-    };
-
-    if let Ok(seconds) = value.extract::<f64>() {
-        let duration = Duration::try_from_secs_f64(seconds)
-            .map_err(|error| PyValueError::new_err(error.to_string()))?;
-
-        return Ok(duration);
-    }
-
-    Err(PyTypeError::new_err(
-        "expected a timedelta or non-negative float representing seconds",
-    ))
-}
-
-/// Decodes an optional Python object into an optional Rust `Duration`.
-///
-/// # Arguments
-///
-/// * `value` - An optional Python object representing a duration.
-///
-/// # Returns
-///
-/// A `PyResult` containing an `Option<Duration>`.
-///
-/// # Errors
-///
-/// Propagates errors from `decode_duration`.
-fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> {
-    Ok(if value.is_none() {
-        None
-    } else {
-        Some(decode_duration(value)?)
-    })
-}
-
-/// Formats a slice of string-like values into a Python-style list
-/// representation.
-///
-/// # Arguments
-///
-/// * `value` - A slice of values that can be referenced as strings.
-///
-/// # Returns
-///
-/// A `String` representing the formatted list.
-fn format_list(value: &[impl AsRef<str>]) -> String {
-    let items = value
-        .iter()
-        .map(|s| format!("'{}'", s.as_ref()))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    format!("[{items}]")
 }
