@@ -169,10 +169,10 @@ jobs:
     needs: [ linux, musllinux, windows, macos, sdist ]
     steps:
       - uses: actions/download-artifact@v4
-      - name: Publish to Artifactory
+      - name: Publish to Gemfury
         uses: PyO3/maturin-action@v1
         env:
-          MATURIN_REPOSITORY_URL: https://realgeeks.jfrog.io/artifactory/api/pypi/dev-pypi
+          MATURIN_REPOSITORY_URL: https://push.fury.io/realgeeks/
           MATURIN_USERNAME: ${{ secrets.GEMFURY_PUSH_TOKEN }}
           MATURIN_PASSWORD:
         with:
