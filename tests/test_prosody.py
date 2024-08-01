@@ -19,7 +19,7 @@ provider.add_span_processor(processor)
 trace.set_tracer_provider(provider)
 
 # Creates a tracer from the global tracer provider
-tracer = trace.get_tracer("my.tracer.name")
+tracer = trace.get_tracer("prosody-test")
 
 
 class TestHandler(AbstractMessageHandler):
