@@ -4,16 +4,10 @@ from typing import List
 import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import (
-    BatchSpanProcessor,
-    ConsoleSpanExporter,
-)
 
 from prosody import ProsodyClient, AbstractMessageHandler, Message, Context
 
 provider = TracerProvider()
-processor = BatchSpanProcessor(ConsoleSpanExporter())
-provider.add_span_processor(processor)
 
 # Sets the global default tracer provider
 trace.set_tracer_provider(provider)
@@ -31,9 +25,10 @@ class TestHandler(AbstractMessageHandler):
         self.message_received = asyncio.Event()
 
     async def handle(self, context: Context, message: Message) -> None:
-        self.messages.append(message)
-        self.message_count += 1
-        self.message_received.set()
+        with tracer.start_as_current_span("receive"):
+            self.messages.append(message)
+            self.message_count += 1
+            self.message_received.set()
 
 
 @pytest.fixture

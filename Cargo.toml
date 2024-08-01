@@ -7,10 +7,10 @@ license = "All rights reserved."
 name = "prosody-py"
 readme = "Readme.md"
 repository = "https://github.com/RealGeeks/prosody-py"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 
 [package.metadata.maturin]
-version = "0.1.0a6"
+version = "0.1.0a7"
 
 [lib]
 crate-type = ["cdylib"]
