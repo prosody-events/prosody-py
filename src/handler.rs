@@ -147,9 +147,9 @@ impl FallibleHandler for PythonHandler {
             };
 
             // Extract and attach the OpenTelemetry context
-            let context_dict = serialized_context.into_py_dict_bound(py);
-            let kwargs = [("carrier", context_dict)].into_py_dict_bound(py);
-            let otel_context = self.extract.call_bound(py, (), Some(&kwargs))?;
+            let carrier = serialized_context.into_py_dict_bound(py);
+            let otel_context = self.extract.call1(py, (carrier,))?;
+
             self.attach.call1(py, (otel_context,))?;
 
             // Call the Python handle method and convert it to a Rust future
