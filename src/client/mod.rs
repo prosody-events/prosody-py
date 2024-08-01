@@ -5,20 +5,23 @@
 //! supporting both message production and consumption. It offers configurable
 //! operational modes, retry mechanisms, and failure handling strategies.
 
+use std::collections::HashMap;
 use std::mem::take;
 
+use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::failure::retry::RetryConfiguration;
 use prosody::consumer::failure::topic::FailureTopicConfiguration;
 use prosody::consumer::{ConsumerConfiguration, ProsodyConsumer};
 use prosody::producer::{ProducerConfiguration, ProsodyProducer};
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyTypeMethods};
+use pyo3::types::{IntoPyDict, PyAnyMethods, PyDict, PyDictMethods, PyTypeMethods};
 use pyo3::{
     pyclass, pymethods, Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python,
 };
 use pythonize::depythonize_bound;
 use serde_json::Value;
-use tracing::info;
+use tracing::{info, info_span, Instrument};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::client::config::{
     decode_duration, decode_optional_duration, string_or_vec, try_build_config,
@@ -41,11 +44,18 @@ const PIPELINE_MODE: &str = "pipeline";
 const LOW_LATENCY_MODE: &str = "low-latency";
 
 /// A client for interacting with Kafka using the Prosody library.
+///
+/// This client provides methods for sending messages to Kafka topics and
+/// subscribing to topics for message consumption. It supports different
+/// operational modes and configuration options.
 #[pyclass]
 pub struct ProsodyClient {
     producer: ProsodyProducer,
     producer_config: ProducerConfiguration,
     consumer: ConsumerState,
+    propagator: TextMapCompositePropagator,
+    get_context: PyObject,
+    inject: PyObject,
 }
 
 #[pymethods]
@@ -66,7 +76,7 @@ impl ProsodyClient {
     /// Returns a `PyRuntimeError` if the client fails to initialize.
     #[new]
     #[pyo3(signature = (**config))]
-    fn new(config: Option<&Bound<PyDict>>) -> PyResult<Self> {
+    fn new(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Self> {
         let mut mode = Mode::default();
         let mut producer_builder = ProducerConfiguration::builder();
         let mut consumer_builder = ConsumerConfiguration::builder();
@@ -76,6 +86,7 @@ impl ProsodyClient {
         // If no config is provided, build with default settings
         let Some(config) = config else {
             return try_build_config(
+                py,
                 mode,
                 &producer_builder,
                 &consumer_builder,
@@ -89,22 +100,26 @@ impl ProsodyClient {
             mode = mode_str.extract::<String>()?.parse()?;
         }
 
+        // Configure bootstrap servers for both producer and consumer
         if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
             let bootstrap = string_or_vec(&bootstrap)?;
             producer_builder.bootstrap_servers(bootstrap.clone());
             consumer_builder.bootstrap_servers(bootstrap);
         }
 
+        // Set mock mode for both producer and consumer if specified
         if let Some(mock) = config.get_item("mock")? {
             let mock = mock.extract::<bool>()?;
             producer_builder.mock(mock);
             consumer_builder.mock(mock);
         }
 
+        // Configure producer-specific options
         if let Some(send_timeout) = config.get_item("send_timeout")? {
             producer_builder.send_timeout(decode_optional_duration(&send_timeout)?);
         };
 
+        // Configure consumer-specific options
         if let Some(group_id) = config.get_item("group_id")? {
             consumer_builder.group_id(group_id.extract::<String>()?);
         }
@@ -134,6 +149,7 @@ impl ProsodyClient {
             consumer_builder.commit_interval(decode_duration(&commit_interval)?);
         }
 
+        // Configure retry options
         if let Some(retry_base) = config.get_item("retry_base")? {
             retry_builder.base(retry_base.extract::<u8>()?);
         }
@@ -146,11 +162,13 @@ impl ProsodyClient {
             retry_builder.max_delay(decode_duration(&retry_max_delay)?);
         }
 
+        // Configure failure topic
         if let Some(topic) = config.get_item("failure_topic")? {
             failure_topic_builder.failure_topic(topic.extract::<String>()?);
         }
 
         try_build_config(
+            py,
             mode,
             &producer_builder,
             &consumer_builder,
@@ -171,12 +189,27 @@ impl ProsodyClient {
     ///
     /// Returns a `PyRuntimeError` if there's an error sending the message.
     async fn send(&self, topic: String, key: String, payload: PyObject) -> PyResult<()> {
-        // Convert the payload to a JSON-serializable value
-        let payload = Python::with_gil(|py| depythonize_bound::<Value>(payload.bind(py).clone()))?;
+        // Extract trace headers and convert payload to JSON-serializable value
+        let (trace_headers, payload) = Python::with_gil(|py| {
+            let context = self.get_context.bind(py).call0()?;
+            let data = PyDict::new_bound(py);
+            let kwargs = [("context", &context), ("carrier", data.as_any())].into_py_dict_bound(py);
+
+            self.inject.call_bound(py, (), Some(&kwargs))?;
+            let headers: HashMap<String, String> = data.extract()?;
+            let payload = depythonize_bound::<Value>(payload.bind(py).clone())?;
+            PyResult::Ok((headers, payload))
+        })?;
+
+        // Create and set the tracing context
+        let context = self.propagator.extract(&trace_headers);
+        let span = info_span!("send", %topic, %key);
+        span.set_parent(context);
 
         // Send the message using the producer
         self.producer
             .send([], topic.as_str().into(), &key, payload)
+            .instrument(span)
             .await
             .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
@@ -361,6 +394,9 @@ impl ProsodyClient {
         if let ConsumerState::Running { handler, .. } = &self.consumer {
             visit.call(handler.handle_method.as_any())?;
         }
+
+        visit.call(self.get_context.as_any())?;
+        visit.call(self.inject.as_any())?;
 
         Ok(())
     }

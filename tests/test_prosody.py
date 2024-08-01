@@ -2,8 +2,24 @@ import asyncio
 from typing import List
 
 import pytest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    ConsoleSpanExporter,
+)
 
 from prosody import ProsodyClient, AbstractMessageHandler, Message, Context
+
+provider = TracerProvider()
+processor = BatchSpanProcessor(ConsoleSpanExporter())
+provider.add_span_processor(processor)
+
+# Sets the global default tracer provider
+trace.set_tracer_provider(provider)
+
+# Creates a tracer from the global tracer provider
+tracer = trace.get_tracer("my.tracer.name")
 
 
 class TestHandler(AbstractMessageHandler):
@@ -56,7 +72,8 @@ async def test_send_and_receive_message(client):
     test_topic = "test-topic"
     test_key = "test-key"
     test_payload = {"content": "Hello, Kafka!"}
-    await client.send(test_topic, test_key, test_payload)
+    with tracer.start_as_current_span("send"):
+        await client.send(test_topic, test_key, test_payload)
 
     # Wait for the message to be received
     await asyncio.wait_for(handler.message_received.wait(), timeout=5.0)
@@ -99,8 +116,9 @@ async def test_multiple_messages(client):
         ("key3", {"content": "Message 3"})
     ]
 
-    for key, payload in messages:
-        await client.send(test_topic, key, payload)
+    with tracer.start_as_current_span("send_multiple"):
+        for key, payload in messages:
+            await client.send(test_topic, key, payload)
 
     # Wait for all messages to be received
     async def wait_for_messages():

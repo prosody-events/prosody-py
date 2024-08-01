@@ -18,6 +18,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Distributed Computing",
 ]
+dependencies = ["opentelemetry-api>=1.26.0,<2.0.0"]
 description = "High-performance Python bindings for a Rust-based Kafka client"
 dynamic = ["version"]
 keywords = ["async", "client", "distributed", "kafka", "messaging"]
@@ -25,7 +26,11 @@ name = "prosody"
 requires-python = ">=3.8"
 
 [project.optional-dependencies]
-dev = ["pytest-asyncio>=0.21.0", "pytest>=7.3.1"]
+dev = [
+    "opentelemetry-sdk>=1.26.0,<2.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest>=7.3.1",
+]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

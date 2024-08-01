@@ -10,9 +10,10 @@ use prosody::consumer::failure::retry::RetryConfigurationBuilder;
 use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
 use prosody::producer::{ProducerConfigurationBuilder, ProsodyProducer};
+use prosody::propagator::new_propagator;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess};
-use pyo3::{Bound, PyAny, PyResult};
+use pyo3::{Bound, IntoPy, PyAny, PyResult, Python};
 
 use crate::client::mode::{Mode, ModeConfiguration};
 use crate::client::state::ConsumerState;
@@ -22,6 +23,7 @@ use crate::client::ProsodyClient;
 ///
 /// # Arguments
 ///
+/// * `py` - The Python interpreter context.
 /// * `mode` - The operational mode for the client.
 /// * `producer_builder` - Builder for the producer configuration.
 /// * `consumer_builder` - Builder for the consumer configuration.
@@ -30,7 +32,7 @@ use crate::client::ProsodyClient;
 ///
 /// # Returns
 ///
-/// A `PyResult` containing the configured `ProsodyClient` if successful.
+/// A `PyResult` containing the configured `ProsodyClient`.
 ///
 /// # Errors
 ///
@@ -38,18 +40,31 @@ use crate::client::ProsodyClient;
 /// or failure topic configuration fails.
 /// Returns a `PyRuntimeError` if producer initialization fails.
 pub fn try_build_config(
+    py: Python,
     mode: Mode,
     producer_builder: &ProducerConfigurationBuilder,
     consumer_builder: &ConsumerConfigurationBuilder,
     retry_builder: &RetryConfigurationBuilder,
     failure_topic_builder: &FailureTopicConfigurationBuilder,
 ) -> PyResult<ProsodyClient> {
-    // Build the producer configuration
+    // Get handles to OpenTelemetry functions
+    let get_context = py
+        .import_bound("opentelemetry.context")?
+        .getattr("get_current")?
+        .into_py(py);
+
+    let inject = py
+        .import_bound("opentelemetry.propagate")?
+        .getattr("inject")?
+        .into_py(py);
+
+    let propagator = new_propagator();
+
+    // Build the producer configuration and initialize the producer
     let producer_config = producer_builder.build().map_err(|error| {
         PyValueError::new_err(format!("failed to configure producer: {error:#}"))
     })?;
 
-    // Initialize the producer
     let producer = ProsodyProducer::new(&producer_config).map_err(|error| {
         PyRuntimeError::new_err(format!("failed to initialize producer: {error:#}"))
     })?;
@@ -87,6 +102,9 @@ pub fn try_build_config(
         producer,
         producer_config,
         consumer,
+        propagator,
+        get_context,
+        inject,
     })
 }
 
