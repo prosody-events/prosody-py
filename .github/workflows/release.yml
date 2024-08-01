@@ -174,7 +174,7 @@ jobs:
         env:
           MATURIN_REPOSITORY_URL: https://realgeeks.jfrog.io/artifactory/api/pypi/dev-pypi
           MATURIN_USERNAME: ${{ secrets.GEMFURY_PUSH_TOKEN }}
-          MATURIN_PASSWORD: ""
+          MATURIN_PASSWORD:
         with:
           command: upload
           args: --non-interactive --skip-existing wheels-*/*
