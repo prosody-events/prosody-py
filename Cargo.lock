@@ -1140,7 +1140,7 @@ dependencies = [
 
 [[package]]
 name = "prosody-py"
-version = "0.1.0-alpha.6"
+version = "0.1.0-alpha.7"
 dependencies = [
  "chrono",
  "once_cell",

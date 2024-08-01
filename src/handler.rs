@@ -25,16 +25,19 @@ use crate::message::{Context, Message};
 /// subclass.
 const HANDLER_CLASS_NAME: &str = "AbstractMessageHandler";
 
+/// The name of the Python class that wraps the user-defined handler for
+/// tracing.
+const TRACING_HANDLER_CLASS_NAME: &str = "TracingHandler";
+
 /// A wrapper for Python-defined message handlers.
 ///
-/// Holds a reference to the Python `handle` method and implements the
-/// `FallibleHandler` trait for use with Prosody's Kafka consumer.
+/// Holds a reference to the Python `TracingHandler`'s `handle` method and
+/// implements the `FallibleHandler` trait for use with Prosody's Kafka
+/// consumer.
 pub struct PythonHandler {
     pub handle_method: Arc<PyObject>,
     locals: TaskLocals,
     propagator: TextMapCompositePropagator,
-    extract: PyObject,
-    attach: PyObject,
 }
 
 impl Clone for PythonHandler {
@@ -43,8 +46,6 @@ impl Clone for PythonHandler {
             handle_method: Arc::clone(&self.handle_method),
             locals: self.locals.clone(),
             propagator: new_propagator(),
-            extract: self.extract.clone(),
-            attach: self.attach.clone(),
         }
     }
 }
@@ -66,18 +67,9 @@ impl PythonHandler {
     /// `AbstractMessageHandler`.
     pub fn new(handler: &Bound<PyAny>) -> PyResult<Self> {
         let py = handler.py();
-        let abstract_handler_class = py.import_bound("prosody")?.getattr(HANDLER_CLASS_NAME)?;
-
-        // Extract OpenTelemetry functions
-        let extract = py
-            .import_bound("opentelemetry.propagate")?
-            .getattr("extract")?
-            .into_py(py);
-
-        let attach = py
-            .import_bound("opentelemetry.context")?
-            .getattr("attach")?
-            .into_py(py);
+        let prosody_module = py.import_bound("prosody")?;
+        let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
+        let tracing_handler_class = prosody_module.getattr(TRACING_HANDLER_CLASS_NAME)?;
 
         // Ensure the provided handler is a subclass of AbstractMessageHandler
         if !handler.is_instance(&abstract_handler_class)? {
@@ -86,18 +78,17 @@ impl PythonHandler {
             )));
         }
 
-        // Extract and store the handle method
-        let handle_method = Arc::new(handler.getattr("handle")?.unbind());
+        // Create a TracingHandler instance and get its handle method
+        let tracing_handler = tracing_handler_class.call1((handler,))?;
+        let handle_method = Arc::new(tracing_handler.getattr("handle")?.into_py(py));
 
         // Capture the running event loop
-        let locals = TaskLocals::with_running_loop(handler.py())?.copy_context(handler.py())?;
+        let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
         Ok(Self {
             handle_method,
             locals,
             propagator: new_propagator(),
-            extract,
-            attach,
         })
     }
 }
@@ -105,7 +96,8 @@ impl PythonHandler {
 impl FallibleHandler for PythonHandler {
     type Error = PyErr;
 
-    /// Handles a Kafka message by calling the Python-defined handle method.
+    /// Handles a Kafka message by calling the Python-defined TracingHandler's
+    /// handle method.
     ///
     /// # Arguments
     ///
@@ -146,17 +138,14 @@ impl FallibleHandler for PythonHandler {
                 payload: pythonize(py, &payload)?,
             };
 
-            // Extract and attach the OpenTelemetry context
-            let carrier = serialized_context.into_py_dict_bound(py);
-            let otel_context = self.extract.call1(py, (carrier,))?;
+            // Convert serialized_context to a Python dict
+            let otel_context = serialized_context.into_py_dict_bound(py);
 
-            self.attach.call1(py, (otel_context,))?;
-
-            // Call the Python handle method and convert it to a Rust future
+            // Call the TracingHandler's handle method
             into_future_with_locals(
                 &self.locals,
                 self.handle_method
-                    .call1(py, (message_context, message))?
+                    .call1(py, (message_context, message, otel_context))?
                     .into_bound(py),
             )
         })?;

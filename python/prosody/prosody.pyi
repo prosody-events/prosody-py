@@ -27,6 +27,80 @@ Duration: TypeAlias = Union[float, timedelta]
 StringOrList: TypeAlias = Union[str, List[str]]
 
 
+class AbstractMessageHandler(ABC):
+    """
+    Abstract base class for message handlers.
+
+    Subclasses must implement the `handle` method to define custom message
+    processing logic.
+    """
+
+    @abstractmethod
+    async def handle(self, context: Context, message: Message) -> None:
+        """
+        Handle a Kafka message.
+
+        Args:
+            context (Context): The context of the message.
+            message (Message): The Kafka message to be processed.
+
+        Returns:
+            None
+        """
+        ...
+
+
+class TracingHandler:
+    """
+    A wrapper class for message handlers that adds OpenTelemetry tracing.
+
+    This class wraps an instance of AbstractMessageHandler and adds tracing
+    functionality to the message handling process.
+
+    Note:
+        This class is intended for internal use within the Prosody library only.
+        Users should not need to interact with this class directly in normal usage.
+    """
+
+    def __init__(self, handler: AbstractMessageHandler) -> None:
+        """
+        Initialize a new TracingHandler.
+
+        Args:
+            handler (AbstractMessageHandler): The message handler to be wrapped.
+
+        Note:
+            This constructor is not intended to be called directly by users of the Prosody library.
+        """
+        self.handler = handler
+        self.tracer: Any  # OpenTelemetry tracer
+
+    async def handle(self, context: Context, message: Message, opentelemetry_context: Dict[str, str]) -> None:
+        """
+        Handle a Kafka message with added tracing.
+
+        This method creates a new span for the message handling process,
+        calls the wrapped handler's handle method within the span,
+        and ensures proper propagation of the OpenTelemetry context.
+
+        Args:
+            context (Context): The context of the message.
+            message (Message): The Kafka message to be processed.
+            opentelemetry_context (Dict[str, str]): Serialized OpenTelemetry context.
+
+        Returns:
+            None
+
+        Raises:
+            Exception: Any exception raised by the wrapped handler's handle method.
+
+        Note:
+            This method is intended to be called internally by the Prosody library,
+            not directly by users.
+        """
+        ...
+
+
 class Context:
     """
     Represents the context of a Kafka message.
@@ -114,29 +188,6 @@ class Message:
 
         Returns:
             str: A detailed representation of the Message, suitable for debugging.
-        """
-        ...
-
-
-class AbstractMessageHandler(ABC):
-    """
-    Abstract base class for message handlers.
-
-    Subclasses must implement the `handle` method to define custom message
-    processing logic.
-    """
-
-    @abstractmethod
-    async def handle(self, context: Context, message: Message) -> None:
-        """
-        Handle a Kafka message.
-
-        Args:
-            context (Context): The context of the message.
-            message (Message): The Kafka message to be processed.
-
-        Returns:
-            None
         """
         ...
 
