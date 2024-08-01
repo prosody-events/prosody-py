@@ -14,7 +14,7 @@ use prosody::consumer::failure::topic::FailureTopicConfiguration;
 use prosody::consumer::{ConsumerConfiguration, ProsodyConsumer};
 use prosody::producer::{ProducerConfiguration, ProsodyProducer};
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{IntoPyDict, PyAnyMethods, PyDict, PyDictMethods, PyTypeMethods};
+use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyTypeMethods};
 use pyo3::{
     pyclass, pymethods, Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python,
 };
@@ -193,9 +193,7 @@ impl ProsodyClient {
         let (trace_headers, payload) = Python::with_gil(|py| {
             let context = self.get_context.bind(py).call0()?;
             let data = PyDict::new_bound(py);
-            let kwargs = [("context", &context), ("carrier", data.as_any())].into_py_dict_bound(py);
-
-            self.inject.call_bound(py, (), Some(&kwargs))?;
+            self.inject.call1(py, (&data, context))?;
             let headers: HashMap<String, String> = data.extract()?;
             let payload = depythonize_bound::<Value>(payload.bind(py).clone())?;
             PyResult::Ok((headers, payload))
