@@ -29,6 +29,7 @@ requires-python = ">=3.8"
 dev = [
     "opentelemetry-sdk>=1.26.0,<2.0.0",
     "pytest-asyncio>=0.21.0",
+    "pytest-watch>=4.2.0",
     "pytest>=7.3.1",
 ]
 
