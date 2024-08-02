@@ -201,7 +201,7 @@ impl ProsodyClient {
 
         // Create and set the tracing context
         let context = self.propagator.extract(&trace_headers);
-        let span = info_span!("send", %topic, %key);
+        let span = info_span!("python-send", %topic, %key);
         span.set_parent(context);
 
         // Send the message using the producer

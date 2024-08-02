@@ -1133,7 +1133,7 @@ dependencies = [
 [[package]]
 name = "prosody"
 version = "0.1.0"
-source = "git+https://github.com/RealGeeks/prosody.git?rev=21ef50453c7f102a22cd3b511893120094906bd2#21ef50453c7f102a22cd3b511893120094906bd2"
+source = "git+https://github.com/RealGeeks/prosody.git?rev=a551164e9033a42df6922af954c768f50420c273#a551164e9033a42df6922af954c768f50420c273"
 dependencies = [
  "ahash",
  "chrono",
@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "prosody-py"
-version = "0.1.0-alpha.10"
+version = "0.1.0-alpha.11"
 dependencies = [
  "chrono",
  "once_cell",
@@ -1392,9 +1392,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.10.5"
+version = "1.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b91213439dad192326a0d7c6ee3955910425f441d7038e0d6933b0aec5c4517f"
+checksum = "4219d74c6b67a3654a9fbebc4b419e22126d13d2f3c4a07ee0cb61ff79a79619"
 dependencies = [
  "aho-corasick",
  "memchr",

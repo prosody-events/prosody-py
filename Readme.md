@@ -104,6 +104,70 @@ client = ProsodyClient(
 )
 ```
 
+## OpenTelemetry Tracing
+
+Prosody supports OpenTelemetry tracing, allowing you to monitor and analyze the performance of your Kafka-based
+applications. The library will emit traces using the OTLP protocol if the `OTEL_EXPORTER_OTLP_ENDPOINT` environment
+variable is defined.
+
+Note: Prosody emits its own traces separately because it uses its own tracing runtime, and it would be expensive to send
+all traces to Python.
+
+### Required Packages
+
+To use OpenTelemetry tracing with Prosody, you need to install the following packages:
+
+```
+opentelemetry-sdk>=1.26.0
+opentelemetry-api>=1.26.0
+opentelemetry-exporter-otlp-proto-grpc>=1.26.0
+```
+
+### Initializing Tracing
+
+To initialize tracing in your application:
+
+```python
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+traceProvider = TracerProvider()
+processor = BatchSpanProcessor(OTLPSpanExporter())
+traceProvider.add_span_processor(processor)
+trace.set_tracer_provider(traceProvider)
+
+# Creates a tracer from the global tracer provider
+tracer = trace.get_tracer(__name__)
+```
+
+### Setting OpenTelemetry Environment Variables
+
+Set the following standard OpenTelemetry environment variables:
+
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_SERVICE_NAME=my-service-name
+```
+
+For more information on these and other OpenTelemetry environment variables, refer to
+the [OpenTelemetry specification](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#general-sdk-configuration).
+
+### Using Tracing in Your Application
+
+After initializing tracing, you can define spans in your application, and they will be properly propagated through
+Kafka:
+
+```python
+class MyHandler(AbstractMessageHandler):
+    async def handle(self, context: Context, message: Message) -> None:
+        with tracer.start_as_current_span("test-receive"):
+            # Process the received message
+            print(f"Received message: {message}")
+```
+
 ## Best Practices
 
 ### Ensuring Idempotent Message Handlers
