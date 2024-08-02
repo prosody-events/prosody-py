@@ -45,10 +45,12 @@ jobs:
         with:
           crate: maturin
       - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: maturin develop --extras dev
-      - name: Run tests
-        run: pytest
+      - name: Build and run tests
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          maturin develop --extras dev
+          pytest
         env:
           PROSODY_BOOTSTRAP_SERVERS: localhost:9094
 
