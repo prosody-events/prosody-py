@@ -96,7 +96,7 @@ impl PythonHandler {
 impl FallibleHandler for PythonHandler {
     type Error = PyErr;
 
-    /// Handles a Kafka message by calling the Python-defined TracingHandler's
+    /// Handles a Kafka message by calling the Python-defined `TracingHandler`'s
     /// handle method.
     ///
     /// # Arguments
