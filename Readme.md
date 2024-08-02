@@ -266,6 +266,49 @@ if __name__ == '__main__':
     asyncio.run(main())
 ```
 
+## Release Process
+
+Prosody uses an automated release process managed by GitHub Actions. Here's an overview of how releases are handled:
+
+1. **Trigger**: The release process is triggered automatically on pushes to the `main` branch.
+
+2. **Release Please**: The process starts with the "Release Please" action, which:
+    - Analyzes commit messages since the last release.
+    - Creates or updates a release pull request with changelog updates and version bumps.
+    - When the PR is merged, it creates a GitHub release and a git tag.
+
+3. **Build Process**: If a new release is created, the following build jobs are triggered:
+    - Linux builds for x86_64, aarch64, and armv7 architectures.
+    - MuslLinux builds for the same architectures.
+    - Windows build for x64 architecture.
+    - macOS builds for x86_64 and aarch64 architectures.
+    - Source distribution (sdist) build.
+
+4. **Artifact Upload**: Each build job uploads its artifacts (wheels or sdist) to GitHub Actions.
+
+5. **Publication**: If all builds are successful, the final step publishes the built artifacts to Gemfury, our private
+   Python package index.
+
+### Contributing to Releases
+
+To contribute to a release:
+
+1. Make your changes in a feature branch.
+2. Use [Conventional Commits](https://www.conventionalcommits.org/) syntax for your commit messages. This helps Release
+   Please determine the next version number and generate the changelog.
+3. Create a pull request to merge your changes into the `main` branch.
+4. Once your PR is approved and merged, Release Please will include your changes in the next release PR.
+
+### Manual Releases
+
+While the process is automated, manual intervention may sometimes be necessary:
+
+- You can manually trigger the release workflow from the GitHub Actions tab if needed.
+- If you need to make changes to the release PR created by Release Please, you can do so before merging it.
+
+Remember, all releases are automatically published to Gemfury. Ensure you have thoroughly tested your changes before
+merging to `main`.
+
 ## API Reference
 
 ### ProsodyClient
