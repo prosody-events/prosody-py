@@ -110,7 +110,7 @@ Prosody supports OpenTelemetry tracing, allowing you to monitor and analyze the 
 applications. The library will emit traces using the OTLP protocol if the `OTEL_EXPORTER_OTLP_ENDPOINT` environment
 variable is defined.
 
-Note: Prosody emits its own traces separately because it uses its own tracing runtime, and it would be expensive to send
+Note: Prosody emits its own traces separately because it uses its own tracing runtime, as it would be expensive to send
 all traces to Python.
 
 ### Required Packages
