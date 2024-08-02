@@ -32,6 +32,9 @@ jobs:
           KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
     steps:
       - uses: actions/checkout@v3
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
       - uses: dtolnay/rust-toolchain@stable
       - name: Install taplo from crates.io
         uses: baptiste0928/cargo-install@v3
@@ -68,6 +71,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - name: Install udeps from crates.io
@@ -83,6 +89,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Check documentation
