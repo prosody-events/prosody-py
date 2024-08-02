@@ -1,7 +1,7 @@
 # Install Rust and necessary tools
 bootstrap:
 	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-	cargo install maturin cargo-udeps cargo-tarpaulin taplo-cli bacon
+	cargo install maturin cargo-udeps taplo-cli bacon
 
 # Start Kafka and related services using Docker Compose
 up:
@@ -47,10 +47,6 @@ test: up build
 # Watch for changes and run tests
 test-watch: up build
 	ptw
-
-# Generate code coverage report
-coverage: up
-	cargo tarpaulin
 
 # Check for unused dependencies
 # note: requires installing nightly with `rustup install nightly`
