@@ -4,9 +4,10 @@ requires = ["maturin>=1.6,<2.0"]
 
 [project]
 classifiers = [
-    "Development Status :: 4 :: Beta",
+    "Development Status :: 4 - Beta",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
