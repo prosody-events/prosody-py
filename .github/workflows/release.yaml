@@ -21,14 +21,7 @@ jobs:
         with:
           release-type: rust
           package-name: prosody
-      - name: Trigger other workflows
-        if: ${{ steps.release.outputs.pr }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh workflow run audit.yml -r ${{ github.event.pull_request.head.ref }}
-          gh workflow run general.yml -r ${{ github.event.pull_request.head.ref }}
-          gh workflow run quality.yml -r ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GH_ALL_REPOS_RW }}
 
   linux:
     needs: release-please
