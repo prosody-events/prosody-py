@@ -37,7 +37,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
-          manylinux: auto
+          manylinux: ${{ matrix.platform.target == 'aarch64' && '2_24' || 'auto' }}
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
       - name: Upload wheels

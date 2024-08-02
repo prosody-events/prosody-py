@@ -7,10 +7,10 @@ license = "All rights reserved."
 name = "prosody-py"
 readme = "Readme.md"
 repository = "https://github.com/RealGeeks/prosody-py"
-version = "0.1.0-alpha.7"
+version = "0.1.0-alpha.8"
 
 [package.metadata.maturin]
-version = "0.1.0a7"
+version = "0.1.0a8"
 
 [lib]
 crate-type = ["cdylib"]
@@ -20,7 +20,7 @@ name = "prosody"
 chrono = "0.4"
 once_cell = "1.19"
 opentelemetry = "0.24"
-prosody = { git = "https://github.com/RealGeeks/prosody.git", rev = "19d4f055025ed6ec9bfeceaa4f3b822a51614706" } # replace once we have a package manager
+prosody = { git = "https://github.com/RealGeeks/prosody.git", rev = "8ae7acff593e67f6b1d296adbddac188971b6a29" } # replace once we have a package manager
 pyo3 = { version = "0.21", features = ["chrono", "experimental-async"] }
 pyo3-asyncio-0-21 = { version = "0.21", features = ["tokio-runtime"] }
 pyo3-log = "0.11"
