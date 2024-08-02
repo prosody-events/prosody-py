@@ -20,6 +20,6 @@ class TracingHandler:
         otel_context = extract(carrier=opentelemetry_context)
 
         # Create a new span
-        with self.tracer.start_as_current_span("handle", context=otel_context):
+        with self.tracer.start_as_current_span("python-receive", context=otel_context):
             # Call the wrapped handler's handle method
             return await self.handler.handle(context, message)

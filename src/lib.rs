@@ -8,6 +8,8 @@
 #![allow(clippy::multiple_crate_versions)]
 #![warn(missing_docs)]
 
+use std::env;
+
 use ::prosody::tracing::initialize_tracing;
 use once_cell::sync::Lazy;
 use pyo3::exceptions::PyRuntimeError;
@@ -48,7 +50,10 @@ static RUNTIME: Lazy<Runtime> =
 #[pymodule]
 fn prosody(m: &Bound<PyModule>) -> PyResult<()> {
     let _enter = RUNTIME.enter();
-    initialize_tracing().map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+
+    if env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
+        initialize_tracing().map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    }
 
     // Initialize logging for the module
     pyo3_log::init();

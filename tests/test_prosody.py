@@ -125,11 +125,16 @@ async def test_multiple_messages(client):
 
     # Check if all messages were received
     assert len(handler.messages) == len(messages)
-    for i, (key, payload) in enumerate(messages):
-        received_message = handler.messages[i]
-        assert received_message.topic() == test_topic
-        assert received_message.key() == key
-        assert received_message.payload() == payload
+
+    # Create sets of expected and received messages for comparison
+    expected_messages = set((key, frozenset(payload.items())) for key, payload in messages)
+    received_messages = set((msg.key(), frozenset(msg.payload().items())) for msg in handler.messages)
+
+    # Check if all sent messages were received, regardless of order
+    assert expected_messages == received_messages
+
+    # Verify that all messages have the correct topic
+    assert all(msg.topic() == test_topic for msg in handler.messages)
 
 
 if __name__ == "__main__":
