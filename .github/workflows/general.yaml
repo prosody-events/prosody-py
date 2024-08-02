@@ -35,8 +35,12 @@ jobs:
       - uses: de-vri-es/setup-git-credentials@v2
         with:
           credentials: https://rg-geekbot:${{ secrets.GH_ALL_REPOS_RW }}@github.com/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install taplo from crates.io
+      - name: Install Maturin from crates.io
         uses: baptiste0928/cargo-install@v3
         with:
           crate: maturin
