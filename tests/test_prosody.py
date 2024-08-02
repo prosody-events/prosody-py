@@ -137,5 +137,50 @@ async def test_multiple_messages(client):
     assert all(msg.topic() == test_topic for msg in handler.messages)
 
 
+async def test_same_key_message_order(client):
+    handler = TestHandler()
+
+    # Send multiple test messages with the same key
+    test_topic = "test-topic"
+    test_key = "same-key"
+    messages = [
+        {"content": "Message 1", "sequence": 1},
+        {"content": "Message 2", "sequence": 2},
+        {"content": "Message 3", "sequence": 3},
+        {"content": "Message 4", "sequence": 4},
+        {"content": "Message 5", "sequence": 5},
+    ]
+
+    with tracer.start_as_current_span("send_same_key_messages"):
+        for payload in messages:
+            await client.send(test_topic, test_key, payload)
+
+    # Subscribe after messages are already on the topic
+    client.subscribe(handler)
+
+    # Wait for all messages to be received
+    async def wait_for_messages():
+        while handler.message_count < len(messages):
+            await handler.message_received.wait()
+            handler.message_received.clear()
+
+    await asyncio.wait_for(wait_for_messages(), timeout=5.0)
+
+    # Check if all messages were received
+    assert len(handler.messages) == len(messages)
+
+    # Check if messages with the same key were received in the order they were sent
+    received_messages = [msg for msg in handler.messages if msg.key() == test_key]
+    received_sequences = [msg.payload()["sequence"] for msg in received_messages]
+    expected_sequences = [msg["sequence"] for msg in messages]
+
+    assert received_sequences == expected_sequences, f"Expected sequence {expected_sequences}, but got {received_sequences}"
+
+    # Verify that all messages have the correct topic and key
+    for msg in received_messages:
+        assert msg.topic() == test_topic
+        assert msg.key() == test_key
+
+
 if __name__ == "__main__":
     pytest.main()
