@@ -48,6 +48,9 @@ test: up build
 test-watch: up build
 	ptw
 
+shell: up build
+	python -m asyncio
+
 # Check for unused dependencies
 # note: requires installing nightly with `rustup install nightly`
 dependencies:
