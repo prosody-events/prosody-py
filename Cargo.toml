@@ -1,9 +1,11 @@
 [package]
+authors = ["Josh Griffith <joshua.griffith@realgeeks.com>"]
 categories = ["api-bindings", "asynchronous", "database"]
 description = "Python bindings for the Prosody Kafka client library"
 edition = "2021"
+homepage = "https://github.com/RealGeeks/prosody-py"
 keywords = ["bindings", "client", "kafka", "prosody", "python"]
-license = "All rights reserved."
+license = "Proprietary"
 name = "prosody-py"
 readme = "Readme.md"
 repository = "https://github.com/RealGeeks/prosody-py"
