@@ -2,15 +2,29 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v[0-9]+.[0-9]+.[0-9]+[a-z0-9]*"
-  workflow_dispatch:
+    branches:
+      - main
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: google-github-actions/release-please-action@v3
+        id: release
+        with:
+          release-type: python
+          package-name: your-package-name  # replace with your actual package name
+
   linux:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -47,6 +61,8 @@ jobs:
           path: dist
 
   musllinux:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -83,6 +99,8 @@ jobs:
           path: dist
 
   windows:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -113,6 +131,8 @@ jobs:
           path: dist
 
   macos:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -144,6 +164,8 @@ jobs:
           path: dist
 
   sdist:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -166,7 +188,8 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [ linux, musllinux, windows, macos, sdist ]
+    needs: [ release-please, linux, musllinux, windows, macos, sdist ]
+    if: ${{ needs.release-please.outputs.release_created }}
     steps:
       - uses: actions/download-artifact@v4
       - name: Publish to Gemfury
