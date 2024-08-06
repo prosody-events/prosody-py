@@ -1,12 +1,12 @@
-# Prosody: High-Performance Python Bindings for Kafka
+# Prosody: Python Bindings for Kafka
 
-Prosody offers robust Python bindings to a [Rust-based Kafka client](https://github.com/RealGeeks/prosody), providing
-advanced features for message production and consumption, including configurable retry mechanisms, failure handling
+Prosody offers Python bindings to the [Prosody Kafka client](https://github.com/RealGeeks/prosody), providing
+features for message production and consumption, including configurable retry mechanisms, failure handling
 strategies, and integrated OpenTelemetry support for distributed tracing.
 
 ## Features
 
-- Rust-powered Kafka client for superior performance
+- Rust-powered Kafka client
 - Message production and consumption support
 - Configurable modes: pipeline and low-latency
 - OpenTelemetry integration for distributed tracing
