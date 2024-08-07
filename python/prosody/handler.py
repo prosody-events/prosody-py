@@ -30,11 +30,11 @@ class TracingHandler:
                 )
 
                 if shutdown_task in done:
-                    handler_task.cancel()
+                    handler_task.cancel("partition has been revoked")
 
                 await handler_task
 
             finally:
                 for task in {handler_task, shutdown_task}:
                     if not task.done():
-                        task.cancel()
+                        task.cancel("task is shutting down")
