@@ -103,7 +103,7 @@ impl Message {
     /// # Errors
     ///
     /// Returns a `PyErr` if the payload cannot be converted to a string.
-    fn __str__(&self, py: Python) -> PyResult<String> {
+    pub fn __str__(&self, py: Python) -> PyResult<String> {
         // Convert payload to string and truncate if necessary
         let payload_str = self.payload.bind(py).str()?.extract::<String>()?;
         let truncated_payload = if payload_str.len() > 50 {
@@ -141,7 +141,7 @@ impl Message {
     ///
     /// Returns a `PyErr` if the payload cannot be converted to a string
     /// representation.
-    fn __repr__(&self, py: Python) -> PyResult<String> {
+    pub fn __repr__(&self, py: Python) -> PyResult<String> {
         // Get the string representation of the payload
         let payload_repr = self.payload.bind(py).repr()?.extract::<String>()?;
 
@@ -173,7 +173,7 @@ impl Message {
     ///
     /// Returns `Err(PyTraverseError)` if an error occurs during the traversal.
     #[allow(clippy::needless_pass_by_value)]
-    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+    pub fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(&self.payload)?;
         Ok(())
     }

@@ -5,18 +5,22 @@
 //! consumer. Manages OpenTelemetry context propagation between Rust and Python.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 
+use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
-use prosody::consumer::failure::FallibleHandler;
+use prosody::consumer::failure::{ClassifyError, ErrorCategory, FallibleHandler};
 use prosody::consumer::message::{ConsumerMessage, MessageContext};
 use prosody::propagator::new_propagator;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyKeyboardInterrupt, PySystemExit, PyTypeError};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
 use pyo3::{Bound, IntoPy, PyAny, PyErr, PyObject, PyResult, Python};
 use pyo3_asyncio_0_21::{into_future_with_locals, TaskLocals};
 use pythonize::pythonize;
+use thiserror::Error;
+use tokio::select;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::message::{Context, Message};
@@ -34,8 +38,10 @@ const TRACING_HANDLER_CLASS_NAME: &str = "TracingHandler";
 /// Holds a reference to the Python `TracingHandler`'s `handle` method and
 /// implements the `FallibleHandler` trait for use with Prosody's Kafka
 /// consumer.
+#[derive(Debug)]
 pub struct PythonHandler {
     pub handle_method: Arc<PyObject>,
+    cancelled_error: PyObject,
     locals: TaskLocals,
     propagator: TextMapCompositePropagator,
 }
@@ -44,6 +50,7 @@ impl Clone for PythonHandler {
     fn clone(&self) -> Self {
         Self {
             handle_method: Arc::clone(&self.handle_method),
+            cancelled_error: self.cancelled_error.clone(),
             locals: self.locals.clone(),
             propagator: new_propagator(),
         }
@@ -85,8 +92,15 @@ impl PythonHandler {
         // Capture the running event loop
         let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
+        // Get reference to CancelledError
+        let cancelled_error = py
+            .import_bound("asyncio")?
+            .getattr("CancelledError")?
+            .unbind();
+
         Ok(Self {
             handle_method,
+            cancelled_error,
             locals,
             propagator: new_propagator(),
         })
@@ -94,7 +108,7 @@ impl PythonHandler {
 }
 
 impl FallibleHandler for PythonHandler {
-    type Error = PyErr;
+    type Error = WrappedPythonError;
 
     /// Handles a Kafka message by calling the Python-defined `TracingHandler`'s
     /// handle method.
@@ -111,46 +125,121 @@ impl FallibleHandler for PythonHandler {
     async fn handle(
         &self,
         context: MessageContext,
-        ConsumerMessage {
+        message: ConsumerMessage,
+    ) -> Result<(), Self::Error> {
+        // Serialize the OpenTelemetry context
+        let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
+        self.propagator
+            .inject_context(&message.span.context(), &mut serialized_context);
+
+        let shutdown_future = context.on_shutdown();
+        let (coroutine, complete_future) = execute(
+            context,
+            message,
+            serialized_context,
+            &self.handle_method,
+            &self.locals,
+        )?;
+
+        pin_mut!(complete_future);
+        select! {
+            // Future completed
+            result = complete_future.as_mut() => {
+                result?;
+            }
+
+            // Shutdown signal
+            () = shutdown_future => {
+                cancel_coroutine(&coroutine, &self.cancelled_error)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn cancel_coroutine(coroutine: &PyObject, cancelled_error: &PyObject) -> PyResult<()> {
+    Python::with_gil(|py| {
+        let error = cancelled_error.call1(py, ("partition is being revoked",))?;
+        coroutine.call_method1(py, "throw", (error,))?;
+        Ok(())
+    })
+}
+
+fn execute(
+    context: MessageContext,
+    message: ConsumerMessage,
+    serialized_context: HashMap<String, String>,
+    handle_method: &PyObject,
+    locals: &TaskLocals,
+) -> PyResult<(
+    PyObject,
+    impl Future<Output = PyResult<PyObject>> + Send + Sized,
+)> {
+    Python::with_gil(move |py| {
+        // Create Context and Message objects for the Python handler
+        let message_context = Context(context);
+
+        let ConsumerMessage {
             topic,
             partition,
             offset,
             key,
             timestamp,
             payload,
-            span,
-        }: ConsumerMessage,
-    ) -> Result<(), Self::Error> {
-        // Serialize the OpenTelemetry context
-        let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
-        self.propagator
-            .inject_context(&span.context(), &mut serialized_context);
+            ..
+        } = message;
 
-        let future = Python::with_gil(|py| {
-            // Create Context and Message objects for the Python handler
-            let message_context = Context(context);
-            let message = Message {
-                topic,
-                partition,
-                offset,
-                timestamp,
-                key,
-                payload: pythonize(py, &payload)?,
-            };
+        let message = Message {
+            topic,
+            partition,
+            offset,
+            timestamp,
+            key,
+            payload: pythonize(py, &payload)?,
+        };
 
-            // Convert serialized_context to a Python dict
-            let otel_context = serialized_context.into_py_dict_bound(py);
+        // Convert serialized_context to a Python dict
+        let otel_context = serialized_context.into_py_dict_bound(py);
 
-            // Call the TracingHandler's handle method
-            into_future_with_locals(
-                &self.locals,
-                self.handle_method
-                    .call1(py, (message_context, message, otel_context))?
-                    .into_bound(py),
-            )
-        })?;
+        // Call the TracingHandler's handle method to build coroutine
+        let coroutine = handle_method
+            .call1(py, (message_context, message, otel_context))?
+            .into_bound(py);
 
-        future.await?;
-        Ok(())
+        // Convert coroutine into a future
+        let complete_future = into_future_with_locals(locals, coroutine.clone())?;
+        Ok((coroutine.unbind(), complete_future))
+    })
+}
+
+#[derive(Debug, Error)]
+pub enum WrappedPythonError {
+    #[error(transparent)]
+    Python(#[from] PyErr),
+}
+
+impl ClassifyError for WrappedPythonError {
+    fn classify_error(&self) -> ErrorCategory {
+        match self {
+            WrappedPythonError::Python(error) => Python::with_gil(|py| {
+                let Ok(asyncio) = py.import_bound("asyncio") else {
+                    return ErrorCategory::Terminal;
+                };
+
+                let Ok(cancelled_error) = asyncio.getattr("CancelledError") else {
+                    return ErrorCategory::Terminal;
+                };
+
+                if error.is_instance_bound(py, &cancelled_error)
+                    || error.is_instance_of::<PyKeyboardInterrupt>(py)
+                    || error.is_instance_of::<PySystemExit>(py)
+                {
+                    ErrorCategory::Terminal
+                } else {
+                    ErrorCategory::Transient
+                }
+            }),
+        }
     }
 }

@@ -22,4 +22,4 @@ class TracingHandler:
         # Create a new span
         with self.tracer.start_as_current_span("python-receive", context=otel_context):
             # Call the wrapped handler's handle method
-            return await self.handler.handle(context, message)
+            await self.handler.handle(context, message)

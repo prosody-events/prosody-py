@@ -151,7 +151,7 @@ impl ProsodyClient {
 
         // Configure retry options
         if let Some(retry_base) = config.get_item("retry_base")? {
-            retry_builder.base(retry_base.extract::<u8>()?);
+            retry_builder.base(decode_duration(&retry_base)?);
         }
 
         if let Some(max_retries) = config.get_item("max_retries")? {

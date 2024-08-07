@@ -36,16 +36,13 @@ class AbstractMessageHandler(ABC):
     """
 
     @abstractmethod
-    async def handle(self, context: Context, message: Message) -> None:
+    async def handle(self, context: Context, message: Message):
         """
         Handle a Kafka message.
 
         Args:
             context (Context): The context of the message.
             message (Message): The Kafka message to be processed.
-
-        Returns:
-            None
         """
         ...
 
@@ -62,7 +59,7 @@ class TracingHandler:
         Users should not need to interact with this class directly in normal usage.
     """
 
-    def __init__(self, handler: AbstractMessageHandler) -> None:
+    def __init__(self, handler: AbstractMessageHandler):
         """
         Initialize a new TracingHandler.
 
@@ -75,7 +72,7 @@ class TracingHandler:
         self.handler = handler
         self.tracer: Any  # OpenTelemetry tracer
 
-    async def handle(self, context: Context, message: Message, opentelemetry_context: Dict[str, str]) -> None:
+    async def handle(self, context: Context, message: Message, opentelemetry_context: Dict[str, str]):
         """
         Handle a Kafka message with added tracing.
 
@@ -87,9 +84,6 @@ class TracingHandler:
             context (Context): The context of the message.
             message (Message): The Kafka message to be processed.
             opentelemetry_context (Dict[str, str]): Serialized OpenTelemetry context.
-
-        Returns:
-            None
 
         Raises:
             Exception: Any exception raised by the wrapped handler's handle method.
@@ -218,7 +212,7 @@ class ProsodyClient:
             max_retries: Optional[int] = None,
             max_retry_delay: Optional[Duration] = None,
             failure_topic: Optional[str] = None
-    ) -> None:
+    ):
         """
         Initialize a new ProsodyClient.
 
@@ -236,7 +230,7 @@ class ProsodyClient:
             mode: Operating mode ('pipeline' or 'low-latency').
             retry_base: Base for exponential backoff in retries.
             max_retries: Maximum number of retries.
-            max_retry_delay: Maximum delay between retries.
+            max_retry_delay: Base exponential backoff delay between retries.
             failure_topic: Topic for failed messages in low-latency mode.
 
         Raises:
@@ -245,7 +239,7 @@ class ProsodyClient:
         """
         ...
 
-    async def send(self, topic: str, key: str, payload: Any) -> None:
+    async def send(self, topic: str, key: str, payload: Any):
         """
         Send a message to a specified topic.
 
@@ -268,7 +262,7 @@ class ProsodyClient:
         """
         ...
 
-    def subscribe(self, handler: AbstractMessageHandler) -> None:
+    def subscribe(self, handler: AbstractMessageHandler):
         """
         Subscribe to messages using the provided handler.
 
@@ -282,7 +276,7 @@ class ProsodyClient:
         """
         ...
 
-    async def unsubscribe(self) -> None:
+    async def unsubscribe(self):
         """
         Unsubscribe from messages and shut down the consumer.
 
