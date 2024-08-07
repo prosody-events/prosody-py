@@ -4,10 +4,11 @@ Type stubs for the Prosody Kafka client library.
 This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
-
 from abc import ABC, abstractmethod
 from datetime import timedelta, datetime
-from typing import Any, List, Optional, Union, TypeAlias, Dict
+from typing import Any, List, Optional, Union, TypeAlias, Dict, Literal
+
+import tsasync
 
 # Define a JSONValue type that represents all possible JSON-serializable values
 JSONValue: TypeAlias = Union[
@@ -36,16 +37,13 @@ class AbstractMessageHandler(ABC):
     """
 
     @abstractmethod
-    async def handle(self, context: Context, message: Message) -> None:
+    async def handle(self, context: 'Context', message: 'Message') -> None:
         """
         Handle a Kafka message.
 
         Args:
             context (Context): The context of the message.
             message (Message): The Kafka message to be processed.
-
-        Returns:
-            None
         """
         ...
 
@@ -75,7 +73,8 @@ class TracingHandler:
         self.handler = handler
         self.tracer: Any  # OpenTelemetry tracer
 
-    async def handle(self, context: Context, message: Message, opentelemetry_context: Dict[str, str]) -> None:
+    async def handle(self, context: 'Context', message: 'Message', opentelemetry_context: Dict[str, str],
+                     shutdown_event: tsasync.Event) -> None:
         """
         Handle a Kafka message with added tracing.
 
@@ -87,9 +86,7 @@ class TracingHandler:
             context (Context): The context of the message.
             message (Message): The Kafka message to be processed.
             opentelemetry_context (Dict[str, str]): Serialized OpenTelemetry context.
-
-        Returns:
-            None
+            shutdown_event (tsasync.Event): Event used to signal shutdown.
 
         Raises:
             Exception: Any exception raised by the wrapped handler's handle method.
@@ -213,7 +210,7 @@ class ProsodyClient:
             partition_shutdown_timeout: Optional[Duration] = None,
             poll_interval: Optional[Duration] = None,
             commit_interval: Optional[Duration] = None,
-            mode: Optional[str] = None,
+            mode: Optional[Literal['pipeline', 'low-latency']] = None,
             retry_base: Optional[int] = None,
             max_retries: Optional[int] = None,
             max_retry_delay: Optional[Duration] = None,
@@ -236,7 +233,7 @@ class ProsodyClient:
             mode: Operating mode ('pipeline' or 'low-latency').
             retry_base: Base for exponential backoff in retries.
             max_retries: Maximum number of retries.
-            max_retry_delay: Maximum delay between retries.
+            max_retry_delay: Base exponential backoff delay between retries.
             failure_topic: Topic for failed messages in low-latency mode.
 
         Raises:
@@ -245,26 +242,26 @@ class ProsodyClient:
         """
         ...
 
-    async def send(self, topic: str, key: str, payload: Any) -> None:
+    async def send(self, topic: str, key: str, payload: JSONValue) -> None:
         """
         Send a message to a specified topic.
 
         Args:
             topic (str): The topic to which the message should be sent.
             key (str): The key associated with the message.
-            payload (Any): The content of the message (must be JSON-serializable).
+            payload (JSONValue): The content of the message (must be JSON-serializable).
 
         Raises:
             RuntimeError: If there's an error sending the message.
         """
         ...
 
-    def consumer_state(self) -> str:
+    def consumer_state(self) -> Literal['unconfigured', 'configured', 'running']:
         """
         Get the current state of the consumer.
 
         Returns:
-            str: The current state ('unconfigured', 'configured', or 'running').
+            Literal['unconfigured', 'configured', 'running']: The current state.
         """
         ...
 

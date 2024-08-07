@@ -1,22 +1,27 @@
 //! Bridges Rust's Prosody library and Python for Kafka message handling.
 //!
-//! Defines the `PythonHandler` struct implementing the `FallibleHandler` trait,
-//! enabling Python-defined message handlers to work with Prosody's Kafka
-//! consumer. Manages OpenTelemetry context propagation between Rust and Python.
+//! This module defines the `PythonHandler` struct, which implements the
+//! `FallibleHandler` trait, enabling Python-defined message handlers to work
+//! with Prosody's Kafka consumer. It also manages OpenTelemetry context
+//! propagation between Rust and Python.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::future::Future;
 
+use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
-use prosody::consumer::failure::FallibleHandler;
+use prosody::consumer::failure::{ClassifyError, ErrorCategory, FallibleHandler};
 use prosody::consumer::message::{ConsumerMessage, MessageContext};
 use prosody::propagator::new_propagator;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyKeyboardInterrupt, PySystemExit, PyTypeError};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
-use pyo3::{Bound, IntoPy, PyAny, PyErr, PyObject, PyResult, Python};
+use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
 use pyo3_asyncio_0_21::{into_future_with_locals, TaskLocals};
 use pythonize::pythonize;
+use thiserror::Error;
+use tokio::select;
+use tracing::debug;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::message::{Context, Message};
@@ -34,8 +39,11 @@ const TRACING_HANDLER_CLASS_NAME: &str = "TracingHandler";
 /// Holds a reference to the Python `TracingHandler`'s `handle` method and
 /// implements the `FallibleHandler` trait for use with Prosody's Kafka
 /// consumer.
+#[derive(Debug)]
 pub struct PythonHandler {
-    pub handle_method: Arc<PyObject>,
+    pub handle_method: PyObject,
+    pub event_class: PyObject,
+    pub event_set_method: PyObject,
     locals: TaskLocals,
     propagator: TextMapCompositePropagator,
 }
@@ -43,7 +51,9 @@ pub struct PythonHandler {
 impl Clone for PythonHandler {
     fn clone(&self) -> Self {
         Self {
-            handle_method: Arc::clone(&self.handle_method),
+            handle_method: self.handle_method.clone(),
+            event_class: self.event_class.clone(),
+            event_set_method: self.event_set_method.clone(),
             locals: self.locals.clone(),
             propagator: new_propagator(),
         }
@@ -80,13 +90,20 @@ impl PythonHandler {
 
         // Create a TracingHandler instance and get its handle method
         let tracing_handler = tracing_handler_class.call1((handler,))?;
-        let handle_method = Arc::new(tracing_handler.getattr("handle")?.into_py(py));
+        let handle_method = tracing_handler.getattr("handle")?;
+
+        // Get a reference to the event methods
+        let tsasync = py.import_bound("tsasync")?;
+        let event_class = tsasync.getattr("Event")?;
+        let event_set_method = event_class.getattr("set")?;
 
         // Capture the running event loop
         let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
         Ok(Self {
-            handle_method,
+            handle_method: handle_method.unbind(),
+            event_class: event_class.unbind(),
+            event_set_method: event_set_method.unbind(),
             locals,
             propagator: new_propagator(),
         })
@@ -94,7 +111,7 @@ impl PythonHandler {
 }
 
 impl FallibleHandler for PythonHandler {
-    type Error = PyErr;
+    type Error = WrappedPythonError;
 
     /// Handles a Kafka message by calling the Python-defined `TracingHandler`'s
     /// handle method.
@@ -106,51 +123,177 @@ impl FallibleHandler for PythonHandler {
     ///
     /// # Returns
     ///
-    /// A `Result` indicating success or containing a `PyErr` if an error
-    /// occurred.
+    /// A `Result` indicating success or containing a `WrappedPythonError` if an
+    /// error occurred.
     async fn handle(
         &self,
         context: MessageContext,
-        ConsumerMessage {
+        message: ConsumerMessage,
+    ) -> Result<(), Self::Error> {
+        // Serialize the OpenTelemetry context
+        let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
+        self.propagator
+            .inject_context(&message.span.context(), &mut serialized_context);
+
+        let shutdown_future = context.on_shutdown();
+        let (shutdown_event, complete_future) = execute(
+            context,
+            message,
+            serialized_context,
+            &self.event_class,
+            &self.handle_method,
+            &self.locals,
+        )?;
+
+        pin_mut!(complete_future);
+        select! {
+            // Future completed
+            result = complete_future.as_mut() => {
+                result?;
+            }
+
+            // Shutdown signal
+            () = shutdown_future => {
+                debug!("cancelling task");
+                cancel_task(&self.event_set_method, shutdown_event)?;
+
+                debug!("waiting for task to complete");
+                complete_future.await?;
+                debug!("task complete");
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Cancels a Python task by setting its shutdown event.
+///
+/// # Arguments
+///
+/// * `event_set_method` - The Python method to set the event.
+/// * `shutdown_event` - The Python event object to be set.
+///
+/// # Returns
+///
+/// A `PyResult` indicating success or containing a `PyErr` if an error
+/// occurred.
+fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResult<()> {
+    Python::with_gil(|py| {
+        event_set_method.call1(py, (shutdown_event,))?;
+        Ok(())
+    })
+}
+
+/// Prepares and executes a Python handler for a Kafka message.
+///
+/// # Arguments
+///
+/// * `context` - The message context.
+/// * `message` - The consumer message to be handled.
+/// * `serialized_context` - The serialized OpenTelemetry context.
+/// * `event_class` - The Python Event class.
+/// * `handle_method` - The Python handler method.
+/// * `locals` - The task locals for the Python event loop.
+///
+/// # Returns
+///
+/// A tuple containing the shutdown event and the future representing the
+/// handler execution.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if there's an error during Python object creation or
+/// method calls.
+fn execute(
+    context: MessageContext,
+    message: ConsumerMessage,
+    serialized_context: HashMap<String, String>,
+    event_class: &PyObject,
+    handle_method: &PyObject,
+    locals: &TaskLocals,
+) -> PyResult<(
+    PyObject,
+    impl Future<Output = PyResult<PyObject>> + Send + Sized,
+)> {
+    Python::with_gil(move |py| {
+        // Create Context and Message objects for the Python handler
+        let message_context = Context(context);
+
+        let ConsumerMessage {
             topic,
             partition,
             offset,
             key,
             timestamp,
             payload,
-            span,
-        }: ConsumerMessage,
-    ) -> Result<(), Self::Error> {
-        // Serialize the OpenTelemetry context
-        let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
-        self.propagator
-            .inject_context(&span.context(), &mut serialized_context);
+            ..
+        } = message;
 
-        let future = Python::with_gil(|py| {
-            // Create Context and Message objects for the Python handler
-            let message_context = Context(context);
-            let message = Message {
-                topic,
-                partition,
-                offset,
-                timestamp,
-                key,
-                payload: pythonize(py, &payload)?,
-            };
+        let message = Message {
+            topic,
+            partition,
+            offset,
+            timestamp,
+            key,
+            payload: pythonize(py, &payload)?,
+        };
 
-            // Convert serialized_context to a Python dict
-            let otel_context = serialized_context.into_py_dict_bound(py);
+        // Convert serialized_context to a Python dict
+        let otel_context = serialized_context.into_py_dict_bound(py);
 
-            // Call the TracingHandler's handle method
-            into_future_with_locals(
-                &self.locals,
-                self.handle_method
-                    .call1(py, (message_context, message, otel_context))?
-                    .into_bound(py),
-            )
-        })?;
+        // Create asyncio.Event for shutdown signaling
+        let shutdown_event = event_class.call0(py)?;
 
-        future.await?;
-        Ok(())
+        // Call the TracingHandler's handle method to build coroutine
+        let coroutine = handle_method
+            .call1(
+                py,
+                (message_context, message, otel_context, &shutdown_event),
+            )?
+            .into_bound(py);
+
+        // Convert coroutine into a future
+        let complete_future = into_future_with_locals(locals, coroutine)?;
+        Ok((shutdown_event, complete_future))
+    })
+}
+
+/// Wraps Python errors that may occur during message handling.
+#[derive(Debug, Error)]
+pub enum WrappedPythonError {
+    #[error(transparent)]
+    Python(#[from] PyErr),
+}
+
+impl ClassifyError for WrappedPythonError {
+    /// Classifies the error as either Terminal or Transient.
+    ///
+    /// # Returns
+    ///
+    /// `ErrorCategory::Terminal` for `asyncio.CancelledError`,
+    /// `KeyboardInterrupt`, or `SystemExit`. `ErrorCategory::Transient` for
+    /// all other Python errors.
+    fn classify_error(&self) -> ErrorCategory {
+        match self {
+            WrappedPythonError::Python(error) => Python::with_gil(|py| {
+                let Ok(asyncio) = py.import_bound("asyncio") else {
+                    return ErrorCategory::Terminal;
+                };
+
+                let Ok(cancelled_error) = asyncio.getattr("CancelledError") else {
+                    return ErrorCategory::Terminal;
+                };
+
+                if error.is_instance_bound(py, &cancelled_error)
+                    || error.is_instance_of::<PyKeyboardInterrupt>(py)
+                    || error.is_instance_of::<PySystemExit>(py)
+                {
+                    ErrorCategory::Terminal
+                } else {
+                    ErrorCategory::Transient
+                }
+            }),
+        }
     }
 }
