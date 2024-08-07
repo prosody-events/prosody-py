@@ -391,6 +391,8 @@ impl ProsodyClient {
         // If the consumer is in the Running state, visit the handler's method
         if let ConsumerState::Running { handler, .. } = &self.consumer {
             visit.call(handler.handle_method.as_any())?;
+            visit.call(handler.event_class.as_any())?;
+            visit.call(handler.event_set_method.as_any())?;
         }
 
         visit.call(self.get_context.as_any())?;

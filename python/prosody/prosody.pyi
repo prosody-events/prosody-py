@@ -4,10 +4,11 @@ Type stubs for the Prosody Kafka client library.
 This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
-
 from abc import ABC, abstractmethod
 from datetime import timedelta, datetime
 from typing import Any, List, Optional, Union, TypeAlias, Dict
+
+import tsasync
 
 # Define a JSONValue type that represents all possible JSON-serializable values
 JSONValue: TypeAlias = Union[
@@ -72,7 +73,8 @@ class TracingHandler:
         self.handler = handler
         self.tracer: Any  # OpenTelemetry tracer
 
-    async def handle(self, context: Context, message: Message, opentelemetry_context: Dict[str, str]):
+    async def handle(self, context: Context, message: Message, opentelemetry_context: Dict[str, str],
+                     shutdown_event: tsasync.Event):
         """
         Handle a Kafka message with added tracing.
 
@@ -84,6 +86,7 @@ class TracingHandler:
             context (Context): The context of the message.
             message (Message): The Kafka message to be processed.
             opentelemetry_context (Dict[str, str]): Serialized OpenTelemetry context.
+            shutdown_event (tsasync.Event): Event used to signal shutdown.
 
         Raises:
             Exception: Any exception raised by the wrapped handler's handle method.

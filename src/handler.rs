@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Arc;
 
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
@@ -16,11 +15,12 @@ use prosody::propagator::new_propagator;
 use pyo3::exceptions::{PyKeyboardInterrupt, PySystemExit, PyTypeError};
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
-use pyo3::{Bound, IntoPy, PyAny, PyErr, PyObject, PyResult, Python};
+use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
 use pyo3_asyncio_0_21::{into_future_with_locals, TaskLocals};
 use pythonize::pythonize;
 use thiserror::Error;
 use tokio::select;
+use tracing::debug;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::message::{Context, Message};
@@ -40,8 +40,9 @@ const TRACING_HANDLER_CLASS_NAME: &str = "TracingHandler";
 /// consumer.
 #[derive(Debug)]
 pub struct PythonHandler {
-    pub handle_method: Arc<PyObject>,
-    cancelled_error: PyObject,
+    pub handle_method: PyObject,
+    pub event_class: PyObject,
+    pub event_set_method: PyObject,
     locals: TaskLocals,
     propagator: TextMapCompositePropagator,
 }
@@ -49,8 +50,9 @@ pub struct PythonHandler {
 impl Clone for PythonHandler {
     fn clone(&self) -> Self {
         Self {
-            handle_method: Arc::clone(&self.handle_method),
-            cancelled_error: self.cancelled_error.clone(),
+            handle_method: self.handle_method.clone(),
+            event_class: self.event_class.clone(),
+            event_set_method: self.event_set_method.clone(),
             locals: self.locals.clone(),
             propagator: new_propagator(),
         }
@@ -87,20 +89,20 @@ impl PythonHandler {
 
         // Create a TracingHandler instance and get its handle method
         let tracing_handler = tracing_handler_class.call1((handler,))?;
-        let handle_method = Arc::new(tracing_handler.getattr("handle")?.into_py(py));
+        let handle_method = tracing_handler.getattr("handle")?;
+
+        // Get a reference to the event methods
+        let tsasync = py.import_bound("tsasync")?;
+        let event_class = tsasync.getattr("Event")?;
+        let event_set_method = event_class.getattr("set")?;
 
         // Capture the running event loop
         let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
-        // Get reference to CancelledError
-        let cancelled_error = py
-            .import_bound("asyncio")?
-            .getattr("CancelledError")?
-            .unbind();
-
         Ok(Self {
-            handle_method,
-            cancelled_error,
+            handle_method: handle_method.unbind(),
+            event_class: event_class.unbind(),
+            event_set_method: event_set_method.unbind(),
             locals,
             propagator: new_propagator(),
         })
@@ -133,10 +135,11 @@ impl FallibleHandler for PythonHandler {
             .inject_context(&message.span.context(), &mut serialized_context);
 
         let shutdown_future = context.on_shutdown();
-        let (coroutine, complete_future) = execute(
+        let (shutdown_event, complete_future) = execute(
             context,
             message,
             serialized_context,
+            &self.event_class,
             &self.handle_method,
             &self.locals,
         )?;
@@ -150,7 +153,12 @@ impl FallibleHandler for PythonHandler {
 
             // Shutdown signal
             () = shutdown_future => {
-                cancel_coroutine(&coroutine, &self.cancelled_error)?;
+                debug!("cancelling task");
+                cancel_task(&self.event_set_method, shutdown_event)?;
+
+                debug!("waiting for task to complete");
+                complete_future.await?;
+                debug!("task complete");
             }
         }
 
@@ -158,10 +166,9 @@ impl FallibleHandler for PythonHandler {
     }
 }
 
-fn cancel_coroutine(coroutine: &PyObject, cancelled_error: &PyObject) -> PyResult<()> {
+fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResult<()> {
     Python::with_gil(|py| {
-        let error = cancelled_error.call1(py, ("partition is being revoked",))?;
-        coroutine.call_method1(py, "throw", (error,))?;
+        event_set_method.call1(py, (shutdown_event,))?;
         Ok(())
     })
 }
@@ -170,6 +177,7 @@ fn execute(
     context: MessageContext,
     message: ConsumerMessage,
     serialized_context: HashMap<String, String>,
+    event_class: &PyObject,
     handle_method: &PyObject,
     locals: &TaskLocals,
 ) -> PyResult<(
@@ -202,14 +210,20 @@ fn execute(
         // Convert serialized_context to a Python dict
         let otel_context = serialized_context.into_py_dict_bound(py);
 
+        // Create asyncio.Event for shutdown signaling
+        let shutdown_event = event_class.call0(py)?;
+
         // Call the TracingHandler's handle method to build coroutine
         let coroutine = handle_method
-            .call1(py, (message_context, message, otel_context))?
+            .call1(
+                py,
+                (message_context, message, otel_context, &shutdown_event),
+            )?
             .into_bound(py);
 
         // Convert coroutine into a future
-        let complete_future = into_future_with_locals(locals, coroutine.clone())?;
-        Ok((coroutine.unbind(), complete_future))
+        let complete_future = into_future_with_locals(locals, coroutine)?;
+        Ok((shutdown_event, complete_future))
     })
 }
 
