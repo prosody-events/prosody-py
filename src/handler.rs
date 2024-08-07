@@ -1,8 +1,9 @@
 //! Bridges Rust's Prosody library and Python for Kafka message handling.
 //!
-//! Defines the `PythonHandler` struct implementing the `FallibleHandler` trait,
-//! enabling Python-defined message handlers to work with Prosody's Kafka
-//! consumer. Manages OpenTelemetry context propagation between Rust and Python.
+//! This module defines the `PythonHandler` struct, which implements the
+//! `FallibleHandler` trait, enabling Python-defined message handlers to work
+//! with Prosody's Kafka consumer. It also manages OpenTelemetry context
+//! propagation between Rust and Python.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -122,8 +123,8 @@ impl FallibleHandler for PythonHandler {
     ///
     /// # Returns
     ///
-    /// A `Result` indicating success or containing a `PyErr` if an error
-    /// occurred.
+    /// A `Result` indicating success or containing a `WrappedPythonError` if an
+    /// error occurred.
     async fn handle(
         &self,
         context: MessageContext,
@@ -166,6 +167,17 @@ impl FallibleHandler for PythonHandler {
     }
 }
 
+/// Cancels a Python task by setting its shutdown event.
+///
+/// # Arguments
+///
+/// * `event_set_method` - The Python method to set the event.
+/// * `shutdown_event` - The Python event object to be set.
+///
+/// # Returns
+///
+/// A `PyResult` indicating success or containing a `PyErr` if an error
+/// occurred.
 fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResult<()> {
     Python::with_gil(|py| {
         event_set_method.call1(py, (shutdown_event,))?;
@@ -173,6 +185,26 @@ fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResul
     })
 }
 
+/// Prepares and executes a Python handler for a Kafka message.
+///
+/// # Arguments
+///
+/// * `context` - The message context.
+/// * `message` - The consumer message to be handled.
+/// * `serialized_context` - The serialized OpenTelemetry context.
+/// * `event_class` - The Python Event class.
+/// * `handle_method` - The Python handler method.
+/// * `locals` - The task locals for the Python event loop.
+///
+/// # Returns
+///
+/// A tuple containing the shutdown event and the future representing the
+/// handler execution.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if there's an error during Python object creation or
+/// method calls.
 fn execute(
     context: MessageContext,
     message: ConsumerMessage,
@@ -227,6 +259,7 @@ fn execute(
     })
 }
 
+/// Wraps Python errors that may occur during message handling.
 #[derive(Debug, Error)]
 pub enum WrappedPythonError {
     #[error(transparent)]
@@ -234,6 +267,13 @@ pub enum WrappedPythonError {
 }
 
 impl ClassifyError for WrappedPythonError {
+    /// Classifies the error as either Terminal or Transient.
+    ///
+    /// # Returns
+    ///
+    /// `ErrorCategory::Terminal` for `asyncio.CancelledError`,
+    /// `KeyboardInterrupt`, or `SystemExit`. `ErrorCategory::Transient` for
+    /// all other Python errors.
     fn classify_error(&self) -> ErrorCategory {
         match self {
             WrappedPythonError::Python(error) => Python::with_gil(|py| {

@@ -6,7 +6,7 @@ which offers high-performance Python bindings for Kafka message handling.
 """
 from abc import ABC, abstractmethod
 from datetime import timedelta, datetime
-from typing import Any, List, Optional, Union, TypeAlias, Dict
+from typing import Any, List, Optional, Union, TypeAlias, Dict, Literal
 
 import tsasync
 
@@ -37,7 +37,7 @@ class AbstractMessageHandler(ABC):
     """
 
     @abstractmethod
-    async def handle(self, context: Context, message: Message):
+    async def handle(self, context: 'Context', message: 'Message') -> None:
         """
         Handle a Kafka message.
 
@@ -60,7 +60,7 @@ class TracingHandler:
         Users should not need to interact with this class directly in normal usage.
     """
 
-    def __init__(self, handler: AbstractMessageHandler):
+    def __init__(self, handler: AbstractMessageHandler) -> None:
         """
         Initialize a new TracingHandler.
 
@@ -73,8 +73,8 @@ class TracingHandler:
         self.handler = handler
         self.tracer: Any  # OpenTelemetry tracer
 
-    async def handle(self, context: Context, message: Message, opentelemetry_context: Dict[str, str],
-                     shutdown_event: tsasync.Event):
+    async def handle(self, context: 'Context', message: 'Message', opentelemetry_context: Dict[str, str],
+                     shutdown_event: tsasync.Event) -> None:
         """
         Handle a Kafka message with added tracing.
 
@@ -210,12 +210,12 @@ class ProsodyClient:
             partition_shutdown_timeout: Optional[Duration] = None,
             poll_interval: Optional[Duration] = None,
             commit_interval: Optional[Duration] = None,
-            mode: Optional[str] = None,
+            mode: Optional[Literal['pipeline', 'low-latency']] = None,
             retry_base: Optional[int] = None,
             max_retries: Optional[int] = None,
             max_retry_delay: Optional[Duration] = None,
             failure_topic: Optional[str] = None
-    ):
+    ) -> None:
         """
         Initialize a new ProsodyClient.
 
@@ -242,30 +242,30 @@ class ProsodyClient:
         """
         ...
 
-    async def send(self, topic: str, key: str, payload: Any):
+    async def send(self, topic: str, key: str, payload: JSONValue) -> None:
         """
         Send a message to a specified topic.
 
         Args:
             topic (str): The topic to which the message should be sent.
             key (str): The key associated with the message.
-            payload (Any): The content of the message (must be JSON-serializable).
+            payload (JSONValue): The content of the message (must be JSON-serializable).
 
         Raises:
             RuntimeError: If there's an error sending the message.
         """
         ...
 
-    def consumer_state(self) -> str:
+    def consumer_state(self) -> Literal['unconfigured', 'configured', 'running']:
         """
         Get the current state of the consumer.
 
         Returns:
-            str: The current state ('unconfigured', 'configured', or 'running').
+            Literal['unconfigured', 'configured', 'running']: The current state.
         """
         ...
 
-    def subscribe(self, handler: AbstractMessageHandler):
+    def subscribe(self, handler: AbstractMessageHandler) -> None:
         """
         Subscribe to messages using the provided handler.
 
@@ -279,7 +279,7 @@ class ProsodyClient:
         """
         ...
 
-    async def unsubscribe(self):
+    async def unsubscribe(self) -> None:
         """
         Unsubscribe from messages and shut down the consumer.
 
