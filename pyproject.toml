@@ -19,7 +19,10 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Distributed Computing",
 ]
-dependencies = ["opentelemetry-api>=1.26.0,<2.0.0"]
+dependencies = [
+    "opentelemetry-api>=1.26.0,<2.0.0",
+    "threadsafe-async>=0.2.1,<1.0.0",
+]
 description = "High-performance Python bindings for a Rust-based Kafka client"
 dynamic = ["version"]
 keywords = ["async", "client", "distributed", "kafka", "messaging"]
