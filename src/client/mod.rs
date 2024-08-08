@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::mem::take;
+use std::time::Duration;
 
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::failure::retry::RetryConfiguration;
@@ -253,7 +254,18 @@ impl ProsodyClient {
             }
         };
 
-        let handler = PythonHandler::new(handler)?;
+        // Set the task grace period to 80% of the total partition timeout
+        let task_grace_period = config
+            .consumer()
+            .partition_shutdown_timeout
+            .map(|timeout| {
+                let nanos = timeout.as_nanos();
+                let result_nanos = (nanos * 4) / 5;
+                Duration::from_nanos(result_nanos as u64)
+            })
+            .unwrap_or_default();
+
+        let handler = PythonHandler::new(handler, task_grace_period)?;
 
         // Initialize the consumer based on the configuration mode
         let consumer = match &config {
