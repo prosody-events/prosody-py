@@ -44,6 +44,15 @@ class AbstractMessageHandler(ABC):
         Args:
             context (Context): The context of the message.
             message (Message): The Kafka message to be processed.
+
+        Notes:
+            - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
+            - Always allow `asyncio.CancelledError` to propagate to signal task cancellation to Prosody.
+            - Use `try/finally` blocks or context managers for proper resource cleanup.
+            - Suppressing cancellation errors may lead to missed messages and data loss.
+
+        Raises:
+            asyncio.CancelledError: If the task is cancelled. Do not catch this exception.
         """
         ...
 
@@ -53,7 +62,8 @@ class TracingHandler:
     A wrapper class for message handlers that adds OpenTelemetry tracing.
 
     This class wraps an instance of AbstractMessageHandler and adds tracing
-    functionality to the message handling process.
+    functionality to the message handling process. It also manages task
+    cancellation during partition revocation or shutdown.
 
     Note:
         This class is intended for internal use within the Prosody library only.
@@ -76,11 +86,12 @@ class TracingHandler:
     async def handle(self, context: 'Context', message: 'Message', opentelemetry_context: Dict[str, str],
                      shutdown_event: tsasync.Event) -> None:
         """
-        Handle a Kafka message with added tracing.
+        Handle a Kafka message with added tracing and cancellation support.
 
         This method creates a new span for the message handling process,
         calls the wrapped handler's handle method within the span,
         and ensures proper propagation of the OpenTelemetry context.
+        It also manages task cancellation when shutdown is signaled.
 
         Args:
             context (Context): The context of the message.
@@ -90,10 +101,12 @@ class TracingHandler:
 
         Raises:
             Exception: Any exception raised by the wrapped handler's handle method.
+            asyncio.CancelledError: If the task is cancelled due to shutdown or partition revocation.
 
         Note:
             This method is intended to be called internally by the Prosody library,
-            not directly by users.
+            not directly by users. It ensures that the handler task is properly
+            cancelled and cleaned up during shutdown or partition revocation.
         """
         ...
 
@@ -276,6 +289,11 @@ class ProsodyClient:
         Raises:
             RuntimeError: If the consumer is not configured or is already
                 subscribed.
+
+        Note:
+            The subscribed handler should be prepared for cancellation at any time.
+            Ensure that the handler's `handle` method allows `asyncio.CancelledError`
+            to propagate for proper shutdown and partition revocation handling.
         """
         ...
 
@@ -283,8 +301,17 @@ class ProsodyClient:
         """
         Unsubscribe from messages and shut down the consumer.
 
+        This method initiates a graceful shutdown of the consumer, cancelling
+        any in-flight message handling tasks. It ensures that all resources
+        are properly cleaned up before returning.
+
         Raises:
             RuntimeError: If the consumer is not configured or not subscribed.
+
+        Note:
+            This method will wait for all tasks to complete or be cancelled
+            before returning. Ensure that your message handlers respond
+            promptly to cancellation to avoid delays during shutdown.
         """
         ...
 
