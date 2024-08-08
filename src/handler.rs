@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::time::Duration;
 
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
@@ -21,7 +22,8 @@ use pyo3_asyncio_0_21::{into_future_with_locals, TaskLocals};
 use pythonize::pythonize;
 use thiserror::Error;
 use tokio::select;
-use tracing::debug;
+use tokio::time::sleep;
+use tracing::{debug, instrument, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::message::{Context, Message};
@@ -36,14 +38,15 @@ const TRACING_HANDLER_CLASS_NAME: &str = "TracingHandler";
 
 /// A wrapper for Python-defined message handlers.
 ///
-/// Holds a reference to the Python `TracingHandler`'s `handle` method and
-/// implements the `FallibleHandler` trait for use with Prosody's Kafka
-/// consumer.
+/// This struct holds references to Python objects and methods necessary for
+/// handling Kafka messages and implements the `FallibleHandler` trait for use
+/// with Prosody's Kafka consumer.
 #[derive(Debug)]
 pub struct PythonHandler {
     pub handle_method: PyObject,
     pub event_class: PyObject,
     pub event_set_method: PyObject,
+    shutdown_grace_period: Duration,
     locals: TaskLocals,
     propagator: TextMapCompositePropagator,
 }
@@ -54,6 +57,7 @@ impl Clone for PythonHandler {
             handle_method: self.handle_method.clone(),
             event_class: self.event_class.clone(),
             event_set_method: self.event_set_method.clone(),
+            shutdown_grace_period: self.shutdown_grace_period,
             locals: self.locals.clone(),
             propagator: new_propagator(),
         }
@@ -66,6 +70,8 @@ impl PythonHandler {
     /// # Arguments
     ///
     /// * `handler` - A Python object subclassing `AbstractMessageHandler`.
+    /// * `shutdown_grace_period` - The duration to wait for a task to complete
+    ///   during shutdown.
     ///
     /// # Returns
     ///
@@ -75,7 +81,7 @@ impl PythonHandler {
     ///
     /// Returns a `PyTypeError` if `handler` is not a subclass of
     /// `AbstractMessageHandler`.
-    pub fn new(handler: &Bound<PyAny>) -> PyResult<Self> {
+    pub fn new(handler: &Bound<PyAny>, shutdown_grace_period: Duration) -> PyResult<Self> {
         let py = handler.py();
         let prosody_module = py.import_bound("prosody")?;
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
@@ -104,6 +110,7 @@ impl PythonHandler {
             handle_method: handle_method.unbind(),
             event_class: event_class.unbind(),
             event_set_method: event_set_method.unbind(),
+            shutdown_grace_period,
             locals,
             propagator: new_propagator(),
         })
@@ -125,6 +132,7 @@ impl FallibleHandler for PythonHandler {
     ///
     /// A `Result` indicating success or containing a `WrappedPythonError` if an
     /// error occurred.
+    #[instrument(level = "debug", skip(self), err)]
     async fn handle(
         &self,
         context: MessageContext,
@@ -154,12 +162,21 @@ impl FallibleHandler for PythonHandler {
 
             // Shutdown signal
             () = shutdown_future => {
-                debug!("cancelling task");
-                cancel_task(&self.event_set_method, shutdown_event)?;
+                debug!("shutdown signal received; waiting for task to complete");
+                select! {
+                    () = sleep(self.shutdown_grace_period) => {
+                        warn!("timeout exceeded; cancelling task");
+                        cancel_task(&self.event_set_method, shutdown_event)?;
 
-                debug!("waiting for task to complete");
-                complete_future.await?;
-                debug!("task complete");
+                        debug!("waiting for task to cleanup");
+                        complete_future.await?;
+                    }
+
+                    result = complete_future.as_mut() => {
+                        result?;
+                    }
+                }
+                debug!("task shutdown");
             }
         }
 
@@ -271,9 +288,9 @@ impl ClassifyError for WrappedPythonError {
     ///
     /// # Returns
     ///
-    /// `ErrorCategory::Terminal` for `asyncio.CancelledError`,
-    /// `KeyboardInterrupt`, or `SystemExit`. `ErrorCategory::Transient` for
-    /// all other Python errors.
+    /// * `ErrorCategory::Terminal` for `asyncio.CancelledError`,
+    ///   `KeyboardInterrupt`, or `SystemExit`.
+    /// * `ErrorCategory::Transient` for all other Python errors.
     fn classify_error(&self) -> ErrorCategory {
         match self {
             WrappedPythonError::Python(error) => Python::with_gil(|py| {

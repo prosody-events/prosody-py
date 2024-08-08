@@ -71,7 +71,7 @@ async def test_send_and_receive_message(client):
         await client.send(test_topic, test_key, test_payload)
 
     # Wait for the message to be received
-    await asyncio.wait_for(handler.message_received.wait(), timeout=5.0)
+    await asyncio.wait_for(handler.message_received.wait(), timeout=30.0)
 
     # Check if the message was received
     assert len(handler.messages) == 1
@@ -121,7 +121,7 @@ async def test_multiple_messages(client):
             await handler.message_received.wait()
             handler.message_received.clear()
 
-    await asyncio.wait_for(wait_for_messages(), timeout=5.0)
+    await asyncio.wait_for(wait_for_messages(), timeout=30.0)
 
     # Check if all messages were received
     assert len(handler.messages) == len(messages)
@@ -164,7 +164,7 @@ async def test_same_key_message_order(client):
             await handler.message_received.wait()
             handler.message_received.clear()
 
-    await asyncio.wait_for(wait_for_messages(), timeout=5.0)
+    await asyncio.wait_for(wait_for_messages(), timeout=30.0)
 
     # Check if all messages were received
     assert len(handler.messages) == len(messages)

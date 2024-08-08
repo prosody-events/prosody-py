@@ -240,7 +240,9 @@ class ProsodyClient:
             subscribed_topics: Topics to subscribe to.
             max_uncommitted: Max number of uncommitted messages.
             max_enqueued_per_key: Max enqueued messages per key.
-            partition_shutdown_timeout: Timeout for partition shutdown.
+            partition_shutdown_timeout: Timeout for partition shutdown. During partition revocation, tasks are given 80% 
+                of this time to finish before being cancelled. THe remaining 20% is used to wait for the cancellation
+                hooks to complete.
             poll_interval: Time between message polls.
             commit_interval: Time between offset commits.
             mode: Operating mode ('pipeline' or 'low-latency').
