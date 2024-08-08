@@ -38,9 +38,9 @@ const TRACING_HANDLER_CLASS_NAME: &str = "TracingHandler";
 
 /// A wrapper for Python-defined message handlers.
 ///
-/// Holds a reference to the Python `TracingHandler`'s `handle` method and
-/// implements the `FallibleHandler` trait for use with Prosody's Kafka
-/// consumer.
+/// This struct holds references to Python objects and methods necessary for
+/// handling Kafka messages and implements the `FallibleHandler` trait for use
+/// with Prosody's Kafka consumer.
 #[derive(Debug)]
 pub struct PythonHandler {
     pub handle_method: PyObject,
@@ -70,6 +70,8 @@ impl PythonHandler {
     /// # Arguments
     ///
     /// * `handler` - A Python object subclassing `AbstractMessageHandler`.
+    /// * `shutdown_grace_period` - The duration to wait for a task to complete
+    ///   during shutdown.
     ///
     /// # Returns
     ///
@@ -286,9 +288,9 @@ impl ClassifyError for WrappedPythonError {
     ///
     /// # Returns
     ///
-    /// `ErrorCategory::Terminal` for `asyncio.CancelledError`,
-    /// `KeyboardInterrupt`, or `SystemExit`. `ErrorCategory::Transient` for
-    /// all other Python errors.
+    /// * `ErrorCategory::Terminal` for `asyncio.CancelledError`,
+    ///   `KeyboardInterrupt`, or `SystemExit`.
+    /// * `ErrorCategory::Transient` for all other Python errors.
     fn classify_error(&self) -> ErrorCategory {
         match self {
             WrappedPythonError::Python(error) => Python::with_gil(|py| {
