@@ -266,6 +266,25 @@ if __name__ == '__main__':
     asyncio.run(main())
 ```
 
+### Handling Task Cancellation
+
+Prosody cancels tasks during partition rebalancing or shutdown. How you handle cancellation is critical:
+
+- Prosody interprets task success based on exception propagation.
+- A task that exits without an exception is considered successful.
+- Any exception, including `asyncio.CancelledError`, signals task failure.
+
+Best practices:
+
+1. Exit promptly when cancelled to avoid rebalancing delays.
+2. Always propagate `asyncio.CancelledError`.
+3. Use `try/finally` or context managers for clean resource handling.
+
+Failing to follow these practices can lead to:
+
+- Slower message processing due to delayed rebalancing.
+- Data loss from missed messages when cancellation errors are suppressed.
+
 ## Release Process
 
 Prosody uses an automated release process managed by GitHub Actions. Here's an overview of how releases are handled:
