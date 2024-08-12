@@ -5,22 +5,22 @@ from opentelemetry import trace
 from opentelemetry.propagate import extract
 
 
-class AbstractMessageHandler(ABC):
+class EventHandler(ABC):
     @abstractmethod
-    async def handle(self, context, message):
+    async def on_message(self, context, message):
         pass
 
 
-class TracingHandler:
-    def __init__(self, handler: AbstractMessageHandler):
+class ProsodyHandler:
+    def __init__(self, handler: EventHandler):
         self.handler = handler
         self.tracer = trace.get_tracer(__name__)
 
-    async def handle(self, context, message, opentelemetry_context, shutdown_event):
+    async def on_message(self, context, message, opentelemetry_context, shutdown_event):
         otel_context = extract(carrier=opentelemetry_context)
 
         with self.tracer.start_as_current_span("python-receive", context=otel_context):
-            handler_task = asyncio.create_task(self.handler.handle(context, message))
+            handler_task = asyncio.create_task(self.handler.on_message(context, message))
             shutdown_task = asyncio.create_task(shutdown_event.wait())
 
             try:
