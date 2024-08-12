@@ -141,7 +141,7 @@ impl FallibleHandler for PythonHandler {
         // Serialize the OpenTelemetry context
         let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
         self.propagator
-            .inject_context(&message.span.context(), &mut serialized_context);
+            .inject_context(&message.span().context(), &mut serialized_context);
 
         let shutdown_future = context.on_shutdown();
         let (shutdown_event, complete_future) = execute(
@@ -236,24 +236,11 @@ fn execute(
     Python::with_gil(move |py| {
         // Create Context and Message objects for the Python handler
         let message_context = Context(context);
-
-        let ConsumerMessage {
-            topic,
-            partition,
-            offset,
-            key,
-            timestamp,
-            payload,
-            ..
-        } = message;
+        let payload = pythonize(py, message.payload())?;
 
         let message = Message {
-            topic,
-            partition,
-            offset,
-            timestamp,
-            key,
-            payload: pythonize(py, &payload)?,
+            inner: message,
+            payload,
         };
 
         // Convert serialized_context to a Python dict

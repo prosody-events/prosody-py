@@ -7,8 +7,9 @@
 //! messages as strings.
 
 use chrono::{DateTime, Utc};
-use prosody::consumer::message::MessageContext;
-use prosody::{Key, Offset, Partition, Topic};
+use prosody::consumer::message::{ConsumerMessage, MessageContext};
+use prosody::consumer::Keyed;
+use prosody::{Offset, Partition};
 use pyo3::types::PyAnyMethods;
 use pyo3::{pyclass, pymethods, PyObject, PyResult, PyTraverseError, PyVisit, Python};
 
@@ -18,11 +19,7 @@ use pyo3::{pyclass, pymethods, PyObject, PyResult, PyTraverseError, PyVisit, Pyt
 /// its topic, partition, offset, timestamp, key, and payload.
 #[pyclass(frozen)]
 pub struct Message {
-    pub topic: Topic,
-    pub partition: Partition,
-    pub offset: Offset,
-    pub timestamp: DateTime<Utc>,
-    pub key: Key,
+    pub inner: ConsumerMessage,
     pub payload: PyObject,
 }
 
@@ -38,7 +35,7 @@ impl Message {
     ///
     /// A string slice containing the topic name.
     pub fn topic(&self) -> &'static str {
-        self.topic.as_ref()
+        self.inner.topic().as_ref()
     }
 
     /// Returns the partition of the message.
@@ -47,7 +44,7 @@ impl Message {
     ///
     /// The partition number as a `Partition` type.
     pub fn partition(&self) -> Partition {
-        self.partition
+        self.inner.partition()
     }
 
     /// Returns the offset of the message.
@@ -56,7 +53,7 @@ impl Message {
     ///
     /// The message offset as an `Offset` type.
     pub fn offset(&self) -> Offset {
-        self.offset
+        self.inner.offset()
     }
 
     /// Returns the timestamp of the message.
@@ -65,7 +62,7 @@ impl Message {
     ///
     /// The message timestamp as a `DateTime<Utc>`.
     pub fn timestamp(&self) -> DateTime<Utc> {
-        self.timestamp
+        *self.inner.timestamp()
     }
 
     /// Returns the key of the message.
@@ -74,7 +71,7 @@ impl Message {
     ///
     /// A string slice containing the message key.
     pub fn key(&self) -> &str {
-        &self.key
+        self.inner.key()
     }
 
     /// Returns the payload of the message.

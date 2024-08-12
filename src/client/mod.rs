@@ -207,7 +207,7 @@ impl ProsodyClient {
 
         // Send the message using the producer
         self.producer
-            .send([], topic.as_str().into(), &key, payload)
+            .send([], topic.as_str().into(), &key, &payload)
             .instrument(span)
             .await
             .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
