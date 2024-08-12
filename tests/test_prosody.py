@@ -76,9 +76,9 @@ async def test_send_and_receive_message(client):
     # Check if the message was received
     assert len(handler.messages) == 1
     received_message = handler.messages[0]
-    assert received_message.topic() == test_topic
-    assert received_message.key() == test_key
-    assert received_message.payload() == test_payload
+    assert received_message.topic == test_topic
+    assert received_message.key == test_key
+    assert received_message.payload == test_payload
 
 
 async def test_client_configuration():
@@ -128,13 +128,13 @@ async def test_multiple_messages(client):
 
     # Create sets of expected and received messages for comparison
     expected_messages = set((key, frozenset(payload.items())) for key, payload in messages)
-    received_messages = set((msg.key(), frozenset(msg.payload().items())) for msg in handler.messages)
+    received_messages = set((msg.key, frozenset(msg.payload.items())) for msg in handler.messages)
 
     # Check if all sent messages were received, regardless of order
     assert expected_messages == received_messages
 
     # Verify that all messages have the correct topic
-    assert all(msg.topic() == test_topic for msg in handler.messages)
+    assert all(msg.topic == test_topic for msg in handler.messages)
 
 
 async def test_same_key_message_order(client):
@@ -170,16 +170,16 @@ async def test_same_key_message_order(client):
     assert len(handler.messages) == len(messages)
 
     # Check if messages with the same key were received in the order they were sent
-    received_messages = [msg for msg in handler.messages if msg.key() == test_key]
-    received_sequences = [msg.payload()["sequence"] for msg in received_messages]
+    received_messages = [msg for msg in handler.messages if msg.key == test_key]
+    received_sequences = [msg.payload["sequence"] for msg in received_messages]
     expected_sequences = [msg["sequence"] for msg in messages]
 
     assert received_sequences == expected_sequences, f"Expected sequence {expected_sequences}, but got {received_sequences}"
 
     # Verify that all messages have the correct topic and key
     for msg in received_messages:
-        assert msg.topic() == test_topic
-        assert msg.key() == test_key
+        assert msg.topic == test_topic
+        assert msg.key == test_key
 
 
 if __name__ == "__main__":
