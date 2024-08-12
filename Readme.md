@@ -352,11 +352,13 @@ class EventHandler(ABC):
 
 ### Message
 
-Represents a Kafka message with methods to access its properties:
+Represents a Kafka message as a frozen dataclass with the following attributes:
 
-- `topic() -> str`: Message topic
-- `partition() -> int`: Message partition
-- `offset() -> int`: Message offset
-- `timestamp() -> datetime`: Message timestamp
-- `key() -> str`: Message key
-- `payload() -> Any`: Message payload
+- `topic: str`: The name of the topic.
+- `partition: int`: The partition number.
+- `offset: int`: The message offset within the partition.
+- `timestamp: datetime`: The timestamp when the message was created or sent.
+- `key: str`: The message key.
+- `payload: JSONValue`: The message payload as a JSON-serializable value.
+
+Note: As a frozen dataclass, the `Message` attributes are immutable after initialization.
