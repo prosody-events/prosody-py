@@ -28,16 +28,16 @@ Duration: TypeAlias = Union[float, timedelta]
 StringOrList: TypeAlias = Union[str, List[str]]
 
 
-class AbstractMessageHandler(ABC):
+class EventHandler(ABC):
     """
-    Abstract base class for message handlers.
+    Abstract base class for event handlers.
 
-    Subclasses must implement the `handle` method to define custom message
+    Subclasses must implement the `on_message` method to define custom message
     processing logic.
     """
 
     @abstractmethod
-    async def handle(self, context: 'Context', message: 'Message') -> None:
+    async def on_message(self, context: 'Context', message: 'Message') -> None:
         """
         Handle a Kafka message.
 
@@ -57,11 +57,11 @@ class AbstractMessageHandler(ABC):
         ...
 
 
-class TracingHandler:
+class ProsodyHandler:
     """
-    A wrapper class for message handlers that adds OpenTelemetry tracing.
+    A wrapper class for message handlers that adds OpenTelemetry tracing and cancellation support.
 
-    This class wraps an instance of AbstractMessageHandler and adds tracing
+    This class wraps an instance of EventHandler and adds tracing
     functionality to the message handling process. It also manages task
     cancellation during partition revocation or shutdown.
 
@@ -70,12 +70,12 @@ class TracingHandler:
         Users should not need to interact with this class directly in normal usage.
     """
 
-    def __init__(self, handler: AbstractMessageHandler) -> None:
+    def __init__(self, handler: EventHandler) -> None:
         """
-        Initialize a new TracingHandler.
+        Initialize a new ProsodyHandler.
 
         Args:
-            handler (AbstractMessageHandler): The message handler to be wrapped.
+            handler (EventHandler): The message handler to be wrapped.
 
         Note:
             This constructor is not intended to be called directly by users of the Prosody library.
@@ -83,8 +83,8 @@ class TracingHandler:
         self.handler = handler
         self.tracer: Any  # OpenTelemetry tracer
 
-    async def handle(self, context: 'Context', message: 'Message', opentelemetry_context: Dict[str, str],
-                     shutdown_event: tsasync.Event) -> None:
+    async def on_message(self, context: 'Context', message: 'Message', opentelemetry_context: Dict[str, str],
+                         shutdown_event: tsasync.Event) -> None:
         """
         Handle a Kafka message with added tracing and cancellation support.
 
@@ -240,7 +240,7 @@ class ProsodyClient:
             subscribed_topics: Topics to subscribe to.
             max_uncommitted: Max number of uncommitted messages.
             max_enqueued_per_key: Max enqueued messages per key.
-            partition_shutdown_timeout: Timeout for partition shutdown. During partition revocation, tasks are given 80% 
+            partition_shutdown_timeout: Timeout for partition shutdown. During partition revocation, tasks are given 80%
                 of this time to finish before being cancelled. THe remaining 20% is used to wait for the cancellation
                 hooks to complete.
             poll_interval: Time between message polls.
@@ -280,13 +280,12 @@ class ProsodyClient:
         """
         ...
 
-    def subscribe(self, handler: AbstractMessageHandler) -> None:
+    def subscribe(self, handler: EventHandler) -> None:
         """
         Subscribe to messages using the provided handler.
 
         Args:
-            handler (AbstractMessageHandler): An instance implementing the
-                AbstractMessageHandler interface.
+            handler (EventHandler): An instance implementing the EventHandler interface.
 
         Raises:
             RuntimeError: If the consumer is not configured or is already

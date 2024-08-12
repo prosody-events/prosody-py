@@ -23,7 +23,7 @@ pip install prosody
 ## Quick Start
 
 ```python
-from prosody import ProsodyClient, AbstractMessageHandler, Context, Message
+from prosody import ProsodyClient, EventHandler, Context, Message
 
 # Initialize the client with Kafka bootstrap servers, consumer group, and topics
 client = ProsodyClient(
@@ -34,8 +34,8 @@ client = ProsodyClient(
 
 
 # Define a custom message handler
-class MyHandler(AbstractMessageHandler):
-    async def handle(self, context: Context, message: Message) -> None:
+class MyHandler(EventHandler):
+    async def on_message(self, context: Context, message: Message) -> None:
         # Process the received message
         print(f"Received message: {message}")
 
@@ -161,8 +161,8 @@ After initializing tracing, you can define spans in your application, and they w
 Kafka:
 
 ```python
-class MyHandler(AbstractMessageHandler):
-    async def handle(self, context: Context, message: Message) -> None:
+class MyHandler(EventHandler):
+    async def on_message(self, context: Context, message: Message) -> None:
         with tracer.start_as_current_span("test-receive"):
             # Process the received message
             print(f"Received message: {message}")
@@ -335,17 +335,17 @@ merging to `main`.
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: Any) -> None`: Send a message to a specified topic.
 - `consumer_state() -> str`: Get the current state of the consumer.
-- `subscribe(handler: AbstractMessageHandler) -> None`: Subscribe to messages using the provided handler.
+- `subscribe(handler: EventHandler) -> None`: Subscribe to messages using the provided handler.
 - `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
 
-### AbstractMessageHandler
+### EventHandler
 
 An abstract base class for user-defined handlers:
 
 ```python
-class AbstractMessageHandler(ABC):
+class EventHandler(ABC):
     @abstractmethod
-    async def handle(self, context: Context, message: Message) -> None:
+    async def on_message(self, context: Context, message: Message) -> None:
         # Implement your message handling logic here
         pass
 ```
