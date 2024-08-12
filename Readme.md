@@ -360,5 +360,3 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
 - `payload: JSONValue`: The message payload as a JSON-serializable value.
-
-Note: As a frozen dataclass, the `Message` attributes are immutable after initialization.
