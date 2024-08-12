@@ -5,7 +5,7 @@ import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 
-from prosody import ProsodyClient, AbstractMessageHandler, Message, Context
+from prosody import ProsodyClient, EventHandler, Message, Context
 
 provider = TracerProvider()
 
@@ -16,7 +16,7 @@ trace.set_tracer_provider(provider)
 tracer = trace.get_tracer("prosody-test")
 
 
-class TestHandler(AbstractMessageHandler):
+class TestHandler(EventHandler):
     __test__ = False
 
     def __init__(self):
@@ -24,7 +24,7 @@ class TestHandler(AbstractMessageHandler):
         self.message_count = 0
         self.message_received = asyncio.Event()
 
-    async def handle(self, context: Context, message: Message) -> None:
+    async def on_message(self, context: Context, message: Message) -> None:
         with tracer.start_as_current_span("receive"):
             self.messages.append(message)
             self.message_count += 1

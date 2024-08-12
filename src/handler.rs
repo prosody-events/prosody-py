@@ -30,11 +30,11 @@ use crate::message::{Context, Message};
 
 /// The name of the abstract Python class that user-defined handlers must
 /// subclass.
-const HANDLER_CLASS_NAME: &str = "AbstractMessageHandler";
+const HANDLER_CLASS_NAME: &str = "EventHandler";
 
 /// The name of the Python class that wraps the user-defined handler for
-/// tracing.
-const TRACING_HANDLER_CLASS_NAME: &str = "TracingHandler";
+/// tracing and cancellation.
+const TRACING_HANDLER_CLASS_NAME: &str = "ProsodyHandler";
 
 /// A wrapper for Python-defined message handlers.
 ///
@@ -69,7 +69,7 @@ impl PythonHandler {
     ///
     /// # Arguments
     ///
-    /// * `handler` - A Python object subclassing `AbstractMessageHandler`.
+    /// * `handler` - A Python object subclassing `EventHandler`.
     /// * `shutdown_grace_period` - The duration to wait for a task to complete
     ///   during shutdown.
     ///
@@ -80,23 +80,23 @@ impl PythonHandler {
     /// # Errors
     ///
     /// Returns a `PyTypeError` if `handler` is not a subclass of
-    /// `AbstractMessageHandler`.
+    /// `EventHandler`.
     pub fn new(handler: &Bound<PyAny>, shutdown_grace_period: Duration) -> PyResult<Self> {
         let py = handler.py();
         let prosody_module = py.import_bound("prosody")?;
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
         let tracing_handler_class = prosody_module.getattr(TRACING_HANDLER_CLASS_NAME)?;
 
-        // Ensure the provided handler is a subclass of AbstractMessageHandler
+        // Ensure the provided handler is a subclass of EventHandler
         if !handler.is_instance(&abstract_handler_class)? {
             return Err(PyTypeError::new_err(format!(
                 "handler must be a subclass of {HANDLER_CLASS_NAME}"
             )));
         }
 
-        // Create a TracingHandler instance and get its handle method
+        // Create a ProsodyHandler instance and get its handle method
         let tracing_handler = tracing_handler_class.call1((handler,))?;
-        let handle_method = tracing_handler.getattr("handle")?;
+        let handle_method = tracing_handler.getattr("on_message")?;
 
         // Get a reference to the event methods
         let tsasync = py.import_bound("tsasync")?;
@@ -120,7 +120,7 @@ impl PythonHandler {
 impl FallibleHandler for PythonHandler {
     type Error = WrappedPythonError;
 
-    /// Handles a Kafka message by calling the Python-defined `TracingHandler`'s
+    /// Handles a Kafka message by calling the Python-defined `ProsodyHandler`'s
     /// handle method.
     ///
     /// # Arguments
@@ -133,7 +133,7 @@ impl FallibleHandler for PythonHandler {
     /// A `Result` indicating success or containing a `WrappedPythonError` if an
     /// error occurred.
     #[instrument(level = "debug", skip(self), err)]
-    async fn handle(
+    async fn on_message(
         &self,
         context: MessageContext,
         message: ConsumerMessage,
@@ -262,7 +262,7 @@ fn execute(
         // Create asyncio.Event for shutdown signaling
         let shutdown_event = event_class.call0(py)?;
 
-        // Call the TracingHandler's handle method to build coroutine
+        // Call the ProsodyHandler's handle method to build coroutine
         let coroutine = handle_method
             .call1(
                 py,

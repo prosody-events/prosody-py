@@ -229,8 +229,7 @@ impl ProsodyClient {
     ///
     /// # Arguments
     ///
-    /// * `handler` - An instance implementing the AbstractMessageHandler
-    ///   interface.
+    /// * `handler` - An instance implementing the EventHandler interface.
     ///
     /// # Errors
     ///
