@@ -5,6 +5,7 @@ This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import timedelta, datetime
 from typing import Any, List, Optional, Union, TypeAlias, Dict, Literal
 
@@ -28,6 +29,34 @@ Duration: TypeAlias = Union[float, timedelta]
 StringOrList: TypeAlias = Union[str, List[str]]
 
 
+@dataclass(frozen=True)
+class Message:
+    """
+    Represents a Kafka message with associated metadata.
+
+    This class encapsulates the core components of a Kafka message, including
+    its topic, partition, offset, timestamp, key, and payload.
+    """
+
+    topic: str
+    """The name of the topic."""
+
+    partition: int
+    """The partition number."""
+
+    offset: int
+    """The message offset within the partition."""
+
+    timestamp: datetime
+    """The timestamp when the message was created or sent."""
+
+    key: str
+    """The message key."""
+
+    payload: JSONValue
+    """The message payload as a JSON-serializable value."""
+
+
 class EventHandler(ABC):
     """
     Abstract base class for event handlers.
@@ -37,7 +66,7 @@ class EventHandler(ABC):
     """
 
     @abstractmethod
-    async def on_message(self, context: 'Context', message: 'Message') -> None:
+    async def on_message(self, context: 'Context', message: Message) -> None:
         """
         Handle a Kafka message.
 
@@ -83,7 +112,7 @@ class ProsodyHandler:
         self.handler = handler
         self.tracer: Any  # OpenTelemetry tracer
 
-    async def on_message(self, context: 'Context', message: 'Message', opentelemetry_context: Dict[str, str],
+    async def on_message(self, context: 'Context', message: Message, opentelemetry_context: Dict[str, str],
                          shutdown_event: tsasync.Event) -> None:
         """
         Handle a Kafka message with added tracing and cancellation support.
@@ -119,87 +148,6 @@ class Context:
     which may be useful for message handling and processing.
     """
     ...
-
-
-class Message:
-    """
-    Represents a Kafka message with associated metadata.
-
-    This class encapsulates the core components of a Kafka message, including
-    its topic, partition, offset, timestamp, key, and payload.
-    """
-
-    def topic(self) -> str:
-        """
-        Get the topic of the message.
-
-        Returns:
-            str: The name of the topic.
-        """
-        ...
-
-    def partition(self) -> int:
-        """
-        Get the partition of the message.
-
-        Returns:
-            int: The partition number.
-        """
-        ...
-
-    def offset(self) -> int:
-        """
-        Get the offset of the message.
-
-        Returns:
-            int: The message offset within the partition.
-        """
-        ...
-
-    def timestamp(self) -> datetime:
-        """
-        Get the timestamp of the message.
-
-        Returns:
-            datetime: The timestamp when the message was created or sent.
-        """
-        ...
-
-    def key(self) -> str:
-        """
-        Get the key of the message.
-
-        Returns:
-            str: The message key.
-        """
-        ...
-
-    def payload(self) -> JSONValue:
-        """
-        Get the payload of the message.
-
-        Returns:
-            JSONValue: The message payload as a JSON-serializable value.
-        """
-        ...
-
-    def __str__(self) -> str:
-        """
-        Get a string representation of the Message.
-
-        Returns:
-            str: A human-readable representation of the Message.
-        """
-        ...
-
-    def __repr__(self) -> str:
-        """
-        Get a detailed string representation of the Message.
-
-        Returns:
-            str: A detailed representation of the Message, suitable for debugging.
-        """
-        ...
 
 
 class ProsodyClient:
@@ -313,23 +261,5 @@ class ProsodyClient:
             This method will wait for all tasks to complete or be cancelled
             before returning. Ensure that your message handlers respond
             promptly to cancellation to avoid delays during shutdown.
-        """
-        ...
-
-    def __repr__(self) -> str:
-        """
-        Get a string representation of the ProsodyClient.
-
-        Returns:
-            str: A string representation of the ProsodyClient.
-        """
-        ...
-
-    def __str__(self) -> str:
-        """
-        Get a human-readable string description of the ProsodyClient.
-
-        Returns:
-            str: A human-readable description of the ProsodyClient.
         """
         ...
