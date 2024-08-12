@@ -18,11 +18,11 @@ use pyo3::{pymodule, Bound, PyResult};
 use tokio::runtime::Runtime;
 
 use crate::client::ProsodyClient;
-use crate::message::{Context, Message};
+use crate::context::Context;
 
 mod client;
+mod context;
 mod handler;
-mod message;
 
 /// A global Tokio runtime for asynchronous operations.
 ///
@@ -61,7 +61,6 @@ fn prosody(m: &Bound<PyModule>) -> PyResult<()> {
     // Add classes to the module
     m.add_class::<ProsodyClient>()?;
     m.add_class::<Context>()?;
-    m.add_class::<Message>()?;
 
     Ok(())
 }

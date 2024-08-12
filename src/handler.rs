@@ -3,7 +3,8 @@
 //! This module defines the `PythonHandler` struct, which implements the
 //! `FallibleHandler` trait, enabling Python-defined message handlers to work
 //! with Prosody's Kafka consumer. It also manages OpenTelemetry context
-//! propagation between Rust and Python.
+//! propagation between Rust and Python, handles task cancellation, and provides
+//! error classification for Python errors.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -13,6 +14,7 @@ use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::failure::{ClassifyError, ErrorCategory, FallibleHandler};
 use prosody::consumer::message::{ConsumerMessage, MessageContext};
+use prosody::consumer::Keyed;
 use prosody::propagator::new_propagator;
 use pyo3::exceptions::{PyKeyboardInterrupt, PySystemExit, PyTypeError};
 use pyo3::prelude::PyAnyMethods;
@@ -26,15 +28,17 @@ use tokio::time::sleep;
 use tracing::{debug, instrument, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::message::{Context, Message};
+use crate::context::Context;
 
-/// The name of the abstract Python class that user-defined handlers must
-/// subclass.
+/// Name of the abstract Python class that user-defined handlers must subclass.
 const HANDLER_CLASS_NAME: &str = "EventHandler";
 
-/// The name of the Python class that wraps the user-defined handler for
-/// tracing and cancellation.
-const TRACING_HANDLER_CLASS_NAME: &str = "ProsodyHandler";
+/// Name of the Python class that wraps the user-defined handler for tracing and
+/// cancellation.
+const HANDLER_WRAPPER_CLASS_NAME: &str = "ProsodyHandler";
+
+/// Name of the Python class representing a Kafka message.
+const MESSAGE_CLASS_NAME: &str = "Message";
 
 /// A wrapper for Python-defined message handlers.
 ///
@@ -44,6 +48,7 @@ const TRACING_HANDLER_CLASS_NAME: &str = "ProsodyHandler";
 #[derive(Debug)]
 pub struct PythonHandler {
     pub handle_method: PyObject,
+    pub message_class: PyObject,
     pub event_class: PyObject,
     pub event_set_method: PyObject,
     shutdown_grace_period: Duration,
@@ -55,6 +60,7 @@ impl Clone for PythonHandler {
     fn clone(&self) -> Self {
         Self {
             handle_method: self.handle_method.clone(),
+            message_class: self.message_class.clone(),
             event_class: self.event_class.clone(),
             event_set_method: self.event_set_method.clone(),
             shutdown_grace_period: self.shutdown_grace_period,
@@ -85,7 +91,8 @@ impl PythonHandler {
         let py = handler.py();
         let prosody_module = py.import_bound("prosody")?;
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
-        let tracing_handler_class = prosody_module.getattr(TRACING_HANDLER_CLASS_NAME)?;
+        let tracing_handler_class = prosody_module.getattr(HANDLER_WRAPPER_CLASS_NAME)?;
+        let message_class = prosody_module.getattr(MESSAGE_CLASS_NAME)?;
 
         // Ensure the provided handler is a subclass of EventHandler
         if !handler.is_instance(&abstract_handler_class)? {
@@ -108,6 +115,7 @@ impl PythonHandler {
 
         Ok(Self {
             handle_method: handle_method.unbind(),
+            message_class: message_class.unbind(),
             event_class: event_class.unbind(),
             event_set_method: event_set_method.unbind(),
             shutdown_grace_period,
@@ -148,6 +156,7 @@ impl FallibleHandler for PythonHandler {
             context,
             message,
             serialized_context,
+            &self.message_class,
             &self.event_class,
             &self.handle_method,
             &self.locals,
@@ -209,6 +218,7 @@ fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResul
 /// * `context` - The message context.
 /// * `message` - The consumer message to be handled.
 /// * `serialized_context` - The serialized OpenTelemetry context.
+/// * `message_class` - The Python Message class.
 /// * `event_class` - The Python Event class.
 /// * `handle_method` - The Python handler method.
 /// * `locals` - The task locals for the Python event loop.
@@ -226,6 +236,7 @@ fn execute(
     context: MessageContext,
     message: ConsumerMessage,
     serialized_context: HashMap<String, String>,
+    message_class: &PyObject,
     event_class: &PyObject,
     handle_method: &PyObject,
     locals: &TaskLocals,
@@ -238,10 +249,17 @@ fn execute(
         let message_context = Context(context);
         let payload = pythonize(py, message.payload())?;
 
-        let message = Message {
-            inner: message,
-            payload,
-        };
+        let message = message_class.call1(
+            py,
+            (
+                message.topic().as_ref(),
+                message.partition(),
+                message.offset(),
+                *message.timestamp(),
+                message.key().as_ref(),
+                payload,
+            ),
+        )?;
 
         // Convert serialized_context to a Python dict
         let otel_context = serialized_context.into_py_dict_bound(py);
