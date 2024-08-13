@@ -15,17 +15,26 @@
 /// # Returns
 ///
 /// A `String` containing the formatted list representation.
+///
+/// # Examples
+///
+/// ```
+/// use crate::format::format_list;
+///
+/// let values = vec!["apple", "banana", "cherry"];
+/// assert_eq!(format_list(&values), "['apple', 'banana', 'cherry']");
+/// ```
 pub fn format_list<T>(value: &[T]) -> String
 where
     T: AsRef<str>,
 {
-    // Map each item to a quoted string and join them with commas
+    // Map each item to a quoted string, join them with commas,
+    // and wrap the result in square brackets
     let items = value
         .iter()
         .map(|s| format!("'{}'", s.as_ref()))
         .collect::<Vec<_>>()
         .join(", ");
 
-    // Wrap the joined items in square brackets
     format!("[{items}]")
 }
