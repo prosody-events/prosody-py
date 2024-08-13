@@ -4,31 +4,25 @@
 //! `ProsodyClient`, including utilities for parsing Python configuration
 //! objects and handling duration conversions.
 
-use std::time::Duration;
-
+use crate::client::ProsodyClient;
+use prosody::combined::mode::{Mode, ModeError};
+use prosody::combined::CombinedClient;
 use prosody::consumer::failure::retry::RetryConfigurationBuilder;
 use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
-use prosody::producer::{ProducerConfigurationBuilder, ProsodyProducer};
-use prosody::propagator::new_propagator;
+use prosody::producer::ProducerConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess};
+use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPy, PyAny, PyResult, Python};
+use std::time::Duration;
 
-use crate::client::mode::{Mode, ModeConfiguration};
-use crate::client::state::ConsumerState;
-use crate::client::ProsodyClient;
-
-/// Builds a `ProsodyClient` configuration based on the provided builders.
+/// Builds a `ProsodyClient` configuration based on the provided Python
+/// configuration.
 ///
 /// # Arguments
 ///
 /// * `py` - The Python interpreter context.
-/// * `mode` - The operational mode for the client.
-/// * `producer_builder` - Builder for the producer configuration.
-/// * `consumer_builder` - Builder for the consumer configuration.
-/// * `retry_builder` - Builder for the retry configuration.
-/// * `failure_topic_builder` - Builder for the failure topic configuration.
+/// * `config` - An optional Python dictionary containing configuration options.
 ///
 /// # Returns
 ///
@@ -36,17 +30,9 @@ use crate::client::ProsodyClient;
 ///
 /// # Errors
 ///
-/// Returns a `PyValueError` if producer configuration, retry configuration,
-/// or failure topic configuration fails.
-/// Returns a `PyRuntimeError` if producer initialization fails.
-pub fn try_build_config(
-    py: Python,
-    mode: Mode,
-    producer_builder: &ProducerConfigurationBuilder,
-    consumer_builder: &ConsumerConfigurationBuilder,
-    retry_builder: &RetryConfigurationBuilder,
-    failure_topic_builder: &FailureTopicConfigurationBuilder,
-) -> PyResult<ProsodyClient> {
+/// Returns a `PyValueError` if the configuration is invalid or parsing fails.
+/// Returns a `PyRuntimeError` if client initialization fails.
+pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<ProsodyClient> {
     // Get handles to OpenTelemetry functions
     let get_context = py
         .import_bound("opentelemetry.context")?
@@ -58,54 +44,198 @@ pub fn try_build_config(
         .getattr("inject")?
         .into_py(py);
 
-    let propagator = new_propagator();
+    // If no config is provided, create a client with default configurations
+    let Some(config) = config else {
+        let client = CombinedClient::new(
+            Mode::default(),
+            &ProducerConfigurationBuilder::default(),
+            &ConsumerConfigurationBuilder::default(),
+            &RetryConfigurationBuilder::default(),
+            &FailureTopicConfigurationBuilder::default(),
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
-    // Build the producer configuration and initialize the producer
-    let producer_config = producer_builder.build().map_err(|error| {
-        PyValueError::new_err(format!("failed to configure producer: {error:#}"))
-    })?;
-
-    let producer = ProsodyProducer::new(&producer_config).map_err(|error| {
-        PyRuntimeError::new_err(format!("failed to initialize producer: {error:#}"))
-    })?;
-
-    // Build the retry configuration
-    let retry = retry_builder.build().map_err(|error| {
-        PyValueError::new_err(format!(
-            "failed to configure retry failure strategy: {error:#}"
-        ))
-    })?;
-
-    // Configure the consumer based on the mode
-    let consumer = match consumer_builder.build().ok() {
-        None => ConsumerState::Unconfigured,
-        Some(consumer) => ConsumerState::Configured(match mode {
-            Mode::Pipeline => ModeConfiguration::Pipeline { consumer, retry },
-            Mode::LowLatency => {
-                let failure_topic = failure_topic_builder.build().map_err(|error| {
-                    PyValueError::new_err(format!(
-                        "failed to configure failure topic strategy: {error:#}"
-                    ))
-                })?;
-
-                ModeConfiguration::LowLatency {
-                    consumer,
-                    retry,
-                    failure_topic,
-                }
-            }
-        }),
+        return Ok(ProsodyClient {
+            client,
+            get_context,
+            inject,
+        });
     };
 
-    // Create and return the ProsodyClient
+    // Extract and set configuration options
+    let mode = match config.get_item("mode")? {
+        Some(mode_str) => mode_str
+            .extract::<String>()?
+            .parse()
+            .map_err(|e: ModeError| PyValueError::new_err(e.to_string()))?,
+
+        None => Mode::default(),
+    };
+
+    let producer_config = build_producer_config(config)?;
+    let consumer_config = build_consumer_config(config)?;
+    let retry_config = build_retry_config(config)?;
+    let failure_topic_config = build_failure_topic_config(config)?;
+
+    let client = CombinedClient::new(
+        mode,
+        &producer_config,
+        &consumer_config,
+        &retry_config,
+        &failure_topic_config,
+    )
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
     Ok(ProsodyClient {
-        producer,
-        producer_config,
-        consumer,
-        propagator,
+        client,
         get_context,
         inject,
     })
+}
+
+/// Builds a `ProducerConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `ProducerConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurationBuilder> {
+    let mut builder = ProducerConfigurationBuilder::default();
+
+    if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
+        builder.bootstrap_servers(string_or_vec(&bootstrap)?);
+    }
+
+    if let Some(mock) = config.get_item("mock")? {
+        builder.mock(mock.extract::<bool>()?);
+    }
+
+    if let Some(send_timeout) = config.get_item("send_timeout")? {
+        builder.send_timeout(decode_optional_duration(&send_timeout)?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `ConsumerConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `ConsumerConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurationBuilder> {
+    let mut builder = ConsumerConfigurationBuilder::default();
+
+    if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
+        builder.bootstrap_servers(string_or_vec(&bootstrap)?);
+    }
+
+    if let Some(mock) = config.get_item("mock")? {
+        builder.mock(mock.extract::<bool>()?);
+    }
+
+    if let Some(group_id) = config.get_item("group_id")? {
+        builder.group_id(group_id.extract::<String>()?);
+    }
+
+    if let Some(subscribed_topics) = config.get_item("subscribed_topics")? {
+        builder.subscribed_topics(string_or_vec(&subscribed_topics)?);
+    }
+
+    if let Some(max_uncommitted) = config.get_item("max_uncommitted")? {
+        builder.max_uncommitted(max_uncommitted.extract::<usize>()?);
+    }
+
+    if let Some(max_enqueued_per_key) = config.get_item("max_enqueued_per_key")? {
+        builder.max_enqueued_per_key(max_enqueued_per_key.extract::<usize>()?);
+    }
+
+    if let Some(value) = config.get_item("partition_shutdown_timeout")? {
+        builder.partition_shutdown_timeout(decode_optional_duration(&value)?);
+    }
+
+    if let Some(poll_interval) = config.get_item("poll_interval")? {
+        builder.poll_interval(decode_duration(&poll_interval)?);
+    }
+
+    if let Some(commit_interval) = config.get_item("commit_interval")? {
+        builder.commit_interval(decode_duration(&commit_interval)?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `RetryConfigurationBuilder` from the provided Python configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `RetryConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_retry_config(config: &Bound<PyDict>) -> PyResult<RetryConfigurationBuilder> {
+    let mut builder = RetryConfigurationBuilder::default();
+
+    if let Some(retry_base) = config.get_item("retry_base")? {
+        builder.base(decode_duration(&retry_base)?);
+    }
+
+    if let Some(max_retries) = config.get_item("max_retries")? {
+        builder.max_retries(max_retries.extract::<u32>()?);
+    }
+
+    if let Some(retry_max_delay) = config.get_item("max_retry_delay")? {
+        builder.max_delay(decode_duration(&retry_max_delay)?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `FailureTopicConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `FailureTopicConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_failure_topic_config(
+    config: &Bound<PyDict>,
+) -> PyResult<FailureTopicConfigurationBuilder> {
+    let mut builder = FailureTopicConfigurationBuilder::default();
+
+    if let Some(topic) = config.get_item("failure_topic")? {
+        builder.failure_topic(topic.extract::<String>()?);
+    }
+
+    Ok(builder)
 }
 
 /// Extracts a vector of strings from a Python object.
@@ -121,7 +251,7 @@ pub fn try_build_config(
 /// # Errors
 ///
 /// Returns a `PyErr` if the extraction fails.
-pub fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
+fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
     // Try to extract a single string first
     if let Ok(string) = value.extract::<String>() {
         return Ok(vec![string]);
@@ -146,7 +276,7 @@ pub fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
 ///
 /// Returns a `PyTypeError` if the input is neither a `timedelta` nor a float.
 /// Returns a `PyValueError` if the float conversion fails.
-pub fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
+fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
     // Try to decode as a timedelta first
     if let Ok(delta) = value.downcast::<PyDelta>() {
         let days = u64::try_from(delta.get_days())?;
@@ -186,7 +316,7 @@ pub fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
 /// # Errors
 ///
 /// Propagates errors from `decode_duration`.
-pub fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> {
+fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> {
     Ok(if value.is_none() {
         None
     } else {
