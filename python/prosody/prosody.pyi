@@ -79,6 +79,7 @@ class EventHandler(ABC):
             - Always allow `asyncio.CancelledError` to propagate to signal task cancellation to Prosody.
             - Use `try/finally` blocks or context managers for proper resource cleanup.
             - Suppressing cancellation errors may lead to missed messages and data loss.
+            - This method may be called from different threads. Ensure that any handler state is thread-safe.
 
         Raises:
             asyncio.CancelledError: If the task is cancelled. Do not catch this exception.

@@ -350,6 +350,10 @@ class EventHandler(ABC):
         pass
 ```
 
+Note: The on_message method may be called from different threads. Ensure that any handler state is thread-safe. If
+library incompatibility becomes an issue, this may be changed in the future so all handler calls originate from the same
+thread,
+
 ### Message
 
 Represents a Kafka message as a frozen dataclass with the following attributes:
