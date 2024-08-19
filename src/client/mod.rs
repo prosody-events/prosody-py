@@ -121,7 +121,7 @@ impl ProsodyClient {
     ///
     /// Returns a `PyRuntimeError` if the consumer is not configured or is
     /// already subscribed.
-    fn subscribe(&mut self, handler: &Bound<PyAny>) -> PyResult<()> {
+    fn subscribe(&self, handler: &Bound<PyAny>) -> PyResult<()> {
         let _enter = RUNTIME.enter();
 
         // Set the task grace period to 80% of the total partition timeout
@@ -152,7 +152,7 @@ impl ProsodyClient {
     ///
     /// Returns a `PyRuntimeError` if the consumer is not configured or not
     /// subscribed.
-    async fn unsubscribe(&mut self) -> PyResult<()> {
+    async fn unsubscribe(&self) -> PyResult<()> {
         self.client
             .unsubscribe()
             .await
