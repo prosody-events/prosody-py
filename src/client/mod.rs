@@ -167,8 +167,10 @@ impl ProsodyClient {
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
+        let consumer_state = slf.client.consumer_state();
+        let consumer_state_ref: &ConsumerState<_> = &consumer_state;
 
-        let consumer_properties = match &slf.client.consumer_state() {
+        let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
             ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
                 let consumer_config = config.consumer_config();
@@ -184,7 +186,7 @@ impl ProsodyClient {
         Ok(format!(
             "{}(producer='running', consumer='{}', bootstrap={}{})",
             class_name,
-            slf.client.consumer_state(),
+            consumer_state_ref,
             format_list(&slf.client.producer_config().bootstrap_servers),
             consumer_properties
         ))
@@ -198,8 +200,10 @@ impl ProsodyClient {
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
+        let consumer_state = slf.client.consumer_state();
+        let consumer_state_ref: &ConsumerState<_> = &consumer_state;
 
-        let consumer_properties = match &slf.client.consumer_state() {
+        let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
             ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
                 let consumer_config = config.consumer_config();
@@ -215,7 +219,7 @@ impl ProsodyClient {
         Ok(format!(
             "{}: producer=running, consumer={}, bootstrap={}{}",
             class_name,
-            slf.client.consumer_state(),
+            consumer_state_ref,
             slf.client.producer_config().bootstrap_servers.join(","),
             consumer_properties
         ))
@@ -235,7 +239,7 @@ impl ProsodyClient {
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // If the consumer is in the Running state, visit the handler's method
-        if let ConsumerState::Running { handler, .. } = &self.client.consumer_state() {
+        if let ConsumerState::Running { handler, .. } = &*self.client.consumer_state() {
             visit.call(handler.handle_method.as_any())?;
             visit.call(handler.message_class.as_any())?;
             visit.call(handler.event_class.as_any())?;
