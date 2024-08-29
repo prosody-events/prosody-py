@@ -6,8 +6,8 @@
 //! operational modes, retry mechanisms, and failure handling strategies.
 
 use opentelemetry::propagation::TextMapPropagator;
-use prosody::combined::state::ConsumerState;
-use prosody::combined::CombinedClient;
+use prosody::high_level::state::ConsumerState;
+use prosody::high_level::HighLevelClient;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{
@@ -36,7 +36,7 @@ mod format;
 /// operational modes and configuration options.
 #[pyclass]
 pub struct ProsodyClient {
-    client: CombinedClient<PythonHandler>,
+    client: HighLevelClient<PythonHandler>,
     get_context: PyObject,
     inject: PyObject,
 }

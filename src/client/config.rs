@@ -5,11 +5,12 @@
 //! objects and handling duration conversions.
 
 use crate::client::ProsodyClient;
-use prosody::combined::mode::{Mode, ModeError};
-use prosody::combined::CombinedClient;
+use crate::util::string_or_vec;
 use prosody::consumer::failure::retry::RetryConfigurationBuilder;
 use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
+use prosody::high_level::mode::{Mode, ModeError};
+use prosody::high_level::HighLevelClient;
 use prosody::producer::ProducerConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
@@ -46,7 +47,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
 
     // If no config is provided, create a client with default configurations
     let Some(config) = config else {
-        let client = CombinedClient::new(
+        let client = HighLevelClient::new(
             Mode::default(),
             &ProducerConfigurationBuilder::default(),
             &ConsumerConfigurationBuilder::default(),
@@ -77,7 +78,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     let retry_config = build_retry_config(config)?;
     let failure_topic_config = build_failure_topic_config(config)?;
 
-    let client = CombinedClient::new(
+    let client = HighLevelClient::new(
         mode,
         &producer_config,
         &consumer_config,
@@ -236,29 +237,6 @@ fn build_failure_topic_config(
     }
 
     Ok(builder)
-}
-
-/// Extracts a vector of strings from a Python object.
-///
-/// # Arguments
-///
-/// * `value` - A Python object that is either a string or a list of strings.
-///
-/// # Returns
-///
-/// A `PyResult` containing a vector of strings.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if the extraction fails.
-fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
-    // Try to extract a single string first
-    if let Ok(string) = value.extract::<String>() {
-        return Ok(vec![string]);
-    }
-
-    // If not a single string, try to extract a list of strings
-    value.extract()
 }
 
 /// Decodes a Python object into a Rust `Duration`.
