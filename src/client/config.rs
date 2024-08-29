@@ -5,11 +5,11 @@
 //! objects and handling duration conversions.
 
 use crate::client::ProsodyClient;
-use prosody::combined::mode::{Mode, ModeError};
-use prosody::combined::CombinedClient;
 use prosody::consumer::failure::retry::RetryConfigurationBuilder;
 use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
+use prosody::high_level::mode::{Mode, ModeError};
+use prosody::high_level::HighLevelClient;
 use prosody::producer::ProducerConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
@@ -46,7 +46,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
 
     // If no config is provided, create a client with default configurations
     let Some(config) = config else {
-        let client = CombinedClient::new(
+        let client = HighLevelClient::new(
             Mode::default(),
             &ProducerConfigurationBuilder::default(),
             &ConsumerConfigurationBuilder::default(),
@@ -77,7 +77,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     let retry_config = build_retry_config(config)?;
     let failure_topic_config = build_failure_topic_config(config)?;
 
-    let client = CombinedClient::new(
+    let client = HighLevelClient::new(
         mode,
         &producer_config,
         &consumer_config,
