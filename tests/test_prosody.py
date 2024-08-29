@@ -4,6 +4,7 @@ from typing import List
 import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
+from prosody.prosody import AdminClient
 
 from prosody import ProsodyClient, EventHandler, Message, Context
 
@@ -29,6 +30,14 @@ class TestHandler(EventHandler):
             self.messages.append(message)
             self.message_count += 1
             self.message_received.set()
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def run_before_and_after_tests():
+    admin = AdminClient("localhost:9094")
+    await admin.create_topic("test-topic", 4, 1)
+    yield
+    await admin.delete_topic("test-topic")
 
 
 @pytest.fixture

@@ -24,6 +24,9 @@ format:
 build:
 	maturin develop --extras dev
 
+build-test:
+	maturin develop --extras dev --features admin-client
+
 # Check for compilation errors without building
 check:
 	cargo check
@@ -41,11 +44,11 @@ lint-watch:
 	bacon --job clippy
 
 # Run tests (starts Kafka services first)
-test: up build
+test: up build-test
 	pytest
 
 # Watch for changes and run tests
-test-watch: up build
+test-watch: up build-test
 	ptw
 
 shell: up build

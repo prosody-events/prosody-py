@@ -8,6 +8,8 @@
 #![allow(clippy::multiple_crate_versions)]
 #![warn(missing_docs)]
 
+use crate::client::ProsodyClient;
+use crate::context::Context;
 use ::prosody::tracing::{initialize_tracing, Identity};
 use once_cell::sync::Lazy;
 use pyo3::exceptions::PyRuntimeError;
@@ -15,12 +17,16 @@ use pyo3::types::PyModule;
 use pyo3::{pymodule, Bound, PyResult};
 use tokio::runtime::Runtime;
 
-use crate::client::ProsodyClient;
-use crate::context::Context;
+#[cfg(feature = "admin-client")]
+use crate::admin::AdminClient;
+
+#[cfg(feature = "admin-client")]
+mod admin;
 
 mod client;
 mod context;
 mod handler;
+mod util;
 
 /// A global Tokio runtime for asynchronous operations.
 ///
@@ -57,6 +63,9 @@ fn prosody(m: &Bound<PyModule>) -> PyResult<()> {
     // Add classes to the module
     m.add_class::<ProsodyClient>()?;
     m.add_class::<Context>()?;
+
+    #[cfg(feature = "admin-client")]
+    m.add_class::<AdminClient>()?;
 
     Ok(())
 }

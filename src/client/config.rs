@@ -5,6 +5,7 @@
 //! objects and handling duration conversions.
 
 use crate::client::ProsodyClient;
+use crate::util::string_or_vec;
 use prosody::consumer::failure::retry::RetryConfigurationBuilder;
 use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
@@ -236,29 +237,6 @@ fn build_failure_topic_config(
     }
 
     Ok(builder)
-}
-
-/// Extracts a vector of strings from a Python object.
-///
-/// # Arguments
-///
-/// * `value` - A Python object that is either a string or a list of strings.
-///
-/// # Returns
-///
-/// A `PyResult` containing a vector of strings.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if the extraction fails.
-fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
-    // Try to extract a single string first
-    if let Ok(string) = value.extract::<String>() {
-        return Ok(vec![string]);
-    }
-
-    // If not a single string, try to extract a list of strings
-    value.extract()
 }
 
 /// Decodes a Python object into a Rust `Duration`.
