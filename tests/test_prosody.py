@@ -6,7 +6,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from prosody.prosody import AdminClient
 
-from prosody import ProsodyClient, EventHandler, Message, Context
+from prosody import ProsodyClient, EventHandler, Message, Context, permanent, transient
 
 provider = TracerProvider()
 
@@ -189,6 +189,70 @@ async def test_same_key_message_order(client):
     for msg in received_messages:
         assert msg.topic == test_topic
         assert msg.key == test_key
+
+
+class TransientErrorHandler(EventHandler):
+    def __init__(self):
+        self.received_message = False
+        self.retry_event = asyncio.Event()
+
+    @transient(ValueError)
+    async def on_message(self, context: Context, message: Message) -> None:
+        if self.received_message:
+            self.retry_event.set()
+        else:
+            self.received_message = True
+            raise ValueError("Transient error occurred")
+
+
+@pytest.mark.asyncio
+async def test_transient_error_decorator(client):
+    handler = TransientErrorHandler()
+    client.subscribe(handler)
+
+    # Send a test message
+    test_topic = "test-topic"
+    test_key = "test-key"
+    test_payload = {"content": "Trigger transient error"}
+
+    await client.send(test_topic, test_key, test_payload)
+
+    # Wait for the message to be retried
+    await asyncio.wait_for(handler.retry_event.wait(), timeout=30.0)
+
+
+class PermanentErrorHandler(EventHandler):
+    def __init__(self):
+        self.error_raised = asyncio.Event()
+        self.message_count = 0
+
+    @permanent(ValueError)
+    async def on_message(self, context: Context, message: Message) -> None:
+        self.message_count += 1
+        self.error_raised.set()
+        raise ValueError("Permanent error occurred")
+
+
+@pytest.mark.asyncio
+async def test_permanent_error_decorator(client):
+    handler = PermanentErrorHandler()
+    client.subscribe(handler)
+
+    # Send a test message
+    test_topic = "test-topic"
+    test_key = "test-key"
+    test_payload = {"content": "Trigger permanent error"}
+
+    await client.send(test_topic, test_key, test_payload)
+
+    # Wait for the error to be raised
+    await asyncio.wait_for(handler.error_raised.wait(), timeout=30.0)
+
+    # Wait a bit to allow for any potential retries
+    await asyncio.sleep(5)
+
+    # Check that the message was processed only once
+    assert handler.message_count == 1
 
 
 if __name__ == "__main__":
