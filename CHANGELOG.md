@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/RealGeeks/prosody-py/compare/v0.3.2...v0.4.0) (2024-09-17)
+
+
+### Features
+
+* permanent error support ([#31](https://github.com/RealGeeks/prosody-py/issues/31)) ([58fa4f2](https://github.com/RealGeeks/prosody-py/commit/58fa4f200b0c7a6e7d3e936e82361ba3781285b4))
+
 ## [0.3.2](https://github.com/RealGeeks/prosody-py/compare/v0.3.1...v0.3.2) (2024-08-29)
 
 
