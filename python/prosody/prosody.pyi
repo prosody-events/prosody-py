@@ -7,9 +7,12 @@ which offers high-performance Python bindings for Kafka message handling.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import timedelta, datetime
-from typing import Any, List, Optional, Union, TypeAlias, Dict, Literal
+from typing import List, Optional, Union, TypeAlias, Dict, Literal
+from typing import Type, Callable, Any, TypeVar
 
 import tsasync
+
+T = TypeVar('T')
 
 # Define a JSONValue type that represents all possible JSON-serializable values
 JSONValue: TypeAlias = Union[
@@ -264,3 +267,86 @@ class ProsodyClient:
             promptly to cancellation to avoid delays during shutdown.
         """
         ...
+
+
+class EventHandlerError(Exception, ABC):
+    """
+    Abstract base class for event handler errors.
+
+    This class defines the structure for errors that can occur during event handling.
+    Subclasses must implement the `is_permanent` property to indicate whether
+    the error is permanent and should not be retried.
+    """
+
+    @property
+    @abstractmethod
+    def is_permanent(self) -> bool:
+        """
+        Indicates whether the error is permanent and should not be retried.
+
+        Returns:
+            bool: True if the error is permanent, False if it's transient.
+        """
+        ...
+
+
+class TransientError(EventHandlerError):
+    """
+    Represents a transient error in event handling.
+
+    Transient errors are temporary and can be retried. Messages that raise
+    this error will be attempted again.
+    """
+    is_permanent: bool
+
+
+class PermanentError(EventHandlerError):
+    """
+    Represents a permanent error in event handling.
+
+    Permanent errors are not temporary and should not be retried. Messages that
+    raise this error will be considered as permanent failures and will not be
+    retried.
+    """
+    is_permanent: bool
+
+
+def transient(*exceptions: Type[Exception]) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Decorator to mark specific exceptions as transient errors.
+
+    When applied to a function, it will catch the specified exceptions and
+    raise them as TransientErrors. This indicates that the operation can be
+    retried.
+
+    Args:
+        *exceptions (Type[Exception]): The exception types to be treated as transient.
+
+    Returns:
+        Callable[[Callable[..., T]], Callable[..., T]]: A decorator function.
+
+    Note:
+        Messages that raise TransientErrors will be retried.
+    """
+    ...
+
+
+def permanent(*exceptions: Type[Exception]) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Decorator to mark specific exceptions as permanent errors.
+
+    When applied to a function, it will catch the specified exceptions and
+    raise them as PermanentErrors. This indicates that the operation should not
+    be retried.
+
+    Args:
+        *exceptions (Type[Exception]): The exception types to be treated as permanent.
+
+    Returns:
+        Callable[[Callable[..., T]], Callable[..., T]]: A decorator function.
+
+    Note:
+        Messages that raise PermanentErrors will not be retried and will be
+        considered as permanent failures.
+    """
+    ...
