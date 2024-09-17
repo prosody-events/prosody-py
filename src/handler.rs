@@ -289,16 +289,26 @@ pub enum WrappedPythonError {
 }
 
 impl ClassifyError for WrappedPythonError {
-    /// Classifies the error as either Terminal or Transient.
+    /// Classifies the error as either Terminal, Permanent, or Transient.
     ///
     /// # Returns
     ///
     /// * `ErrorCategory::Terminal` for `asyncio.CancelledError`,
     ///   `KeyboardInterrupt`, or `SystemExit`.
+    /// * `ErrorCategory::Permanent` for errors with `is_permanent` attribute
+    ///   set to `True`.
     /// * `ErrorCategory::Transient` for all other Python errors.
     fn classify_error(&self) -> ErrorCategory {
         match self {
             WrappedPythonError::Python(error) => Python::with_gil(|py| {
+                if let Ok(is_permanent) = is_permanent_error(py, error) {
+                    return if is_permanent {
+                        ErrorCategory::Permanent
+                    } else {
+                        ErrorCategory::Transient
+                    };
+                }
+
                 let Ok(asyncio) = py.import_bound("asyncio") else {
                     return ErrorCategory::Terminal;
                 };
@@ -318,4 +328,18 @@ impl ClassifyError for WrappedPythonError {
             }),
         }
     }
+}
+
+/// Checks if a Python error is marked as permanent.
+///
+/// # Arguments
+///
+/// * `py` - The Python interpreter token.
+/// * `error` - The Python error to check.
+///
+/// # Returns
+///
+/// A `PyResult<bool>` indicating whether the error is permanent.
+fn is_permanent_error(py: Python, error: &PyErr) -> PyResult<bool> {
+    error.value_bound(py).getattr("is_permanent")?.extract()
 }
