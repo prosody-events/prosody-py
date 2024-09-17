@@ -274,8 +274,7 @@ default, all errors are considered transient.
 Use the `@permanent` decorators to classify exceptions that should not be retried:
 
 ```python
-from prosody import EventHandler, Context, Message
-from prosody.errors import permanent
+from prosody import EventHandler, Context, Message, permanent
 
 
 class MyHandler(EventHandler):
