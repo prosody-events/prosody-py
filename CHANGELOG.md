@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/RealGeeks/prosody-py/compare/v0.4.0...v0.5.0) (2024-09-18)
+
+
+### Features
+
+* asyncio.CancelledError propagation no longer required ([#33](https://github.com/RealGeeks/prosody-py/issues/33)) ([6cdd30d](https://github.com/RealGeeks/prosody-py/commit/6cdd30d15459adc05c68db88233619e82f435bc2))
+
 ## [0.4.0](https://github.com/RealGeeks/prosody-py/compare/v0.3.2...v0.4.0) (2024-09-17)
 
 
