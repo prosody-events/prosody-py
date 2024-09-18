@@ -299,18 +299,14 @@ Prosody cancels tasks during partition rebalancing or shutdown. How you handle c
 
 - Prosody interprets task success based on exception propagation.
 - A task that exits without an exception is considered successful.
-- Any exception, including `asyncio.CancelledError`, signals task failure.
+- Any exception signals task failure.
 
 Best practices:
 
 1. Exit promptly when cancelled to avoid rebalancing delays.
-2. Always propagate `asyncio.CancelledError`.
-3. Use `try/finally` or context managers for clean resource handling.
+2. Use `try/finally` or context managers for clean resource handling.
 
-Failing to follow these practices can lead to:
-
-- Slower message processing due to delayed rebalancing.
-- Data loss from missed messages when cancellation errors are suppressed.
+Failing to follow these practices can lead to slower message processing due to delayed rebalancing.
 
 ## Release Process
 
