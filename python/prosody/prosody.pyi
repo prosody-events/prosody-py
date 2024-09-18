@@ -79,13 +79,11 @@ class EventHandler(ABC):
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
-            - Always allow `asyncio.CancelledError` to propagate to signal task cancellation to Prosody.
             - Use `try/finally` blocks or context managers for proper resource cleanup.
-            - Suppressing cancellation errors may lead to missed messages and data loss.
             - This method may be called from different threads. Ensure that any handler state is thread-safe.
 
         Raises:
-            asyncio.CancelledError: If the task is cancelled. Do not catch this exception.
+            asyncio.CancelledError: If the task is cancelled.
         """
         ...
 
@@ -134,7 +132,7 @@ class ProsodyHandler:
 
         Raises:
             Exception: Any exception raised by the wrapped handler's handle method.
-            asyncio.CancelledError: If the task is cancelled due to shutdown or partition revocation.
+            asyncio.CancelledError: If the task is cancelled due to shut down or partition revocation.
 
         Note:
             This method is intended to be called internally by the Prosody library,
@@ -245,8 +243,6 @@ class ProsodyClient:
 
         Note:
             The subscribed handler should be prepared for cancellation at any time.
-            Ensure that the handler's `handle` method allows `asyncio.CancelledError`
-            to propagate for proper shutdown and partition revocation handling.
         """
         ...
 

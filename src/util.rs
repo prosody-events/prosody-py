@@ -1,7 +1,7 @@
 //! Utility functions for working with Python objects in Rust.
 //!
 //! This module provides helper functions to extract and convert data
-//! from Python objects into Rust-compatible types using the PyO3 library.
+//! from Python objects into Rust-compatible types using the `PyO3` library.
 
 use pyo3::types::PyAnyMethods;
 use pyo3::{Bound, PyAny, PyResult};

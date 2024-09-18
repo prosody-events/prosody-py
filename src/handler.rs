@@ -16,7 +16,7 @@ use prosody::consumer::failure::{ClassifyError, ErrorCategory, FallibleHandler};
 use prosody::consumer::message::{ConsumerMessage, MessageContext};
 use prosody::consumer::Keyed;
 use prosody::propagator::new_propagator;
-use pyo3::exceptions::{PyKeyboardInterrupt, PySystemExit, PyTypeError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
 use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
@@ -293,39 +293,17 @@ impl ClassifyError for WrappedPythonError {
     ///
     /// # Returns
     ///
-    /// * `ErrorCategory::Terminal` for `asyncio.CancelledError`,
-    ///   `KeyboardInterrupt`, or `SystemExit`.
     /// * `ErrorCategory::Permanent` for errors with `is_permanent` attribute
     ///   set to `True`.
     /// * `ErrorCategory::Transient` for all other Python errors.
     fn classify_error(&self) -> ErrorCategory {
         match self {
-            WrappedPythonError::Python(error) => Python::with_gil(|py| {
-                if let Ok(is_permanent) = is_permanent_error(py, error) {
-                    return if is_permanent {
-                        ErrorCategory::Permanent
-                    } else {
-                        ErrorCategory::Transient
-                    };
-                }
-
-                let Ok(asyncio) = py.import_bound("asyncio") else {
-                    return ErrorCategory::Terminal;
-                };
-
-                let Ok(cancelled_error) = asyncio.getattr("CancelledError") else {
-                    return ErrorCategory::Terminal;
-                };
-
-                if error.is_instance_bound(py, &cancelled_error)
-                    || error.is_instance_of::<PyKeyboardInterrupt>(py)
-                    || error.is_instance_of::<PySystemExit>(py)
-                {
-                    ErrorCategory::Terminal
-                } else {
-                    ErrorCategory::Transient
-                }
-            }),
+            WrappedPythonError::Python(error) => {
+                Python::with_gil(|py| match is_permanent_error(py, error) {
+                    Ok(true) => ErrorCategory::Permanent,
+                    _ => ErrorCategory::Transient,
+                })
+            }
         }
     }
 }
