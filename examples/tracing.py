@@ -100,7 +100,7 @@ if __name__ == "__main__":
 # 1. Open your browser and go to http://localhost:3000 to access Grafana
 # 2. Click on the Explore icon (compass) in the left sidebar
 # 3. Select "Tempo" from the data source dropdown at the top
-# 4. In the TraceQL query field, enter: `{service.name="prosody-example"}`
+# 4. In the TraceQL query field, enter: `{.service.name="prosody-example"}`
 # 5. Click the "Run query" button
 # 6. In the list of spans, look for and click on a "send-messages-batch" span
 # 7. This will show you the details of the batch, including child spans for individual message sends
