@@ -8,10 +8,33 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from prosody import ProsodyClient, EventHandler, Message, Context
 
-# Ensure these environment variables are set before running:
-# OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-# OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-# OTEL_SERVICE_NAME=prosody-example
+# To run this example:
+# 1. Install dependencies:
+#    pip install -r requirements.txt
+# 2. Set the required environment variables (see top of file)
+# 3. Ensure Kafka and Tempo are running (use provided docker-compose.yaml)
+# 4. Create the example-topic topic
+# 5. Ensure these environment variables are set:
+#    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+#    OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+#    OTEL_SERVICE_NAME=prosody-example
+# 6. Run the script:
+#    python tracing.py
+#
+# To view the traces:
+# 1. Open your browser and go to http://localhost:3000 to access Grafana
+# 2. Click on the Explore icon (compass) in the left sidebar
+# 3. Select "Tempo" from the data source dropdown at the top
+# 4. In the TraceQL query field, enter: `{.service.name="prosody-example"}`
+# 5. Click the "Run query" button
+# 6. In the list of spans, look for and click on a "send-messages-batch" span
+# 7. This will show you the details of the batch, including child spans for individual message sends
+# 8. Expand the "Events" section within a span to see detailed information about events,
+#    such as "Message received" or "Messages sent". This provides insights into the timing
+#    and content of specific actions within each span.
+#
+# You can explore other spans like "receive-message" to see the full lifecycle of messages in the system.
+# The trace view allows you to see the hierarchical relationship between spans and their durations.
 
 # Set up OpenTelemetry
 # Resource.create() automatically reads from OTEL_SERVICE_NAME and other ENV vars
@@ -87,27 +110,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-# To run this example:
-# 1. Install dependencies:
-#    pip install -r requirements.txt
-# 2. Set the required environment variables (see top of file)
-# 3. Ensure Kafka and Tempo are running (use provided docker-compose.yaml)
-# 4. Create the prosody-example topic
-# 5. Run the script:
-#    python tracing.py
-#
-# To view the traces:
-# 1. Open your browser and go to http://localhost:3000 to access Grafana
-# 2. Click on the Explore icon (compass) in the left sidebar
-# 3. Select "Tempo" from the data source dropdown at the top
-# 4. In the TraceQL query field, enter: `{.service.name="prosody-example"}`
-# 5. Click the "Run query" button
-# 6. In the list of spans, look for and click on a "send-messages-batch" span
-# 7. This will show you the details of the batch, including child spans for individual message sends
-# 8. Expand the "Events" section within a span to see detailed information about events,
-#    such as "Message received" or "Messages sent". This provides insights into the timing
-#    and content of specific actions within each span.
-#
-# You can explore other spans like "receive-message" to see the full lifecycle of messages in the system.
-# The trace view allows you to see the hierarchical relationship between spans and their durations.
