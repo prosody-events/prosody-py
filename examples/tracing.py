@@ -93,7 +93,8 @@ if __name__ == "__main__":
 #    pip install -r requirements.txt
 # 2. Set the required environment variables (see top of file)
 # 3. Ensure Kafka and Tempo are running (use provided docker-compose.yaml)
-# 4. Run the script:
+# 4. Create the prosody-example topic
+# 5. Run the script:
 #    python tracing.py
 #
 # To view the traces:
