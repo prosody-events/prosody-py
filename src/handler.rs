@@ -20,7 +20,7 @@ use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
 use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
-use pyo3_asyncio_0_21::{into_future_with_locals, TaskLocals};
+use pyo3_async_runtimes::{into_future_with_locals, TaskLocals};
 use pythonize::pythonize;
 use thiserror::Error;
 use tokio::select;
