@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/RealGeeks/prosody-py/compare/v0.5.0...v0.6.0) (2024-10-23)
+
+
+### Features
+
+* **consumer:** add health check probes and stall detection ([#42](https://github.com/RealGeeks/prosody-py/issues/42)) ([48cdc9d](https://github.com/RealGeeks/prosody-py/commit/48cdc9dab028516b5d53ceebd5a7fa851aacef03))
+
 ## [0.5.0](https://github.com/RealGeeks/prosody-py/compare/v0.4.0...v0.5.0) (2024-09-18)
 
 
