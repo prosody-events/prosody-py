@@ -247,6 +247,26 @@ class ProsodyClient:
         """
         ...
 
+    def assigned_partition_count(self) -> int:
+        """
+        Returns the number of partitions assigned to the consumer.
+
+        Returns:
+            int: The number of assigned partitions. Returns 0 if the consumer
+            is not in the Running state.
+        """
+        ...
+
+    def is_stalled(self) -> bool:
+        """
+        Checks if the consumer is stalled.
+
+        Returns:
+            bool: True if the consumer is stalled, False otherwise. Returns
+            False if the consumer is not in the Running state.
+        """
+        ...
+
     async def unsubscribe(self) -> None:
         """
         Unsubscribe from messages and shut down the consumer.
