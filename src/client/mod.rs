@@ -124,26 +124,36 @@ impl ProsodyClient {
     fn subscribe(&self, handler: &Bound<PyAny>) -> PyResult<()> {
         let _enter = RUNTIME.enter();
 
-        // Set the task grace period to 80% of the total partition timeout
-        let task_grace_period = self
+        let timeout = self
             .client
             .consumer_state()
             .mode_configuration()
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
             .consumer_config()
-            .partition_shutdown_timeout
-            .map(|timeout| {
-                let nanos = timeout.as_nanos();
-                let result_nanos = (nanos * 4) / 5;
-                Duration::from_nanos(result_nanos as u64)
-            })
-            .unwrap_or_default();
+            .stall_threshold;
 
-        let handler = PythonHandler::new(handler, task_grace_period)?;
+        // Set the task grace period to 80% of the total partition timeout
+        let nanos = timeout.as_nanos();
+        let result_nanos = (nanos * 4) / 5;
+        let task_grace_period = Duration::from_nanos(result_nanos as u64);
 
         self.client
-            .subscribe(handler)
+            .subscribe(PythonHandler::new(handler, task_grace_period)?)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Returns the number of partitions assigned to the consumer.
+    ///
+    /// Returns 0 if the consumer is not in the Running state.
+    fn assigned_partition_count(&self) -> u32 {
+        self.client.assigned_partition_count()
+    }
+
+    /// Checks if the consumer is stalled.
+    ///
+    /// Returns `false` if the consumer is not in the Running state.
+    fn is_stalled(&self) -> bool {
+        self.client.is_stalled()
     }
 
     /// Unsubscribes from messages and shuts down the consumer.
