@@ -170,14 +170,15 @@ class ProsodyClient:
             subscribed_topics: Optional[StringOrList] = None,
             max_uncommitted: Optional[int] = None,
             max_enqueued_per_key: Optional[int] = None,
-            partition_shutdown_timeout: Optional[Duration] = None,
+            stall_threshold: Optional[Duration] = None,
             poll_interval: Optional[Duration] = None,
             commit_interval: Optional[Duration] = None,
             mode: Optional[Literal['pipeline', 'low-latency']] = None,
             retry_base: Optional[int] = None,
             max_retries: Optional[int] = None,
             max_retry_delay: Optional[Duration] = None,
-            failure_topic: Optional[str] = None
+            failure_topic: Optional[str] = None,
+            probe_port: Optional[int] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.
@@ -190,9 +191,9 @@ class ProsodyClient:
             subscribed_topics: Topics to subscribe to.
             max_uncommitted: Max number of uncommitted messages.
             max_enqueued_per_key: Max enqueued messages per key.
-            partition_shutdown_timeout: Timeout for partition shutdown. During partition revocation, tasks are given 80%
-                of this time to finish before being cancelled. The remaining 20% is used to wait for the cancellation
-                hooks to complete.
+            stall_threshold: Threshold determining when message processing has stalled. During partition revocation,
+                tasks are given 80% of this time to finish before being cancelled. The remaining 20% is used to wait for
+                the cancellation hooks to complete.
             poll_interval: Time between message polls.
             commit_interval: Time between offset commits.
             mode: Operating mode ('pipeline' or 'low-latency').
@@ -200,7 +201,7 @@ class ProsodyClient:
             max_retries: Maximum number of retries.
             max_retry_delay: Maximum delay between retries.
             failure_topic: Topic for failed messages in low-latency mode.
-
+            probe_port: Port for the probe server. Set to None to disable.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.

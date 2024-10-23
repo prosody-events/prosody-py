@@ -167,8 +167,8 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.max_enqueued_per_key(max_enqueued_per_key.extract::<usize>()?);
     }
 
-    if let Some(value) = config.get_item("partition_shutdown_timeout")? {
-        builder.partition_shutdown_timeout(decode_optional_duration(&value)?);
+    if let Some(value) = config.get_item("stall_threshold")? {
+        builder.stall_threshold(decode_duration(&value)?);
     }
 
     if let Some(poll_interval) = config.get_item("poll_interval")? {
@@ -177,6 +177,10 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
 
     if let Some(commit_interval) = config.get_item("commit_interval")? {
         builder.commit_interval(decode_duration(&commit_interval)?);
+    }
+
+    if let Some(probe_port) = config.get_item("probe_port")? {
+        builder.probe_port(probe_port.extract::<Option<u16>>()?);
     }
 
     Ok(builder)

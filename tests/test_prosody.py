@@ -46,6 +46,7 @@ async def client():
         bootstrap_servers="localhost:9094",
         group_id="test-group",
         subscribed_topics="test-topic",
+        probe_port=None,
     )
 
     yield client
