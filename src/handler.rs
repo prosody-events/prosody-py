@@ -1,13 +1,15 @@
-//! Bridges Rust's Prosody library and Python for Kafka message handling.
+//! Bridges Python and Prosody for Kafka message handling.
 //!
-//! This module defines the `PythonHandler` struct, which implements the
-//! `FallibleHandler` trait, enabling Python-defined message handlers to work
-//! with Prosody's Kafka consumer. It also manages OpenTelemetry context
-//! propagation between Rust and Python, handles task cancellation, and provides
-//! error classification for Python errors.
+//! Enables Python-defined handlers to process Kafka messages through Prosody
+//! by:
+//! - Implementing `FallibleHandler` for Python message handlers
+//! - Propagating OpenTelemetry context between Rust and Python
+//! - Managing graceful task cancellation during shutdown
+//! - Classifying Python errors for retry/failure handling
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::pin_mut;
@@ -30,14 +32,13 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::context::Context;
 
-/// Name of the abstract Python class that user-defined handlers must subclass.
+/// Base Python class name for message handlers
 const HANDLER_CLASS_NAME: &str = "EventHandler";
 
-/// Name of the Python class that wraps the user-defined handler for tracing and
-/// cancellation.
+/// Python wrapper class name for tracing/cancellation
 const HANDLER_WRAPPER_CLASS_NAME: &str = "ProsodyHandler";
 
-/// Name of the Python class representing a Kafka message.
+/// Python class name for Kafka messages
 const MESSAGE_CLASS_NAME: &str = "Message";
 
 /// A wrapper for Python-defined message handlers.
@@ -45,8 +46,12 @@ const MESSAGE_CLASS_NAME: &str = "Message";
 /// This struct holds references to Python objects and methods necessary for
 /// handling Kafka messages and implements the `FallibleHandler` trait for use
 /// with Prosody's Kafka consumer.
+#[derive(Clone, Debug)]
+pub struct PythonHandler(Arc<PythonHandlerImpl>);
+
+/// Implementation details for Python message handlers
 #[derive(Debug)]
-pub struct PythonHandler {
+pub struct PythonHandlerImpl {
     pub handle_method: PyObject,
     pub message_class: PyObject,
     pub event_class: PyObject,
@@ -54,20 +59,6 @@ pub struct PythonHandler {
     shutdown_grace_period: Duration,
     locals: TaskLocals,
     propagator: TextMapCompositePropagator,
-}
-
-impl Clone for PythonHandler {
-    fn clone(&self) -> Self {
-        Self {
-            handle_method: self.handle_method.clone(),
-            message_class: self.message_class.clone(),
-            event_class: self.event_class.clone(),
-            event_set_method: self.event_set_method.clone(),
-            shutdown_grace_period: self.shutdown_grace_period,
-            locals: self.locals.clone(),
-            propagator: new_propagator(),
-        }
-    }
 }
 
 impl PythonHandler {
@@ -89,31 +80,31 @@ impl PythonHandler {
     /// `EventHandler`.
     pub fn new(handler: &Bound<PyAny>, shutdown_grace_period: Duration) -> PyResult<Self> {
         let py = handler.py();
-        let prosody_module = py.import_bound("prosody")?;
+        let prosody_module = py.import("prosody")?;
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
         let tracing_handler_class = prosody_module.getattr(HANDLER_WRAPPER_CLASS_NAME)?;
         let message_class = prosody_module.getattr(MESSAGE_CLASS_NAME)?;
 
-        // Ensure the provided handler is a subclass of EventHandler
+        // Verify handler inherits from EventHandler
         if !handler.is_instance(&abstract_handler_class)? {
             return Err(PyTypeError::new_err(format!(
                 "handler must be a subclass of {HANDLER_CLASS_NAME}"
             )));
         }
 
-        // Create a ProsodyHandler instance and get its handle method
+        // Wrap handler with tracing/cancellation support
         let tracing_handler = tracing_handler_class.call1((handler,))?;
         let handle_method = tracing_handler.getattr("on_message")?;
 
         // Get a reference to the event methods
-        let tsasync = py.import_bound("tsasync")?;
+        let tsasync = py.import("tsasync")?;
         let event_class = tsasync.getattr("Event")?;
         let event_set_method = event_class.getattr("set")?;
 
         // Capture the running event loop
         let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
-        Ok(Self {
+        Ok(Self(Arc::new(PythonHandlerImpl {
             handle_method: handle_method.unbind(),
             message_class: message_class.unbind(),
             event_class: event_class.unbind(),
@@ -121,34 +112,54 @@ impl PythonHandler {
             shutdown_grace_period,
             locals,
             propagator: new_propagator(),
-        })
+        })))
+    }
+
+    /// Gets the Python message handler method
+    pub fn handle_method(&self) -> &PyObject {
+        &self.0.handle_method
+    }
+
+    /// Gets the Python Message class
+    pub fn message_class(&self) -> &PyObject {
+        &self.0.message_class
+    }
+
+    /// Gets the Python Event class
+    pub fn event_class(&self) -> &PyObject {
+        &self.0.event_class
+    }
+
+    /// Gets the Python Event.set method
+    pub fn event_set_method(&self) -> &PyObject {
+        &self.0.event_set_method
     }
 }
 
 impl FallibleHandler for PythonHandler {
     type Error = WrappedPythonError;
 
-    /// Handles a Kafka message by calling the Python-defined `ProsodyHandler`'s
-    /// handle method.
+    /// Processes a Kafka message by invoking the Python handler.
     ///
     /// # Arguments
     ///
-    /// * `context` - The message context.
-    /// * `message` - The consumer message to be handled.
+    /// * `context` - Message processing context
+    /// * `message` - Kafka message to process
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// A `Result` indicating success or containing a `WrappedPythonError` if an
-    /// error occurred.
+    /// Returns `WrappedPythonError` on Python exceptions or task cancellation
+    /// failures
     #[instrument(level = "debug", skip(self), err)]
     async fn on_message(
         &self,
         context: MessageContext,
         message: ConsumerMessage,
     ) -> Result<(), Self::Error> {
-        // Serialize the OpenTelemetry context
+        // Propagate tracing context to Python
         let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
-        self.propagator
+        self.0
+            .propagator
             .inject_context(&message.span().context(), &mut serialized_context);
 
         let shutdown_future = context.on_shutdown();
@@ -156,26 +167,26 @@ impl FallibleHandler for PythonHandler {
             context,
             message,
             serialized_context,
-            &self.message_class,
-            &self.event_class,
-            &self.handle_method,
-            &self.locals,
+            &self.0.message_class,
+            &self.0.event_class,
+            &self.0.handle_method,
+            &self.0.locals,
         )?;
 
         pin_mut!(complete_future);
         select! {
-            // Future completed
+            // Handle normal completion
             result = complete_future.as_mut() => {
                 result?;
             }
 
-            // Shutdown signal
+            // Handle shutdown request
             () = shutdown_future => {
                 debug!("shutdown signal received; waiting for task to complete");
                 select! {
-                    () = sleep(self.shutdown_grace_period) => {
+                    () = sleep(self.0.shutdown_grace_period) => {
                         warn!("timeout exceeded; cancelling task");
-                        cancel_task(&self.event_set_method, shutdown_event)?;
+                        cancel_task(&self.0.event_set_method, shutdown_event)?;
 
                         debug!("waiting for task to cleanup");
                         complete_future.await?;
@@ -193,17 +204,16 @@ impl FallibleHandler for PythonHandler {
     }
 }
 
-/// Cancels a Python task by setting its shutdown event.
+/// Cancels a Python task by signaling its shutdown event
 ///
 /// # Arguments
 ///
-/// * `event_set_method` - The Python method to set the event.
-/// * `shutdown_event` - The Python event object to be set.
+/// * `event_set_method` - Python Event.set method
+/// * `shutdown_event` - Event to signal
 ///
-/// # Returns
+/// # Errors
 ///
-/// A `PyResult` indicating success or containing a `PyErr` if an error
-/// occurred.
+/// Returns `PyErr` if setting the event fails
 fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResult<()> {
     Python::with_gil(|py| {
         event_set_method.call1(py, (shutdown_event,))?;
@@ -211,27 +221,25 @@ fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResul
     })
 }
 
-/// Prepares and executes a Python handler for a Kafka message.
+/// Prepares and executes a Python message handler
 ///
 /// # Arguments
 ///
-/// * `context` - The message context.
-/// * `message` - The consumer message to be handled.
-/// * `serialized_context` - The serialized OpenTelemetry context.
-/// * `message_class` - The Python Message class.
-/// * `event_class` - The Python Event class.
-/// * `handle_method` - The Python handler method.
-/// * `locals` - The task locals for the Python event loop.
+/// * `context` - Message context
+/// * `message` - Kafka message
+/// * `serialized_context` - OpenTelemetry context
+/// * `message_class` - Python Message class
+/// * `event_class` - Python Event class
+/// * `handle_method` - Python handler method
+/// * `locals` - Python event loop task locals
 ///
 /// # Returns
 ///
-/// A tuple containing the shutdown event and the future representing the
-/// handler execution.
+/// Tuple of (shutdown event, handler future)
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if there's an error during Python object creation or
-/// method calls.
+/// Returns `PyErr` on Python object creation/method call failures
 fn execute(
     context: MessageContext,
     message: ConsumerMessage,
@@ -245,7 +253,7 @@ fn execute(
     impl Future<Output = PyResult<PyObject>> + Send + Sized,
 )> {
     Python::with_gil(move |py| {
-        // Create Context and Message objects for the Python handler
+        // Create Python message objects
         let message_context = Context(context);
         let payload = pythonize(py, message.payload())?;
 
@@ -262,12 +270,12 @@ fn execute(
         )?;
 
         // Convert serialized_context to a Python dict
-        let otel_context = serialized_context.into_py_dict_bound(py);
+        let otel_context = serialized_context.into_py_dict(py)?;
 
         // Create asyncio.Event for shutdown signaling
         let shutdown_event = event_class.call0(py)?;
 
-        // Call the ProsodyHandler's handle method to build coroutine
+        // Create and convert handler coroutine to future
         let coroutine = handle_method
             .call1(
                 py,
@@ -275,27 +283,25 @@ fn execute(
             )?
             .into_bound(py);
 
-        // Convert coroutine into a future
         let complete_future = into_future_with_locals(locals, coroutine)?;
         Ok((shutdown_event, complete_future))
     })
 }
 
-/// Wraps Python errors that may occur during message handling.
+/// Python errors from message handling
 #[derive(Debug, Error)]
 pub enum WrappedPythonError {
+    /// Underlying Python exception
     #[error(transparent)]
     Python(#[from] PyErr),
 }
 
 impl ClassifyError for WrappedPythonError {
-    /// Classifies the error as either Terminal, Permanent, or Transient.
+    /// Determines error retry behavior based on Python error attributes
     ///
-    /// # Returns
-    ///
-    /// * `ErrorCategory::Permanent` for errors with `is_permanent` attribute
-    ///   set to `True`.
-    /// * `ErrorCategory::Transient` for all other Python errors.
+    /// Returns:
+    /// - `ErrorCategory::Permanent` for errors with `is_permanent=True`
+    /// - `ErrorCategory::Transient` otherwise
     fn classify_error(&self) -> ErrorCategory {
         match self {
             WrappedPythonError::Python(error) => {
@@ -308,16 +314,16 @@ impl ClassifyError for WrappedPythonError {
     }
 }
 
-/// Checks if a Python error is marked as permanent.
+/// Checks if a Python error is marked as permanent
 ///
 /// # Arguments
 ///
-/// * `py` - The Python interpreter token.
-/// * `error` - The Python error to check.
+/// * `py` - Python interpreter token
+/// * `error` - Error to check
 ///
 /// # Returns
 ///
-/// A `PyResult<bool>` indicating whether the error is permanent.
+/// Whether error has `is_permanent=True`
 fn is_permanent_error(py: Python, error: &PyErr) -> PyResult<bool> {
-    error.value_bound(py).getattr("is_permanent")?.extract()
+    error.value(py).getattr("is_permanent")?.extract()
 }

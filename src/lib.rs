@@ -13,7 +13,7 @@ use crate::context::Context;
 use ::prosody::tracing::{initialize_tracing, Identity};
 use once_cell::sync::Lazy;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::PyModule;
+use pyo3::types::{PyModule, PyModuleMethods};
 use pyo3::{pymodule, Bound, PyResult};
 use tokio::runtime::Runtime;
 
