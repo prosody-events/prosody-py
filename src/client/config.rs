@@ -14,7 +14,7 @@ use prosody::high_level::HighLevelClient;
 use prosody::producer::ProducerConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
-use pyo3::{Bound, IntoPy, PyAny, PyResult, Python};
+use pyo3::{Bound, IntoPyObjectExt, PyAny, PyResult, Python};
 use std::time::Duration;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
@@ -36,14 +36,14 @@ use std::time::Duration;
 pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<ProsodyClient> {
     // Get handles to OpenTelemetry functions
     let get_context = py
-        .import_bound("opentelemetry.context")?
+        .import("opentelemetry.context")?
         .getattr("get_current")?
-        .into_py(py);
+        .into_py_any(py)?;
 
     let inject = py
-        .import_bound("opentelemetry.propagate")?
+        .import("opentelemetry.propagate")?
         .getattr("inject")?
-        .into_py(py);
+        .into_py_any(py)?;
 
     // If no config is provided, create a client with default configurations
     let Some(config) = config else {
