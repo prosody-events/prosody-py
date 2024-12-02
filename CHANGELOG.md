@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/cincpro/prosody-py/compare/v0.6.0...v0.6.1) (2024-12-02)
+
+
+### Bug Fixes
+
+* fix mocking, ci, and bump deps ([#46](https://github.com/cincpro/prosody-py/issues/46)) ([c817385](https://github.com/cincpro/prosody-py/commit/c81738534526a37087f53ba5ab9e629c809dc017))
+
 ## [0.6.0](https://github.com/RealGeeks/prosody-py/compare/v0.5.0...v0.6.0) (2024-10-23)
 
 
