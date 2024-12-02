@@ -13,7 +13,7 @@ use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{
     pyclass, pymethods, Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python,
 };
-use pythonize::depythonize_bound;
+use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -78,11 +78,11 @@ impl ProsodyClient {
         // Extract trace headers and convert payload to JSON-serializable value
         let (trace_headers, payload) = Python::with_gil(|py| {
             let context = self.get_context.bind(py).call0()?;
-            let data = PyDict::new_bound(py);
+            let data = PyDict::new(py);
             self.inject.call1(py, (&data, context))?;
 
             let headers: HashMap<String, String> = data.extract()?;
-            let payload = depythonize_bound::<Value>(payload.bind(py).clone())?;
+            let payload = depythonize::<Value>(&payload.bind(py).clone())?;
             PyResult::Ok((headers, payload))
         })?;
 
@@ -250,10 +250,10 @@ impl ProsodyClient {
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // If the consumer is in the Running state, visit the handler's method
         if let ConsumerState::Running { handler, .. } = &*self.client.consumer_state() {
-            visit.call(handler.handle_method.as_any())?;
-            visit.call(handler.message_class.as_any())?;
-            visit.call(handler.event_class.as_any())?;
-            visit.call(handler.event_set_method.as_any())?;
+            visit.call(handler.handle_method().as_any())?;
+            visit.call(handler.message_class().as_any())?;
+            visit.call(handler.event_class().as_any())?;
+            visit.call(handler.event_set_method().as_any())?;
         }
 
         visit.call(self.get_context.as_any())?;
