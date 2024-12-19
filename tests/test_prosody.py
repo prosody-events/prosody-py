@@ -256,5 +256,35 @@ async def test_permanent_error_decorator(client):
     assert handler.message_count == 1
 
 
+@pytest.mark.asyncio
+async def test_best_effort_mode_does_not_retry(client):
+    handler = TransientErrorHandler()
+
+    # Configure client for "best effort" mode, ensuring it doesn't do retries
+    client_with_best_effort = ProsodyClient(
+        bootstrap_servers="localhost:9094",
+        group_id="test-group",
+        subscribed_topics="test-topic",
+        mode="best-effort"
+    )
+
+    client_with_best_effort.subscribe(handler)
+
+    # Send a test message
+    test_topic = "test-topic"
+    test_key = "test-key"
+    test_payload = {"content": "Trigger transient error"}
+
+    await client_with_best_effort.send(test_topic, test_key, test_payload)
+
+    # Allow time for processing
+    await asyncio.sleep(5)
+
+    # Check that the transient error was raised only once
+    assert handler.retry_event.is_set() == False
+
+    await client_with_best_effort.unsubscribe()
+
+
 if __name__ == "__main__":
     pytest.main()

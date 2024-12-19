@@ -13,8 +13,8 @@ use crate::context::Context;
 use ::prosody::tracing::{initialize_tracing, Identity};
 use once_cell::sync::Lazy;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{PyModule, PyModuleMethods};
-use pyo3::{pymodule, Bound, PyResult};
+use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
+use pyo3::{pymodule, Bound, PyResult, Python};
 use tokio::runtime::Runtime;
 
 #[cfg(feature = "admin-client")]
@@ -52,7 +52,7 @@ static RUNTIME: Lazy<Runtime> =
 /// Returns `Ok(())` if the initialization is successful, or a `PyErr` if an
 /// error occurs.
 #[pymodule]
-fn prosody(m: &Bound<PyModule>) -> PyResult<()> {
+fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     let _enter = RUNTIME.enter();
     initialize_tracing::<Identity>(None)
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
@@ -61,11 +61,18 @@ fn prosody(m: &Bound<PyModule>) -> PyResult<()> {
     pyo3_log::init();
 
     // Add classes to the module
-    m.add_class::<ProsodyClient>()?;
-    m.add_class::<Context>()?;
+    prosody_module.add_class::<ProsodyClient>()?;
+
+    let context_module = PyModule::new(py, "context")?;
+    prosody_module.add_submodule(&context_module)?;
+    context_module.add_class::<Context>()?;
+
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("prosody.context", context_module)?;
 
     #[cfg(feature = "admin-client")]
-    m.add_class::<AdminClient>()?;
+    prosody_module.add_class::<AdminClient>()?;
 
     Ok(())
 }

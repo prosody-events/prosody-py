@@ -1,8 +1,10 @@
 import logging
 
-from .errors import EventHandlerError, PermanentError, TransientError, permanent, transient
-from .handler import EventHandler, ProsodyHandler
-from .message import Message
-from .prosody import Context, ProsodyClient
+from prosody.prosody import ProsodyClient
+
+from prosody.context import Context
+from prosody.errors import EventHandlerError, PermanentError, TransientError, permanent, transient
+from prosody.handler import EventHandler, ProsodyHandler
+from prosody.message import Message
 
 logging.getLogger('prosody.consumer.poll').setLevel(logging.ERROR)
