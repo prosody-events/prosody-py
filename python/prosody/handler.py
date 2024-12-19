@@ -4,10 +4,35 @@ from abc import ABC, abstractmethod
 from opentelemetry import trace
 from opentelemetry.propagate import extract
 
+from prosody.context import Context
+from prosody.message import Message
+
 
 class EventHandler(ABC):
+    """
+    Abstract base class for event handlers.
+
+    Subclasses must implement the `on_message` method to define custom message
+    processing logic.
+    """
+
     @abstractmethod
-    async def on_message(self, context, message):
+    async def on_message(self, context: Context, message: Message) -> None:
+        """
+        Handle a Kafka message.
+
+        Args:
+            context (Context): The context of the message.
+            message (Message): The Kafka message to be processed.
+
+        Notes:
+            - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
+            - Use `try/finally` blocks or context managers for proper resource cleanup.
+            - This method may be called from different threads. Ensure that any handler state is thread-safe.
+
+        Raises:
+            asyncio.CancelledError: If the task is cancelled.
+        """
         pass
 
 
