@@ -8,7 +8,7 @@ strategies, and integrated OpenTelemetry support for distributed tracing.
 
 - Rust-powered Kafka client
 - Message production and consumption support
-- Configurable modes: pipeline and low-latency
+- Configurable modes: pipeline, low-latency, and best-effort
 - OpenTelemetry integration for distributed tracing
 - Efficient parallel processing with key-based ordering
 - Intelligent partition pausing for backpressure management
@@ -66,7 +66,7 @@ The `ProsodyClient` constructor accepts these key parameters:
 - `bootstrap_servers` (str | list[str]): Kafka bootstrap servers (required)
 - `group_id` (str): Consumer group ID (required for consumption)
 - `subscribed_topics` (str | list[str]): Topics to subscribe to (required for consumption)
-- `mode` (str): 'pipeline' (default) or 'low-latency'
+- `mode` (str): 'pipeline' (default), 'low-latency', or 'best-effort'
 
 Additional optional parameters control behavior like message committal, polling intervals, and retry logic. Most
 parameters can be set via environment variables (e.g., `PROSODY_BOOTSTRAP_SERVERS`).
@@ -141,6 +141,20 @@ client = ProsodyClient(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     failure_topic="failed-messages"  # Specify a topic for failed messages
+)
+```
+
+### Best-Effort Mode
+
+Optimized for development environments or services where message processing failures are acceptable:
+
+```python
+# Initialize client in best-effort mode
+client = ProsodyClient(
+    bootstrap_servers="localhost:9092",
+    mode="best-effort",  # Set best-effort mode
+    group_id="my-consumer-group",
+    subscribed_topics="my-topic"
 )
 ```
 
