@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/cincpro/prosody-py/compare/v0.7.0...v0.7.1) (2024-12-19)
+
+
+### Bug Fixes
+
+* upgrade macos CI runner ([5db8e64](https://github.com/cincpro/prosody-py/commit/5db8e64012d58e854efb53813c1585c08aabe14b))
+
 ## [0.7.0](https://github.com/cincpro/prosody-py/compare/v0.6.1...v0.7.0) (2024-12-19)
 
 
