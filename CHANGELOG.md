@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/cincpro/prosody-py/compare/v0.6.1...v0.7.0) (2024-12-19)
+
+
+### Features
+
+* best-effort mode ([#48](https://github.com/cincpro/prosody-py/issues/48)) ([069f9b8](https://github.com/cincpro/prosody-py/commit/069f9b838f100015dfb00fd9ac95a104d8a094d6))
+
 ## [0.6.1](https://github.com/cincpro/prosody-py/compare/v0.6.0...v0.6.1) (2024-12-02)
 
 
