@@ -27,7 +27,7 @@ use pythonize::pythonize;
 use thiserror::Error;
 use tokio::select;
 use tokio::time::sleep;
-use tracing::{debug, instrument, warn};
+use tracing::{debug, error, instrument, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::context::Context;
@@ -177,6 +177,9 @@ impl FallibleHandler for PythonHandler {
         select! {
             // Handle normal completion
             result = complete_future.as_mut() => {
+                if let Err(error) = log_exception(&result) {
+                    error!("message handling failed but error could not be logged: {error:#}");
+                }
                 result?;
             }
 
@@ -202,6 +205,40 @@ impl FallibleHandler for PythonHandler {
 
         Ok(())
     }
+}
+
+/// Logs Python exceptions with full traceback information.
+///
+/// # Arguments
+///
+/// * `result` - `PyResult` containing a potential Python error to log
+///
+/// # Returns
+///
+/// A `PyResult` indicating whether logging succeeded
+///
+/// # Errors
+///
+/// Returns `PyErr` if accessing traceback information fails
+fn log_exception(result: &PyResult<PyObject>) -> PyResult<()> {
+    let Err(error) = result else {
+        return Ok(());
+    };
+
+    Python::with_gil(|py| {
+        let traceback = py.import("traceback")?;
+        let exc_info = (error.get_type(py), error.value(py), error.traceback(py));
+
+        let traceback: Vec<String> = traceback
+            .getattr("format_exception")?
+            .call1(exc_info)?
+            .extract()?;
+
+        let traceback = traceback.join("");
+
+        error!(%traceback, "message handling failed: {error:#}");
+        Ok(())
+    })
 }
 
 /// Cancels a Python task by signaling its shutdown event
