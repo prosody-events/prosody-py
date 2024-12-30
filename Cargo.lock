@@ -1413,7 +1413,7 @@ dependencies = [
 
 [[package]]
 name = "prosody-py"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "futures",
  "once_cell",
