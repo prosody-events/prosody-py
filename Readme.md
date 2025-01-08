@@ -158,6 +158,48 @@ client = ProsodyClient(
 )
 ```
 
+## Message Deduplication
+
+Prosody automatically deduplicates messages using the `id` field in their JSON payload. Consecutive messages with the
+same ID and key are processed only once.
+
+```python
+# Messages with IDs are deduplicated per key
+await client.send("my-topic", "key1", {
+    "id": "msg-123",  # Message will be processed
+    "content": "Hello!"
+})
+
+await client.send("my-topic", "key1", {
+    "id": "msg-123",  # Message will be skipped (duplicate)
+    "content": "Hello again!"
+})
+
+await client.send("my-topic", "key2", {
+    "id": "msg-123",  # Message will be processed (different key)
+    "content": "Hello!"
+})
+```
+
+Deduplication can be disabled by setting:
+
+```python
+client = ProsodyClient(
+    group_id="my-consumer-group",
+    subscribed_topics="my-topic",
+    idempotence_cache_size=0  # Disable deduplication
+)
+```
+
+Or via environment variable:
+
+```bash
+PROSODY_IDEMPOTENCE_CACHE_SIZE=0
+```
+
+Note that this deduplication is best-effort and not guaranteed. Because identifiers are cached ephemerally in memory,
+duplicates can still occur when instances rebalance or restart.
+
 ## OpenTelemetry Tracing
 
 Prosody supports OpenTelemetry tracing, allowing you to monitor and analyze the performance of your Kafka-based
