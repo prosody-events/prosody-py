@@ -1410,7 +1410,7 @@ dependencies = [
 [[package]]
 name = "prosody"
 version = "0.6.1"
-source = "git+https://github.com/cincpro/prosody.git?rev=dbc4ca86ee78ebfcf570a5c5080ff64b186a8a49#dbc4ca86ee78ebfcf570a5c5080ff64b186a8a49"
+source = "git+https://github.com/cincpro/prosody.git?rev=c028a352d10c40b4108a9bf349c62e04bc7b97a2#c028a352d10c40b4108a9bf349c62e04bc7b97a2"
 dependencies = [
  "ahash",
  "axum 0.8.1",
