@@ -45,6 +45,7 @@ class ProsodyClient:
             mock: Optional[bool] = None,
             send_timeout: Optional[Duration] = None,
             group_id: Optional[str] = None,
+            idempotence_cache_size: Optional[int] = None,
             subscribed_topics: Optional[StringOrList] = None,
             max_uncommitted: Optional[int] = None,
             max_enqueued_per_key: Optional[int] = None,
@@ -66,6 +67,7 @@ class ProsodyClient:
             mock: Use mock client for testing if True.
             send_timeout: Timeout for message send operations.
             group_id: Consumer group name.
+            idempotence_cache_size: Size of LRU caches for deduplicating messages. Set to 0 to disable.
             subscribed_topics: Topics to subscribe to.
             max_uncommitted: Max number of uncommitted messages.
             max_enqueued_per_key: Max enqueued messages per key.
