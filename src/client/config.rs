@@ -159,6 +159,10 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.subscribed_topics(string_or_vec(&subscribed_topics)?);
     }
 
+    if let Some(idempotence_cache_size) = config.get_item("idempotence_cache_size")? {
+        builder.idempotence_cache_size(idempotence_cache_size.extract::<usize>()?);
+    }
+
     if let Some(max_uncommitted) = config.get_item("max_uncommitted")? {
         builder.max_uncommitted(max_uncommitted.extract::<usize>()?);
     }
