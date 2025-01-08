@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/cincpro/prosody-py/compare/v0.7.2...v0.8.0) (2025-01-08)
+
+
+### Features
+
+* Add message deduplication support ([#53](https://github.com/cincpro/prosody-py/issues/53)) ([b42293a](https://github.com/cincpro/prosody-py/commit/b42293a9ab0cd39e444f8a3ac32d76b4a70b39d3))
+
 ## [0.7.2](https://github.com/cincpro/prosody-py/compare/v0.7.1...v0.7.2) (2024-12-30)
 
 
