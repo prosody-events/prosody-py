@@ -44,6 +44,7 @@ async def run_before_and_after_tests():
 async def client():
     client = ProsodyClient(
         bootstrap_servers="localhost:9094",
+        source_system="test-send",
         group_id="test-group",
         subscribed_topics="test-topic",
         probe_port=None,
@@ -94,6 +95,7 @@ async def test_send_and_receive_message(client):
 async def test_client_configuration():
     client = ProsodyClient(
         bootstrap_servers=["localhost:9092", "localhost:9093"],
+        source_system="test-send",
         group_id="test-group",
         subscribed_topics=["topic1", "topic2"],
         max_uncommitted=1000,
@@ -263,6 +265,7 @@ async def test_best_effort_mode_does_not_retry(client):
     # Configure client for "best effort" mode, ensuring it doesn't do retries
     client_with_best_effort = ProsodyClient(
         bootstrap_servers="localhost:9094",
+        source_system="test-send",
         group_id="test-group",
         subscribed_topics="test-topic",
         mode="best-effort"
