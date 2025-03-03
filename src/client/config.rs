@@ -119,6 +119,10 @@ fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurati
         builder.mock(mock.extract::<bool>()?);
     }
 
+    if let Some(source_system) = config.get_item("source_system")? {
+        builder.source_system(source_system.extract::<String>()?);
+    }
+
     if let Some(send_timeout) = config.get_item("send_timeout")? {
         builder.send_timeout(decode_optional_duration(&send_timeout)?);
     }
@@ -157,6 +161,10 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
 
     if let Some(subscribed_topics) = config.get_item("subscribed_topics")? {
         builder.subscribed_topics(string_or_vec(&subscribed_topics)?);
+    }
+
+    if let Some(allowed_event_types) = config.get_item("allowed_events")? {
+        builder.allowed_events(string_or_vec(&allowed_event_types)?);
     }
 
     if let Some(idempotence_cache_size) = config.get_item("idempotence_cache_size")? {
