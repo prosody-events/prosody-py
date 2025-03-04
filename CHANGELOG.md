@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/cincpro/prosody-py/compare/v0.9.0...v0.9.1) (2025-03-04)
+
+
+### Bug Fixes
+
+* ensure latest Rust is installed on MacOS builds ([#58](https://github.com/cincpro/prosody-py/issues/58)) ([a54dd15](https://github.com/cincpro/prosody-py/commit/a54dd155dd03549bddf8003f91a3cd9504a02afe))
+
 ## [0.9.0](https://github.com/cincpro/prosody-py/compare/v0.8.0...v0.9.0) (2025-03-04)
 
 
