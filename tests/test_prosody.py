@@ -106,6 +106,7 @@ async def test_client_configuration():
         retry_base=2,
         max_retries=5,
         failure_topic="failed-messages",
+        probe_port=None,
         mock=True
     )
     assert isinstance(client, ProsodyClient)
@@ -268,6 +269,7 @@ async def test_best_effort_mode_does_not_retry(client):
         source_system="test-send",
         group_id="test-group",
         subscribed_topics="test-topic",
+        probe_port=None,
         mode="best-effort"
     )
 
