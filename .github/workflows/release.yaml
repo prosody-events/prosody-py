@@ -152,6 +152,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
+      - uses: dtolnay/rust-toolchain@stable
       - uses: de-vri-es/setup-git-credentials@v2
         with:
           credentials: https://Joshua-Griffith_fnf:${{ secrets.TEMP_GH_ALL_REPOS_RW }}@github.com/
