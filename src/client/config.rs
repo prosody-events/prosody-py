@@ -6,11 +6,11 @@
 
 use crate::client::ProsodyClient;
 use crate::util::string_or_vec;
+use prosody::consumer::ConsumerConfigurationBuilder;
 use prosody::consumer::failure::retry::RetryConfigurationBuilder;
 use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
-use prosody::consumer::ConsumerConfigurationBuilder;
-use prosody::high_level::mode::{Mode, ModeError};
 use prosody::high_level::HighLevelClient;
+use prosody::high_level::mode::{Mode, ModeError};
 use prosody::producer::ProducerConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
@@ -49,7 +49,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     let Some(config) = config else {
         let client = HighLevelClient::new(
             Mode::default(),
-            &ProducerConfigurationBuilder::default(),
+            &mut ProducerConfigurationBuilder::default(),
             &ConsumerConfigurationBuilder::default(),
             &RetryConfigurationBuilder::default(),
             &FailureTopicConfigurationBuilder::default(),
@@ -73,14 +73,14 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         None => Mode::default(),
     };
 
-    let producer_config = build_producer_config(config)?;
+    let mut producer_config = build_producer_config(config)?;
     let consumer_config = build_consumer_config(config)?;
     let retry_config = build_retry_config(config)?;
     let failure_topic_config = build_failure_topic_config(config)?;
 
     let client = HighLevelClient::new(
         mode,
-        &producer_config,
+        &mut producer_config,
         &consumer_config,
         &retry_config,
         &failure_topic_config,
@@ -117,6 +117,10 @@ fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurati
 
     if let Some(mock) = config.get_item("mock")? {
         builder.mock(mock.extract::<bool>()?);
+    }
+
+    if let Some(source_system) = config.get_item("source_system")? {
+        builder.source_system(source_system.extract::<String>()?);
     }
 
     if let Some(send_timeout) = config.get_item("send_timeout")? {
@@ -157,6 +161,10 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
 
     if let Some(subscribed_topics) = config.get_item("subscribed_topics")? {
         builder.subscribed_topics(string_or_vec(&subscribed_topics)?);
+    }
+
+    if let Some(allowed_event_types) = config.get_item("allowed_events")? {
+        builder.allowed_events(string_or_vec(&allowed_event_types)?);
     }
 
     if let Some(idempotence_cache_size) = config.get_item("idempotence_cache_size")? {

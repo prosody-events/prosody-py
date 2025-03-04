@@ -43,10 +43,12 @@ class ProsodyClient:
             *,
             bootstrap_servers: Optional[StringOrList] = None,
             mock: Optional[bool] = None,
+            source_system: Optional[str] = None,
             send_timeout: Optional[Duration] = None,
             group_id: Optional[str] = None,
             idempotence_cache_size: Optional[int] = None,
             subscribed_topics: Optional[StringOrList] = None,
+            allowed_events: Optional[StringOrList] = None,
             max_uncommitted: Optional[int] = None,
             max_enqueued_per_key: Optional[int] = None,
             stall_threshold: Optional[Duration] = None,
@@ -65,10 +67,12 @@ class ProsodyClient:
         Args:
             bootstrap_servers: Kafka servers for initial connection.
             mock: Use mock client for testing if True.
+            source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
             send_timeout: Timeout for message send operations.
             group_id: Consumer group name.
             idempotence_cache_size: Size of LRU caches for deduplicating messages. Set to 0 to disable.
             subscribed_topics: Topics to subscribe to.
+            allowed_events: Allowed event type prefixes. All are allowed if unset.
             max_uncommitted: Max number of uncommitted messages.
             max_enqueued_per_key: Max enqueued messages per key.
             stall_threshold: Threshold determining when message processing has stalled. During partition revocation,
