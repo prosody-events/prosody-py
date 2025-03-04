@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/cincpro/prosody-py/compare/v0.8.0...v0.9.0) (2025-03-04)
+
+
+### Features
+
+* add event filtering, source tracking, and fix backpressure deadlock ([#56](https://github.com/cincpro/prosody-py/issues/56)) ([8368a45](https://github.com/cincpro/prosody-py/commit/8368a459b3669cf2d75d50b7a0f17dc3d187b374))
+
 ## [0.8.0](https://github.com/cincpro/prosody-py/compare/v0.7.2...v0.8.0) (2025-01-08)
 
 
