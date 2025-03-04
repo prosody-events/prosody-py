@@ -10,11 +10,11 @@
 
 use crate::client::ProsodyClient;
 use crate::context::Context;
-use ::prosody::tracing::{initialize_tracing, Identity};
+use ::prosody::tracing::{Identity, initialize_tracing};
 use once_cell::sync::Lazy;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
-use pyo3::{pymodule, Bound, PyResult, Python};
+use pyo3::{Bound, PyResult, Python, pymodule};
 use tokio::runtime::Runtime;
 
 #[cfg(feature = "admin-client")]

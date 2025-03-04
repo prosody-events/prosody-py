@@ -6,25 +6,25 @@
 //! operational modes, retry mechanisms, and failure handling strategies.
 
 use opentelemetry::propagation::TextMapPropagator;
-use prosody::high_level::state::ConsumerState;
 use prosody::high_level::HighLevelClient;
+use prosody::high_level::state::ConsumerState;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{
-    pyclass, pymethods, Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python,
+    Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods,
 };
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{info_span, Instrument};
+use tracing::{Instrument, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::client::config::try_build_config;
 use crate::client::format::format_list;
 
-use crate::handler::PythonHandler;
 use crate::RUNTIME;
+use crate::handler::PythonHandler;
 
 mod config;
 mod format;

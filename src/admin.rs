@@ -3,7 +3,7 @@
 use crate::util::string_or_vec;
 use prosody::admin::ProsodyAdminClient;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult};
+use pyo3::{Bound, PyAny, PyResult, pyclass, pymethods};
 
 /// Wrapper for `ProsodyAdminClient` to provide a Python interface for Prosody's
 /// admin functionality.

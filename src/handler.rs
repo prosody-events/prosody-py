@@ -14,15 +14,15 @@ use std::time::Duration;
 
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
+use prosody::consumer::Keyed;
 use prosody::consumer::failure::{ClassifyError, ErrorCategory, FallibleHandler};
 use prosody::consumer::message::{ConsumerMessage, MessageContext};
-use prosody::consumer::Keyed;
 use prosody::propagator::new_propagator;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
 use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
-use pyo3_async_runtimes::{into_future_with_locals, TaskLocals};
+use pyo3_async_runtimes::{TaskLocals, into_future_with_locals};
 use pythonize::pythonize;
 use thiserror::Error;
 use tokio::select;

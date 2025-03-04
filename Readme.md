@@ -13,6 +13,8 @@ strategies, and integrated OpenTelemetry support for distributed tracing.
 - Efficient parallel processing with key-based ordering
 - Intelligent partition pausing for backpressure management
 - Mock Kafka broker support for testing
+- Event type filtering for selectively processing messages
+- Source system tracking to prevent message processing loops
 
 ## Installation
 
@@ -25,10 +27,19 @@ pip install prosody
 ```python
 from prosody import ProsodyClient, EventHandler, Context, Message
 
-# Initialize the client with Kafka bootstrap servers, consumer group, and topics
+# Initialize the client with Kafka bootstrap server, consumer group, and topics
 client = ProsodyClient(
+    # Bootstrap servers should normally be set using the PROSODY_BOOTSTRAP_SERVERS environment variable
     bootstrap_servers="localhost:9092",
-    group_id="my-consumer-group",
+
+    # To allow loopbacks, the source_system must be different from the group_id.
+    # Normally, the source_system would be left unspecified, which would default to the group_id.
+    source_system="my-application-source",
+
+    # The group_id should be set to the name of your application
+    group_id="my-application",
+
+    # Topics the client should subscribe to
     subscribed_topics="my-topic"
 )
 
@@ -66,6 +77,8 @@ The `ProsodyClient` constructor accepts these key parameters:
 - `bootstrap_servers` (str | list[str]): Kafka bootstrap servers (required)
 - `group_id` (str): Consumer group ID (required for consumption)
 - `subscribed_topics` (str | list[str]): Topics to subscribe to (required for consumption)
+- `source_system` (str): Identifier for the producing system to prevent loops (defaults to group_id)
+- `allowed_events` (str | list[str]): Prefixes of event types to process (processes all if unspecified)
 - `mode` (str): 'pipeline' (default), 'low-latency', or 'best-effort'
 
 Additional optional parameters control behavior like message committal, polling intervals, and retry logic. Most
@@ -88,7 +101,6 @@ Configure the probe server using either the client constructor:
 
 ```python
 client = ProsodyClient(
-    bootstrap_servers="localhost:9092",
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     probe_port=8000,  # Set to None to disable
@@ -122,7 +134,6 @@ Pipeline mode is the default mode. Ensures ordered processing, retrying failed o
 ```python
 # Initialize client in pipeline mode
 client = ProsodyClient(
-    bootstrap_servers="localhost:9092",
     mode="pipeline",  # Explicitly set pipeline mode (this is the default)
     group_id="my-consumer-group",
     subscribed_topics="my-topic"
@@ -136,7 +147,6 @@ Prioritizes quick processing, sending persistently failing messages to a failure
 ```python
 # Initialize client in low-latency mode
 client = ProsodyClient(
-    bootstrap_servers="localhost:9092",
     mode="low-latency",  # Set low-latency mode
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
@@ -151,12 +161,72 @@ Optimized for development environments or services where message processing fail
 ```python
 # Initialize client in best-effort mode
 client = ProsodyClient(
-    bootstrap_servers="localhost:9092",
     mode="best-effort",  # Set best-effort mode
     group_id="my-consumer-group",
     subscribed_topics="my-topic"
 )
 ```
+
+## Event Type Filtering
+
+Prosody supports filtering messages based on event type prefixes, allowing your consumer to process only specific types of events:
+
+```python
+# Process only events with types starting with "user." or "account."
+client = ProsodyClient(
+    group_id="my-consumer-group",
+    subscribed_topics="my-topic",
+    allowed_events=["user.", "account."]
+)
+```
+
+Or via environment variables:
+
+```bash
+PROSODY_ALLOWED_EVENTS=user.,account.
+```
+
+### Matching Behavior
+
+Prefixes must match exactly from the start of the event type:
+
+✓ Matches:
+- `{"type": "user.created"}` matches prefix `user.`
+- `{"type": "account.deleted"}` matches prefix `account.`
+
+✗ No Match:
+- `{"type": "admin.user.created"}` doesn't match `user.`
+- `{"type": "my.account.deleted"}` doesn't match `account.`
+- `{"type": "notification"}` doesn't match any prefix
+
+If no prefixes are configured, all messages are processed. Messages without a `type` field are always processed.
+
+## Source System Deduplication
+
+Prosody prevents processing loops in distributed systems by tracking the source of each message:
+
+```python
+# Consumer and producer in one application
+client = ProsodyClient(
+    group_id="my-service",                # Defaults to source_system if not set
+    source_system="my-service-producer",  # Must differ from group_id to allow loopbacks
+    subscribed_topics="my-topic"
+)
+```
+
+Or via environment variable:
+
+```bash
+PROSODY_SOURCE_SYSTEM=my-service-producer
+```
+
+### How It Works
+
+1. **Producers** add a `source-system` header to all outgoing messages.
+2. **Consumers** check this header on incoming messages.
+3. If a message's source system matches the consumer's group ID, the message is skipped.
+
+This prevents endless loops where a service consumes its own produced messages.
 
 ## Message Deduplication
 
