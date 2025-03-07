@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/cincpro/prosody-py/compare/v0.9.1...v0.9.2) (2025-03-07)
+
+
+### Bug Fixes
+
+* group id and source system env var fallback ([#61](https://github.com/cincpro/prosody-py/issues/61)) ([c93feb9](https://github.com/cincpro/prosody-py/commit/c93feb94094856f914525501cf24c9a07d1daaeb))
+
 ## [0.9.1](https://github.com/cincpro/prosody-py/compare/v0.9.0...v0.9.1) (2025-03-04)
 
 
