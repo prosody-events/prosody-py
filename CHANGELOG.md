@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/cincpro/prosody-py/compare/v0.9.2...v0.9.3) (2025-03-11)
+
+
+### Bug Fixes
+
+* always check for shutdown before retrying ([#63](https://github.com/cincpro/prosody-py/issues/63)) ([13331bb](https://github.com/cincpro/prosody-py/commit/13331bba5c8cbf6e16a27cd9ac7b5705f0c090aa))
+
 ## [0.9.2](https://github.com/cincpro/prosody-py/compare/v0.9.1...v0.9.2) (2025-03-07)
 
 
