@@ -52,6 +52,7 @@ class ProsodyClient:
             max_uncommitted: Optional[int] = None,
             max_enqueued_per_key: Optional[int] = None,
             stall_threshold: Optional[Duration] = None,
+            shutdown_timeout: Optional[Duration] = None,
             poll_interval: Optional[Duration] = None,
             commit_interval: Optional[Duration] = None,
             mode: Optional[Literal['pipeline', 'low-latency', 'best-effort']] = None,
@@ -75,9 +76,10 @@ class ProsodyClient:
             allowed_events: Allowed event type prefixes. All are allowed if unset.
             max_uncommitted: Max number of uncommitted messages.
             max_enqueued_per_key: Max enqueued messages per key.
-            stall_threshold: Threshold determining when message processing has stalled. During partition revocation,
-                tasks are given 80% of this time to finish before being cancelled. The remaining 20% is used to wait for
-                the cancellation hooks to complete.
+            stall_threshold: Threshold determining when message processing has stalled.
+            shutdown_timeout: Timeout to wait for in-flight tasks to complete during partition shutdown. During
+                partition revocation, tasks are given 80% of this time to finish before being cancelled. The remaining
+                20% is used to wait for the cancellation hooks to complete.
             poll_interval: Time between message polls.
             commit_interval: Time between offset commits.
             mode: Operating mode ('pipeline', 'low-latency', or 'best-effort').
