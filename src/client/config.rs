@@ -183,6 +183,10 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.stall_threshold(decode_duration(&value)?);
     }
 
+    if let Some(value) = config.get_item("shutdown_timeout")? {
+        builder.shutdown_timeout(decode_duration(&value)?);
+    }
+
     if let Some(poll_interval) = config.get_item("poll_interval")? {
         builder.poll_interval(decode_duration(&poll_interval)?);
     }
