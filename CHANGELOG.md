@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/cincpro/prosody-py/compare/v0.9.3...v0.10.0) (2025-03-13)
+
+
+### Features
+
+* **consumer:** add shutdown timeout parameter ([#65](https://github.com/cincpro/prosody-py/issues/65)) ([d5ec01c](https://github.com/cincpro/prosody-py/commit/d5ec01c63a25ad840def284fb011c32bc338c278))
+
 ## [0.9.3](https://github.com/cincpro/prosody-py/compare/v0.9.2...v0.9.3) (2025-03-11)
 
 
