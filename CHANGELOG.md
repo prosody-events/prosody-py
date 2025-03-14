@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/cincpro/prosody-py/compare/v0.10.0...v0.10.1) (2025-03-14)
+
+
+### Bug Fixes
+
+* respect stall threshold ([#67](https://github.com/cincpro/prosody-py/issues/67)) ([24a7dff](https://github.com/cincpro/prosody-py/commit/24a7dffb2663f208c6c79f0884a8ac036f3d1855))
+
 ## [0.10.0](https://github.com/cincpro/prosody-py/compare/v0.9.3...v0.10.0) (2025-03-13)
 
 
