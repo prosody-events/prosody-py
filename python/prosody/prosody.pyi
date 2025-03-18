@@ -49,6 +49,7 @@ class ProsodyClient:
             idempotence_cache_size: Optional[int] = None,
             subscribed_topics: Optional[StringOrList] = None,
             allowed_events: Optional[StringOrList] = None,
+            max_concurrency: Optional[int] = None,
             max_uncommitted: Optional[int] = None,
             max_enqueued_per_key: Optional[int] = None,
             stall_threshold: Optional[Duration] = None,
@@ -74,6 +75,7 @@ class ProsodyClient:
             idempotence_cache_size: Size of LRU caches for deduplicating messages. Set to 0 to disable.
             subscribed_topics: Topics to subscribe to.
             allowed_events: Allowed event type prefixes. All are allowed if unset.
+            max_concurrency: Maximum global concurrency limit.
             max_uncommitted: Max number of uncommitted messages.
             max_enqueued_per_key: Max enqueued messages per key.
             stall_threshold: Threshold determining when message processing has stalled.
