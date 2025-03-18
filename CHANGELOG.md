@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/cincpro/prosody-py/compare/v0.10.1...v0.10.2) (2025-03-18)
+
+
+### Bug Fixes
+
+* **consumer:** prevent commits during rebalancing, add concurrency limit, fix watermark tracking ([#69](https://github.com/cincpro/prosody-py/issues/69)) ([f8874e0](https://github.com/cincpro/prosody-py/commit/f8874e09ad0bb88658b7508b477cef4c95e9bcfe))
+
 ## [0.10.1](https://github.com/cincpro/prosody-py/compare/v0.10.0...v0.10.1) (2025-03-14)
 
 
