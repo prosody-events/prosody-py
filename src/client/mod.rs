@@ -16,7 +16,6 @@ use pyo3::{
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::time::Duration;
 use tracing::{Instrument, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -124,21 +123,8 @@ impl ProsodyClient {
     fn subscribe(&self, handler: &Bound<PyAny>) -> PyResult<()> {
         let _enter = RUNTIME.enter();
 
-        let timeout = self
-            .client
-            .consumer_state()
-            .mode_configuration()
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
-            .consumer_config()
-            .stall_threshold;
-
-        // Set the task grace period to 80% of the total partition timeout
-        let nanos = timeout.as_nanos();
-        let result_nanos = (nanos * 4) / 5;
-        let task_grace_period = Duration::from_nanos(result_nanos as u64);
-
         self.client
-            .subscribe(PythonHandler::new(handler, task_grace_period)?)
+            .subscribe(PythonHandler::new(handler)?)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 

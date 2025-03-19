@@ -79,9 +79,7 @@ class ProsodyClient:
             max_uncommitted: Max number of uncommitted messages.
             max_enqueued_per_key: Max enqueued messages per key.
             stall_threshold: Threshold determining when message processing has stalled.
-            shutdown_timeout: Timeout to wait for in-flight tasks to complete during partition shutdown. During
-                partition revocation, tasks are given 80% of this time to finish before being cancelled. The remaining
-                20% is used to wait for the cancellation hooks to complete.
+            shutdown_timeout: Timeout to wait for in-flight tasks to complete during partition shutdown.
             poll_interval: Time between message polls.
             commit_interval: Time between offset commits.
             mode: Operating mode ('pipeline', 'low-latency', or 'best-effort').
