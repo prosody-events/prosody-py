@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.3](https://github.com/cincpro/prosody-py/compare/v0.10.2...v0.10.3) (2025-03-19)
+
+
+### Bug Fixes
+
+* **consumer:** don't commit final offsets during a rebalance ([#71](https://github.com/cincpro/prosody-py/issues/71)) ([a3aa394](https://github.com/cincpro/prosody-py/commit/a3aa39482ab42afb2c839a37b2a412e2b9904739))
+
 ## [0.10.2](https://github.com/cincpro/prosody-py/compare/v0.10.1...v0.10.2) (2025-03-18)
 
 
