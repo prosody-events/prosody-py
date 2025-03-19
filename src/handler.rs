@@ -10,7 +10,6 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
@@ -26,8 +25,7 @@ use pyo3_async_runtimes::{TaskLocals, into_future_with_locals};
 use pythonize::pythonize;
 use thiserror::Error;
 use tokio::select;
-use tokio::time::sleep;
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::context::Context;
@@ -56,7 +54,6 @@ pub struct PythonHandlerImpl {
     pub message_class: PyObject,
     pub event_class: PyObject,
     pub event_set_method: PyObject,
-    shutdown_grace_period: Duration,
     locals: TaskLocals,
     propagator: TextMapCompositePropagator,
 }
@@ -67,8 +64,6 @@ impl PythonHandler {
     /// # Arguments
     ///
     /// * `handler` - A Python object subclassing `EventHandler`.
-    /// * `shutdown_grace_period` - The duration to wait for a task to complete
-    ///   during shutdown.
     ///
     /// # Returns
     ///
@@ -78,7 +73,7 @@ impl PythonHandler {
     ///
     /// Returns a `PyTypeError` if `handler` is not a subclass of
     /// `EventHandler`.
-    pub fn new(handler: &Bound<PyAny>, shutdown_grace_period: Duration) -> PyResult<Self> {
+    pub fn new(handler: &Bound<PyAny>) -> PyResult<Self> {
         let py = handler.py();
         let prosody_module = py.import("prosody")?;
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
@@ -109,7 +104,6 @@ impl PythonHandler {
             message_class: message_class.unbind(),
             event_class: event_class.unbind(),
             event_set_method: event_set_method.unbind(),
-            shutdown_grace_period,
             locals,
             propagator: new_propagator(),
         })))
@@ -185,20 +179,12 @@ impl FallibleHandler for PythonHandler {
 
             // Handle shutdown request
             () = shutdown_future => {
-                debug!("shutdown signal received; waiting for task to complete");
-                select! {
-                    () = sleep(self.0.shutdown_grace_period) => {
-                        warn!("timeout exceeded; cancelling task");
-                        cancel_task(&self.0.event_set_method, shutdown_event)?;
+                debug!("shutdown signal received; cancelling task");
+                cancel_task(&self.0.event_set_method, shutdown_event)?;
 
-                        debug!("waiting for task to cleanup");
-                        complete_future.await?;
-                    }
+                debug!("waiting for task to cleanup");
+                complete_future.await?;
 
-                    result = complete_future.as_mut() => {
-                        result?;
-                    }
-                }
                 debug!("task shutdown");
             }
         }

@@ -1438,7 +1438,7 @@ dependencies = [
 [[package]]
 name = "prosody"
 version = "0.8.2"
-source = "git+https://github.com/cincpro/prosody.git?rev=f9e18fb24835645787b0e20caad1c3dd74731994#f9e18fb24835645787b0e20caad1c3dd74731994"
+source = "git+https://github.com/cincpro/prosody.git?rev=789266734b319ec3794edb16cf294db63caae317#789266734b319ec3794edb16cf294db63caae317"
 dependencies = [
  "ahash",
  "aho-corasick",
