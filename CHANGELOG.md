@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.4](https://github.com/cincpro/prosody-py/compare/v0.10.3...v0.10.4) (2025-03-19)
+
+
+### Bug Fixes
+
+* **consumer:** don’t commit empty topic lists ([#73](https://github.com/cincpro/prosody-py/issues/73)) ([7f3ab54](https://github.com/cincpro/prosody-py/commit/7f3ab54b75bd696f92973876b228b84c349348dd))
+
 ## [0.10.3](https://github.com/cincpro/prosody-py/compare/v0.10.2...v0.10.3) (2025-03-19)
 
 
