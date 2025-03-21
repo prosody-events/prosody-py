@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.5](https://github.com/cincpro/prosody-py/compare/v0.10.4...v0.10.5) (2025-03-21)
+
+
+### Bug Fixes
+
+* **consumer:** use librdkafka to commit and add additional liveness checks ([#75](https://github.com/cincpro/prosody-py/issues/75)) ([5a21543](https://github.com/cincpro/prosody-py/commit/5a215435578e46264d04ace61c6460dcb11ef2ee))
+
 ## [0.10.4](https://github.com/cincpro/prosody-py/compare/v0.10.3...v0.10.4) (2025-03-19)
 
 
