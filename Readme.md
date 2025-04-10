@@ -22,13 +22,13 @@ Installation is straightforward using pip, but you will need to have pip point a
 an argument or an environment variable. Prosody currently supports Python 3.11 to 3.13
 
 ```bash
-pip install prosody --extra-index-url https://pypi.fury.io/EDHBZzybsBduR147s2JY/realgeeks/
+pip install prosody --extra-index-url https://pypi.fury.io/<OUR GEMFURY SECRET>/realgeeks/
 ```
 
 Or
 
 ```bash
-export PIP_EXTRA_INDEX_URL=https://pypi.fury.io/EDHBZzybsBduR147s2JY/realgeeks/
+export PIP_EXTRA_INDEX_URL=https://pypi.fury.io/<OUR GEMFURY SECRET>/realgeeks/
 pip install prosody
 ```
 
