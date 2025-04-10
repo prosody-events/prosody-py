@@ -11,10 +11,10 @@
 use crate::client::ProsodyClient;
 use crate::context::Context;
 use ::prosody::tracing::{Identity, initialize_tracing};
-use once_cell::sync::Lazy;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pymodule};
+use std::sync::LazyLock;
 use tokio::runtime::Runtime;
 
 #[cfg(feature = "admin-client")]
@@ -34,8 +34,8 @@ mod util;
 ///
 /// Panics if the Tokio runtime cannot be created.
 #[allow(clippy::expect_used)]
-static RUNTIME: Lazy<Runtime> =
-    Lazy::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
+static RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
 
 /// Initializes the Python module and adds the necessary classes.
 ///
