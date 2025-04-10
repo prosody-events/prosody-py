@@ -289,7 +289,7 @@ fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
         duration += Duration::from_secs(seconds);
         duration += Duration::from_micros(micros);
         return Ok(duration);
-    };
+    }
 
     // If not a timedelta, try to decode as a float
     if let Ok(seconds) = value.extract::<f64>() {
