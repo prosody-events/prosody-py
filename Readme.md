@@ -218,8 +218,8 @@ Prosody prevents processing loops in distributed systems by tracking the source 
 ```python
 # Consumer and producer in one application
 client = ProsodyClient(
-    group_id="my-service",                # Defaults to source_system if not set
-    source_system="my-service-producer",  # Must differ from group_id to allow loopbacks
+    group_id="my-service",
+    source_system="my-service-producer",  # Must differ from groupId to allow loopbacks; defaults to groupId
     subscribed_topics="my-topic"
 )
 ```
