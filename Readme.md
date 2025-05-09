@@ -346,6 +346,13 @@ class MyHandler(EventHandler):
 
 ## Best Practices
 
+### 🔥 ☢️ DANGER: NEVER SHARE EVENTHANDLER STATE ACROSS CALLS ☢️ 🔥
+
+Your event handler class methods will be called concurrently. NEVER use mutable shared state across event handler calls,
+like setting instance variables. Sharing state can introduce subtle data races and corruption that may only appear in
+production. If you absolutely must use non-local mutable state, ensure that you know what you're doing and use
+appropriate synchronization primitives.
+
 ### Ensuring Idempotent Message Handlers
 
 Idempotent message handlers are crucial for maintaining data consistency, fault tolerance, and scalability when working
