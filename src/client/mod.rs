@@ -11,7 +11,7 @@ use prosody::high_level::state::ConsumerState;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{
-    Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods,
+    Bound, Py, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods,
 };
 use pythonize::depythonize;
 use serde_json::Value;
@@ -106,8 +106,8 @@ impl ProsodyClient {
     ///
     /// A string representing the current state ('unconfigured', 'configured',
     /// or 'running').
-    fn consumer_state(&self) -> String {
-        self.client.consumer_state().to_string()
+    async fn consumer_state(&self) -> String {
+        self.client.consumer_state().await.to_string()
     }
 
     /// Subscribes to messages using the provided handler.
@@ -120,26 +120,27 @@ impl ProsodyClient {
     ///
     /// Returns a `PyRuntimeError` if the consumer is not configured or is
     /// already subscribed.
-    fn subscribe(&self, handler: &Bound<PyAny>) -> PyResult<()> {
-        let _enter = RUNTIME.enter();
+    async fn subscribe(&self, handler: Py<PyAny>) -> PyResult<()> {
+        let handler = Python::with_gil(|py| PythonHandler::new(handler.bind(py)))?;
 
         self.client
-            .subscribe(PythonHandler::new(handler)?)
+            .subscribe(handler)
+            .await
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     /// Returns the number of partitions assigned to the consumer.
     ///
     /// Returns 0 if the consumer is not in the Running state.
-    fn assigned_partition_count(&self) -> u32 {
-        self.client.assigned_partition_count()
+    async fn assigned_partition_count(&self) -> u32 {
+        self.client.assigned_partition_count().await
     }
 
     /// Checks if the consumer is stalled.
     ///
     /// Returns `false` if the consumer is not in the Running state.
-    fn is_stalled(&self) -> bool {
-        self.client.is_stalled()
+    async fn is_stalled(&self) -> bool {
+        self.client.is_stalled().await
     }
 
     /// Unsubscribes from messages and shuts down the consumer.
@@ -164,7 +165,8 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         let consumer_state = slf.client.consumer_state();
-        let consumer_state_ref: &ConsumerState<_> = &consumer_state;
+        let consumer_state_ref: &ConsumerState<_> =
+            &slf.py().allow_threads(|| RUNTIME.block_on(consumer_state));
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -197,7 +199,8 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         let consumer_state = slf.client.consumer_state();
-        let consumer_state_ref: &ConsumerState<_> = &consumer_state;
+        let consumer_state_ref: &ConsumerState<_> =
+            &slf.py().allow_threads(|| RUNTIME.block_on(consumer_state));
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -235,7 +238,9 @@ impl ProsodyClient {
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // If the consumer is in the Running state, visit the handler's method
-        if let ConsumerState::Running { handler, .. } = &*self.client.consumer_state() {
+        let consumer_state_ref: &ConsumerState<_> = &RUNTIME.block_on(self.client.consumer_state());
+
+        if let ConsumerState::Running { handler, .. } = consumer_state_ref {
             visit.call(handler.handle_method().as_any())?;
             visit.call(handler.message_class().as_any())?;
             visit.call(handler.event_class().as_any())?;

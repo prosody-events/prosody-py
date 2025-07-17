@@ -14,9 +14,11 @@ use std::sync::Arc;
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::Keyed;
+use prosody::consumer::event_context::EventContext;
 use prosody::consumer::failure::{ClassifyError, ErrorCategory, FallibleHandler};
-use prosody::consumer::message::{ConsumerMessage, MessageContext};
+use prosody::consumer::message::ConsumerMessage;
 use prosody::propagator::new_propagator;
+use prosody::timers::Trigger;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
@@ -144,12 +146,11 @@ impl FallibleHandler for PythonHandler {
     ///
     /// Returns `WrappedPythonError` on Python exceptions or task cancellation
     /// failures
-    #[instrument(level = "debug", skip(self), err)]
-    async fn on_message(
-        &self,
-        context: MessageContext,
-        message: ConsumerMessage,
-    ) -> Result<(), Self::Error> {
+    #[instrument(level = "debug", skip(self, context), err)]
+    async fn on_message<C>(&self, context: C, message: ConsumerMessage) -> Result<(), Self::Error>
+    where
+        C: EventContext,
+    {
         // Propagate tracing context to Python
         let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
         self.0
@@ -190,6 +191,13 @@ impl FallibleHandler for PythonHandler {
         }
 
         Ok(())
+    }
+
+    async fn on_timer<C>(&self, context: C, trigger: Trigger) -> Result<(), Self::Error>
+    where
+        C: EventContext,
+    {
+        todo!()
     }
 }
 
@@ -263,8 +271,8 @@ fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResul
 /// # Errors
 ///
 /// Returns `PyErr` on Python object creation/method call failures
-fn execute(
-    context: MessageContext,
+fn execute<C>(
+    context: C,
     message: ConsumerMessage,
     serialized_context: HashMap<String, String>,
     message_class: &PyObject,
@@ -274,10 +282,13 @@ fn execute(
 ) -> PyResult<(
     PyObject,
     impl Future<Output = PyResult<PyObject>> + Send + Sized,
-)> {
+)>
+where
+    C: EventContext,
+{
     Python::with_gil(move |py| {
         // Create Python message objects
-        let message_context = Context(context);
+        let message_context = Context(context.boxed());
         let payload = pythonize(py, message.payload())?;
 
         let message = message_class.call1(

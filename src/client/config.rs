@@ -53,6 +53,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
             &ConsumerConfigurationBuilder::default(),
             &RetryConfigurationBuilder::default(),
             &FailureTopicConfigurationBuilder::default(),
+            todo!(),
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -84,6 +85,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         &consumer_config,
         &retry_config,
         &failure_topic_config,
+        todo!(),
     )
     .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 

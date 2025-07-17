@@ -20,17 +20,17 @@ admin-client = []
 
 [dependencies]
 futures = "0.3"
-opentelemetry = "0.28"
-prosody = { git = "https://github.com/cincpro/prosody.git", rev = "79da6bf9b42ce00577fc5c4f800bb0c80d18bfae" } # replace once we have a package manager
-pyo3 = { version = "0.23", features = ["chrono", "experimental-async"] }
-pyo3-async-runtimes = { version = "0.23", features = ["tokio-runtime"] }
+opentelemetry = "0.30"
+prosody = { git = "https://github.com/cincpro/prosody.git", rev = "3cd8e50900b9ce6a2b54b7b3e0a213cf361c8aa2" } # replace once we have a package manager
+pyo3 = { version = "0.25", features = ["chrono", "experimental-async"] }
+pyo3-async-runtimes = { version = "0.25", features = ["tokio-runtime"] }
 pyo3-log = "0.12"
-pythonize = "0.23"
+pythonize = "0.25"
 serde_json = "1.0"
 thiserror = "2.0"
-tokio = { version = "1.42", features = ["rt-multi-thread"] }
+tokio = { version = "1.46", features = ["rt-multi-thread"] }
 tracing = { version = "0.1", features = ["log-always"] }
-tracing-opentelemetry = "0.29"
+tracing-opentelemetry = "0.31"
 
 [lints.rust]
 missing_docs = "warn"
