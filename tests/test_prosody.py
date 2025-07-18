@@ -7,7 +7,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from prosody.prosody import AdminClient
 
-from prosody import ProsodyClient, EventHandler, Message, Context, permanent, transient
+from prosody import ProsodyClient, EventHandler, Message, Context, Timer, permanent, transient
 
 provider = TracerProvider()
 
@@ -32,6 +32,10 @@ class TestHandler(EventHandler):
             self.message_count += 1
             self.message_received.set()
 
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        # Not used in tests, but required by abstract base class
+        pass
+
 
 @pytest.fixture
 async def random_topic_and_group():
@@ -54,33 +58,34 @@ async def client(random_topic_and_group):
         group_id=group,
         subscribed_topics=topic,
         probe_port=None,
+        cassandra_nodes="localhost:9042",
     )
     yield client
-    if client.consumer_state() == "running":
+    if await client.consumer_state() == "running":
         await client.unsubscribe()
 
 
 async def test_client_initialization(client):
     # Check that the client is an instance of ProsodyClient and in configured state
     assert isinstance(client, ProsodyClient)
-    assert client.consumer_state() == "configured"
+    assert await client.consumer_state() == "configured"
 
 
 async def test_client_subscribe_unsubscribe(client):
     # Test subscribing and unsubscribing a handler
     handler = TestHandler()
-    client.subscribe(handler)
-    assert client.consumer_state() == "running"
+    await client.subscribe(handler)
+    assert await client.consumer_state() == "running"
 
     await client.unsubscribe()
-    assert client.consumer_state() == "configured"
+    assert await client.consumer_state() == "configured"
 
 
 async def test_send_and_receive_message(client, random_topic_and_group):
     # Test sending and receiving a message using the random topic
     topic, _ = random_topic_and_group
     handler = TestHandler()
-    client.subscribe(handler)
+    await client.subscribe(handler)
 
     # Send a test message
     test_key = "test-key"
@@ -116,6 +121,7 @@ async def test_client_configuration(random_topic_and_group):
         max_retries=5,
         failure_topic="failed-messages",
         probe_port=None,
+        cassandra_nodes=["localhost:9042", "localhost:9043"],
         mock=True
     )
     assert isinstance(client, ProsodyClient)
@@ -125,7 +131,7 @@ async def test_multiple_messages(client, random_topic_and_group):
     # Test sending and receiving multiple messages
     topic, _ = random_topic_and_group
     handler = TestHandler()
-    client.subscribe(handler)
+    await client.subscribe(handler)
 
     # Send multiple test messages
     messages = [
@@ -180,7 +186,7 @@ async def test_same_key_message_order(client, random_topic_and_group):
             await client.send(topic, test_key, payload)
 
     # Subscribe after messages are already on the topic
-    client.subscribe(handler)
+    await client.subscribe(handler)
 
     # Wait for all messages to be received
     async def wait_for_messages():
@@ -220,13 +226,17 @@ class TransientErrorHandler(EventHandler):
             self.received_message = True
             raise ValueError("Transient error occurred")
 
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        # Not used in tests, but required by abstract base class
+        pass
+
 
 @pytest.mark.asyncio
 async def test_transient_error_decorator(client, random_topic_and_group):
     # Test that the transient error decorator causes a retry
     topic, _ = random_topic_and_group
     handler = TransientErrorHandler()
-    client.subscribe(handler)
+    await client.subscribe(handler)
 
     # Send a test message that triggers a transient error
     test_key = "test-key"
@@ -250,13 +260,17 @@ class PermanentErrorHandler(EventHandler):
         self.error_raised.set()
         raise ValueError("Permanent error occurred")
 
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        # Not used in tests, but required by abstract base class
+        pass
+
 
 @pytest.mark.asyncio
 async def test_permanent_error_decorator(client, random_topic_and_group):
     # Test that the permanent error decorator causes the error to be raised only once
     topic, _ = random_topic_and_group
     handler = PermanentErrorHandler()
-    client.subscribe(handler)
+    await client.subscribe(handler)
 
     # Send a test message that triggers a permanent error
     test_key = "test-key"
@@ -287,10 +301,11 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
         group_id=group,
         subscribed_topics=topic,
         probe_port=None,
+        cassandra_nodes="localhost:9042",
         mode="best-effort"
     )
 
-    client_with_best_effort.subscribe(handler)
+    await client_with_best_effort.subscribe(handler)
 
     # Send a test message that triggers a transient error
     test_key = "test-key"

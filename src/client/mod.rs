@@ -123,6 +123,7 @@ impl ProsodyClient {
     async fn subscribe(&self, handler: Py<PyAny>) -> PyResult<()> {
         let handler = Python::with_gil(|py| PythonHandler::new(handler.bind(py)))?;
 
+        let _ = RUNTIME.enter();
         self.client
             .subscribe(handler)
             .await
