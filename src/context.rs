@@ -7,8 +7,10 @@
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use prosody::consumer::event_context::BoxEventContext;
+use prosody::timers::datetime::CompactDateTime;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::{PyResult, pyclass, pymethods};
+use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3_async_runtimes::tokio::future_into_py;
 
 /// Encapsulates context information for a Kafka message.
 ///
@@ -33,15 +35,18 @@ impl Context {
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if the timer cannot be scheduled.
-    async fn schedule(&self, time: DateTime<Utc>) -> PyResult<()> {
+    fn schedule<'p>(&self, py: Python<'p>, time: DateTime<Utc>) -> PyResult<Bound<'p, PyAny>> {
         let time = time
             .try_into()
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
-        self.0
-            .schedule(time)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to schedule timer: {e}")))
+        let context = self.0.clone();
+        future_into_py(py, async move {
+            context
+                .schedule(time)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to schedule timer: {e}")))
+        })
     }
 
     /// Unschedule ALL existing timers for the current key, then schedule
@@ -54,13 +59,20 @@ impl Context {
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if the operation fails.
-    async fn clear_and_schedule(&self, time: DateTime<Utc>) -> PyResult<()> {
+    fn clear_and_schedule<'p>(
+        &self,
+        py: Python<'p>,
+        time: DateTime<Utc>,
+    ) -> PyResult<Bound<'p, PyAny>> {
         let time = time
             .try_into()
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
-        self.0.clear_and_schedule(time).await.map_err(|e| {
-            PyRuntimeError::new_err(format!("Failed to clear and schedule timer: {e}"))
+        let context = self.0.clone();
+        future_into_py(py, async move {
+            context.clear_and_schedule(time).await.map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to clear and schedule timer: {e}"))
+            })
         })
     }
 
@@ -73,15 +85,18 @@ impl Context {
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if the timer cannot be unscheduled.
-    async fn unschedule(&self, time: DateTime<Utc>) -> PyResult<()> {
+    fn unschedule<'p>(&self, py: Python<'p>, time: DateTime<Utc>) -> PyResult<Bound<'p, PyAny>> {
         let time = time
             .try_into()
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
-        self.0
-            .unschedule(time)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to unschedule timer: {e}")))
+        let context = self.0.clone();
+        future_into_py(py, async move {
+            context
+                .unschedule(time)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to unschedule timer: {e}")))
+        })
     }
 
     /// Unschedule ALL timers for the current key.
@@ -89,11 +104,13 @@ impl Context {
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if the operation fails.
-    async fn clear_scheduled(&self) -> PyResult<()> {
-        self.0
-            .clear_scheduled()
-            .await
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to clear scheduled timers: {e}")))
+    fn clear_scheduled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let context = self.0.clone();
+        future_into_py(py, async move {
+            context.clear_scheduled().await.map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to clear scheduled timers: {e}"))
+            })
+        })
     }
 
     /// List all scheduled execution times for timers on the current key.
@@ -105,13 +122,16 @@ impl Context {
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if the operation fails.
-    async fn scheduled(&self) -> PyResult<Vec<DateTime<Utc>>> {
-        self.0
-            .scheduled()
-            .map_ok(DateTime::<Utc>::from)
-            .try_collect()
-            .await
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get scheduled times: {e}")))
+    fn scheduled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let context = self.0.clone();
+        future_into_py(py, async move {
+            context
+                .scheduled()
+                .map_ok(<DateTime<Utc> as From<CompactDateTime>>::from)
+                .try_collect::<Vec<_>>()
+                .await
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to get scheduled times: {e}")))
+        })
     }
 
     /// Check if shutdown has been requested.

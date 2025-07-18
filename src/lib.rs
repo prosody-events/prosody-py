@@ -14,8 +14,6 @@ use ::prosody::tracing::{Identity, initialize_tracing};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pymodule};
-use std::sync::LazyLock;
-use tokio::runtime::Runtime;
 
 #[cfg(feature = "admin-client")]
 use crate::admin::AdminClient;
@@ -27,15 +25,6 @@ mod client;
 mod context;
 mod handler;
 mod util;
-
-/// A global Tokio runtime for asynchronous operations.
-///
-/// # Panics
-///
-/// Panics if the Tokio runtime cannot be created.
-#[allow(clippy::expect_used)]
-static RUNTIME: LazyLock<Runtime> =
-    LazyLock::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
 
 /// Initializes the Python module and adds the necessary classes.
 ///
@@ -53,7 +42,6 @@ static RUNTIME: LazyLock<Runtime> =
 /// error occurs.
 #[pymodule]
 fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
-    let _enter = RUNTIME.enter();
     initialize_tracing::<Identity>(None)
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 

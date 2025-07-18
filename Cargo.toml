@@ -23,7 +23,7 @@ chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.30"
 prosody = { git = "https://github.com/cincpro/prosody.git", rev = "3cd8e50900b9ce6a2b54b7b3e0a213cf361c8aa2" } # replace once we have a package manager
-pyo3 = { version = "0.25", features = ["chrono", "experimental-async"] }
+pyo3 = { version = "0.25", features = ["chrono"] }
 pyo3-async-runtimes = { version = "0.25", features = ["tokio-runtime"] }
 pyo3-log = "0.12"
 pythonize = "0.25"

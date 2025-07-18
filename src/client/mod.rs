@@ -11,18 +11,18 @@ use prosody::high_level::state::ConsumerState;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{
-    Bound, Py, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods,
+    Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods,
 };
+use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{Instrument, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::client::config::try_build_config;
 use crate::client::format::format_list;
-
-use crate::RUNTIME;
 use crate::handler::PythonHandler;
 
 mod config;
@@ -35,7 +35,7 @@ mod format;
 /// operational modes and configuration options.
 #[pyclass]
 pub struct ProsodyClient {
-    client: HighLevelClient<PythonHandler>,
+    client: Arc<HighLevelClient<PythonHandler>>,
     get_context: PyObject,
     inject: PyObject,
 }
@@ -73,31 +73,37 @@ impl ProsodyClient {
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if there's an error sending the message.
-    async fn send(&self, topic: String, key: String, payload: PyObject) -> PyResult<()> {
+    fn send<'p>(
+        &self,
+        py: Python<'p>,
+        topic: String,
+        key: String,
+        payload: &Bound<'p, PyAny>,
+    ) -> PyResult<Bound<'p, PyAny>> {
         // Extract trace headers and convert payload to JSON-serializable value
-        let (trace_headers, payload) = Python::with_gil(|py| {
-            let context = self.get_context.bind(py).call0()?;
-            let data = PyDict::new(py);
-            self.inject.call1(py, (&data, context))?;
+        let context = self.get_context.bind(py).call0()?;
+        let data = PyDict::new(py);
+        self.inject.call1(py, (&data, context))?;
 
-            let headers: HashMap<String, String> = data.extract()?;
-            let payload = depythonize::<Value>(&payload.bind(py).clone())?;
-            PyResult::Ok((headers, payload))
-        })?;
+        let headers: HashMap<String, String> = data.extract()?;
+        let payload = depythonize::<Value>(payload)?;
 
         // Create and set the tracing context
-        let context = self.client.propagator().extract(&trace_headers);
+        let context = self.client.propagator().extract(&headers);
         let span = info_span!("python-send", %topic, %key);
         span.set_parent(context);
 
         // Send the message using the producer
-        self.client
-            .send(topic.as_str().into(), &key, &payload)
-            .instrument(span)
-            .await
-            .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            client
+                .send(topic.as_str().into(), &key, &payload)
+                .instrument(span)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Gets the current state of the consumer.
@@ -106,8 +112,12 @@ impl ProsodyClient {
     ///
     /// A string representing the current state ('unconfigured', 'configured',
     /// or 'running').
-    async fn consumer_state(&self) -> String {
-        self.client.consumer_state().await.to_string()
+    fn consumer_state<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let client = self.client.clone();
+        future_into_py(
+            py,
+            async move { Ok(client.consumer_state().await.to_string()) },
+        )
     }
 
     /// Subscribes to messages using the provided handler.
@@ -120,28 +130,39 @@ impl ProsodyClient {
     ///
     /// Returns a `PyRuntimeError` if the consumer is not configured or is
     /// already subscribed.
-    async fn subscribe(&self, handler: Py<PyAny>) -> PyResult<()> {
-        let handler = Python::with_gil(|py| PythonHandler::new(handler.bind(py)))?;
+    fn subscribe<'p>(
+        &self,
+        py: Python<'p>,
+        handler: &Bound<'p, PyAny>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let handler = PythonHandler::new(handler)?;
+        let client = self.client.clone();
 
-        let _ = RUNTIME.enter();
-        self.client
-            .subscribe(handler)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        future_into_py(py, async move {
+            client
+                .subscribe(handler)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        })
     }
 
     /// Returns the number of partitions assigned to the consumer.
     ///
     /// Returns 0 if the consumer is not in the Running state.
-    async fn assigned_partition_count(&self) -> u32 {
-        self.client.assigned_partition_count().await
+    fn assigned_partition_count<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let client = self.client.clone();
+        future_into_py(
+            py,
+            async move { Ok(client.assigned_partition_count().await) },
+        )
     }
 
     /// Checks if the consumer is stalled.
     ///
     /// Returns `false` if the consumer is not in the Running state.
-    async fn is_stalled(&self) -> bool {
-        self.client.is_stalled().await
+    fn is_stalled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let client = self.client.clone();
+        future_into_py(py, async move { Ok(client.is_stalled().await) })
     }
 
     /// Unsubscribes from messages and shuts down the consumer.
@@ -150,11 +171,14 @@ impl ProsodyClient {
     ///
     /// Returns a `PyRuntimeError` if the consumer is not configured or not
     /// subscribed.
-    async fn unsubscribe(&self) -> PyResult<()> {
-        self.client
-            .unsubscribe()
-            .await
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    fn unsubscribe<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            client
+                .unsubscribe()
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        })
     }
 
     /// Returns a string representation of the ProsodyClient.
@@ -166,8 +190,9 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         let consumer_state = slf.client.consumer_state();
-        let consumer_state_ref: &ConsumerState<_> =
-            &slf.py().allow_threads(|| RUNTIME.block_on(consumer_state));
+        let consumer_state_ref: &ConsumerState<_> = &slf
+            .py()
+            .allow_threads(|| get_runtime().block_on(consumer_state));
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -200,8 +225,9 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         let consumer_state = slf.client.consumer_state();
-        let consumer_state_ref: &ConsumerState<_> =
-            &slf.py().allow_threads(|| RUNTIME.block_on(consumer_state));
+        let consumer_state_ref: &ConsumerState<_> = &slf
+            .py()
+            .allow_threads(|| get_runtime().block_on(consumer_state));
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -239,7 +265,8 @@ impl ProsodyClient {
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // If the consumer is in the Running state, visit the handler's method
-        let consumer_state_ref: &ConsumerState<_> = &RUNTIME.block_on(self.client.consumer_state());
+        let consumer_state_ref: &ConsumerState<_> =
+            &get_runtime().block_on(self.client.consumer_state());
 
         if let ConsumerState::Running { handler, .. } = consumer_state_ref {
             visit.call(handler.handle_method().as_any())?;

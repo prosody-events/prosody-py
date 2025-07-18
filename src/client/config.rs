@@ -16,6 +16,7 @@ use prosody::timers::store::cassandra::CassandraConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyAny, PyResult, Python};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
@@ -59,7 +60,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         return Ok(ProsodyClient {
-            client,
+            client: Arc::new(client),
             get_context,
             inject,
         });
@@ -92,7 +93,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     Ok(ProsodyClient {
-        client,
+        client: Arc::new(client),
         get_context,
         inject,
     })

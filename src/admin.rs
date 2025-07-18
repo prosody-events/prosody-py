@@ -3,13 +3,15 @@
 use crate::util::string_or_vec;
 use prosody::admin::ProsodyAdminClient;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::{Bound, PyAny, PyResult, pyclass, pymethods};
+use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3_async_runtimes::tokio::future_into_py;
+use std::sync::Arc;
 
 /// Wrapper for `ProsodyAdminClient` to provide a Python interface for Prosody's
 /// admin functionality.
 #[pyclass]
 pub struct AdminClient {
-    client: ProsodyAdminClient,
+    client: Arc<ProsodyAdminClient>,
 }
 
 #[pymethods]
@@ -30,7 +32,9 @@ impl AdminClient {
         let client = ProsodyAdminClient::new(&bootstrap_servers)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(AdminClient { client })
+        Ok(AdminClient {
+            client: Arc::new(client),
+        })
     }
 
     /// Creates a new Kafka topic.
@@ -44,16 +48,20 @@ impl AdminClient {
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if the topic creation fails.
-    async fn create_topic(
+    fn create_topic<'p>(
         &self,
+        py: Python<'p>,
         name: String,
         partition_count: u16,
         replication_factor: u16,
-    ) -> PyResult<()> {
-        self.client
-            .create_topic(&name, partition_count, replication_factor)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            client
+                .create_topic(&name, partition_count, replication_factor)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        })
     }
 
     /// Deletes an existing Kafka topic.
@@ -65,10 +73,13 @@ impl AdminClient {
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if the topic deletion fails.
-    async fn delete_topic(&self, name: String) -> PyResult<()> {
-        self.client
-            .delete_topic(&name)
-            .await
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    fn delete_topic<'p>(&self, py: Python<'p>, name: String) -> PyResult<Bound<'p, PyAny>> {
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            client
+                .delete_topic(&name)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        })
     }
 }
