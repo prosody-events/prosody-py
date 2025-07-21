@@ -5,6 +5,7 @@
 //! supporting both message production and consumption. It offers configurable
 //! operational modes, retry mechanisms, and failure handling strategies.
 
+use futures::executor::block_on;
 use opentelemetry::propagation::TextMapPropagator;
 use prosody::high_level::HighLevelClient;
 use prosody::high_level::state::ConsumerState;
@@ -13,7 +14,7 @@ use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{
     Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods,
 };
-use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
+use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -190,9 +191,8 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         let consumer_state = slf.client.consumer_state();
-        let consumer_state_ref: &ConsumerState<_> = &slf
-            .py()
-            .allow_threads(|| get_runtime().block_on(consumer_state));
+        let consumer_state_ref: &ConsumerState<_> =
+            &slf.py().allow_threads(|| block_on(consumer_state));
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -225,9 +225,8 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         let consumer_state = slf.client.consumer_state();
-        let consumer_state_ref: &ConsumerState<_> = &slf
-            .py()
-            .allow_threads(|| get_runtime().block_on(consumer_state));
+        let consumer_state_ref: &ConsumerState<_> =
+            &slf.py().allow_threads(|| block_on(consumer_state));
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -265,12 +264,13 @@ impl ProsodyClient {
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // If the consumer is in the Running state, visit the handler's method
-        let consumer_state_ref: &ConsumerState<_> =
-            &get_runtime().block_on(self.client.consumer_state());
+        let consumer_state_ref: &ConsumerState<_> = &block_on(self.client.consumer_state());
 
         if let ConsumerState::Running { handler, .. } = consumer_state_ref {
             visit.call(handler.handle_method().as_any())?;
+            visit.call(handler.timer_method().as_any())?;
             visit.call(handler.message_class().as_any())?;
+            visit.call(handler.timer_class().as_any())?;
             visit.call(handler.event_class().as_any())?;
             visit.call(handler.event_set_method().as_any())?;
         }

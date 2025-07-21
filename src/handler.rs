@@ -140,6 +140,16 @@ impl PythonHandler {
     pub fn event_set_method(&self) -> &PyObject {
         &self.0.event_set_method
     }
+
+    /// Gets the Python timer handler method
+    pub fn timer_method(&self) -> &PyObject {
+        &self.0.timer_method
+    }
+
+    /// Gets the Python Timer class
+    pub fn timer_class(&self) -> &PyObject {
+        &self.0.timer_class
+    }
 }
 
 impl FallibleHandler for PythonHandler {
