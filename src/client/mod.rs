@@ -5,20 +5,21 @@
 //! supporting both message production and consumption. It offers configurable
 //! operational modes, retry mechanisms, and failure handling strategies.
 
-use futures::executor::block_on;
 use opentelemetry::propagation::TextMapPropagator;
 use prosody::high_level::HighLevelClient;
-use prosody::high_level::state::ConsumerState;
+use prosody::high_level::state::{ConsumerState, ConsumerStateView};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{
     Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods,
 };
-use pyo3_async_runtimes::tokio::future_into_py;
+use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::runtime::Handle;
+use tokio::task::block_in_place;
 use tracing::{Instrument, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -190,9 +191,7 @@ impl ProsodyClient {
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
-        let consumer_state = slf.client.consumer_state();
-        let consumer_state_ref: &ConsumerState<_> =
-            &slf.py().allow_threads(|| block_on(consumer_state));
+        let consumer_state_ref: &ConsumerState<_> = &slf.consumer_state_sync();
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -224,9 +223,7 @@ impl ProsodyClient {
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
-        let consumer_state = slf.client.consumer_state();
-        let consumer_state_ref: &ConsumerState<_> =
-            &slf.py().allow_threads(|| block_on(consumer_state));
+        let consumer_state_ref: &ConsumerState<_> = &slf.consumer_state_sync();
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -264,7 +261,7 @@ impl ProsodyClient {
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // If the consumer is in the Running state, visit the handler's method
-        let consumer_state_ref: &ConsumerState<_> = &block_on(self.client.consumer_state());
+        let consumer_state_ref: &ConsumerState<_> = &self.consumer_state_sync();
 
         if let ConsumerState::Running { handler, .. } = consumer_state_ref {
             visit.call(handler.handle_method().as_any())?;
@@ -279,5 +276,13 @@ impl ProsodyClient {
         visit.call(self.inject.as_any())?;
 
         Ok(())
+    }
+}
+
+#[allow(clippy::multiple_inherent_impl)]
+impl ProsodyClient {
+    fn consumer_state_sync(&self) -> ConsumerStateView<PythonHandler> {
+        let handle = Handle::try_current().unwrap_or_else(|_| get_runtime().handle().clone());
+        block_in_place(|| handle.block_on(self.client.consumer_state()))
     }
 }
