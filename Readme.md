@@ -36,6 +36,7 @@ pip install prosody
 
 ```python
 from prosody import ProsodyClient, EventHandler, Context, Message
+import datetime
 
 # Initialize the client with Kafka bootstrap server, consumer group, and topics
 client = ProsodyClient(
@@ -59,6 +60,15 @@ class MyHandler(EventHandler):
     async def on_message(self, context: Context, message: Message) -> None:
         # Process the received message
         print(f"Received message: {message}")
+        
+        # Schedule a timer for delayed processing (requires Cassandra unless mock: True)
+        if message.payload.get("schedule_followup"):
+            future_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=30)
+            await context.schedule(future_time)
+    
+    async def on_timer(self, context: Context, timer) -> None:
+        # Handle timer firing
+        print(f"Timer fired for key: {timer.key} at {timer.time}")
 
 
 # Subscribe to messages using the custom handler
@@ -279,6 +289,86 @@ PROSODY_IDEMPOTENCE_CACHE_SIZE=0
 
 Note that this deduplication is best-effort and not guaranteed. Because identifiers are cached ephemerally in memory,
 duplicates can still occur when instances rebalance or restart.
+
+## Timer Functionality
+
+Prosody supports timer-based delayed execution within message handlers. When a timer fires, your handler's `on_timer` method will be called:
+
+```python
+import datetime
+from prosody import EventHandler, Context, Message
+
+class MyHandler(EventHandler):
+    async def on_message(self, context: Context, message: Message) -> None:
+        # Schedule a timer to fire in 30 seconds
+        future_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=30)
+        await context.schedule(future_time)
+        
+        # Schedule multiple timers
+        one_minute = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=1)
+        two_minutes = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=2)
+        await context.schedule(one_minute)
+        await context.schedule(two_minutes)
+        
+        # Check what's scheduled
+        scheduled_times = await context.scheduled()
+        print(f"Scheduled timers: {len(scheduled_times)}")
+    
+    async def on_timer(self, context: Context, timer) -> None:
+        print("Timer fired!")
+        print(f"Key: {timer.key}")
+        print(f"Scheduled time: {timer.time}")
+```
+
+### Timer Methods
+
+The context provides timer scheduling methods that allow you to delay execution or implement timeout behavior:
+
+- `schedule(time)`: Schedules a timer to fire at the specified time
+- `clear_and_schedule(time)`: Clears all timers and schedules a new one
+- `unschedule(time)`: Removes a timer scheduled for the specified time
+- `clear_scheduled()`: Removes all scheduled timers
+- `scheduled()`: Returns a list of all scheduled timer times
+
+### Timer Object
+
+When a timer fires, the `on_timer` method receives a timer object with these properties:
+
+- `key` (str): The entity key identifying what this timer belongs to
+- `time` (datetime): The time when this timer was scheduled to fire
+
+**Note**: Timer precision is limited to seconds due to the underlying storage format. Sub-second precision in scheduled times will be rounded to the nearest second.
+
+### Timer Configuration
+
+Timer functionality requires Cassandra for persistence unless running in mock mode. Configure Cassandra connection via environment variable:
+
+```bash
+PROSODY_CASSANDRA_NODES=localhost:9042  # Required for timer persistence
+```
+
+Or programmatically when creating the client:
+
+```python
+client = ProsodyClient(
+    bootstrap_servers="localhost:9092",
+    group_id="my-application",
+    subscribed_topics="my-topic",
+    cassandra_nodes="localhost:9042"  # Required unless mock=True
+)
+```
+
+For testing, you can use mock mode to avoid Cassandra dependency:
+
+```python
+# Mock mode for testing (timers work but aren't persisted)
+client = ProsodyClient(
+    bootstrap_servers="localhost:9092",
+    group_id="my-application",
+    subscribed_topics="my-topic",
+    mock=True  # No Cassandra required in mock mode
+)
+```
 
 ## OpenTelemetry Tracing
 
@@ -554,6 +644,11 @@ class EventHandler(ABC):
     async def on_message(self, context: Context, message: Message) -> None:
         # Implement your message handling logic here
         pass
+    
+    @abstractmethod
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        # Implement your timer handling logic here
+        pass
 ```
 
 Note: The on_message method may be called from different threads. Ensure that any handler state is thread-safe. If
@@ -570,3 +665,21 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
 - `payload: JSONValue`: The message payload as a JSON-serializable value.
+
+### Context
+
+Represents the context of a Kafka message, providing timer scheduling methods:
+
+- `schedule(time: datetime) -> None`: Schedules a timer to fire at the specified time
+- `clear_and_schedule(time: datetime) -> None`: Clears all timers and schedules a new one
+- `unschedule(time: datetime) -> None`: Removes a timer scheduled for the specified time
+- `clear_scheduled() -> None`: Removes all scheduled timers
+- `scheduled() -> List[datetime]`: Returns a list of all scheduled timer times
+- `should_shutdown() -> bool`: Check if shutdown has been requested
+
+### Timer
+
+Represents a timer that has fired, provided to the `on_timer` method:
+
+- `key: str`: The entity key identifying what this timer belongs to
+- `time: datetime`: The time when this timer was scheduled to fire
