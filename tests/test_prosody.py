@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 import pytest
@@ -9,6 +9,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from prosody.prosody import AdminClient
 
 from prosody import ProsodyClient, EventHandler, Message, Context, Timer, permanent, transient
+
+# Timer precision tolerance for tests (in seconds)
+TIMER_TOLERANCE_SECONDS = 1
 
 provider = TracerProvider()
 
@@ -338,8 +341,7 @@ class TimerTestHandler(EventHandler):
     async def on_timer(self, context: Context, timer: Timer) -> None:
         await self.timer_events.put({
             "context": context, 
-            "timer": timer, 
-            "fired_at": datetime.datetime.now(datetime.timezone.utc)
+            "timer": timer
         })
 
 
@@ -359,7 +361,7 @@ async def test_timer_scheduling_and_firing(client, random_topic_and_group):
     context = message_event["context"]
 
     # Schedule a timer 2 seconds from now
-    scheduled_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=2)
+    scheduled_time = datetime.now(timezone.utc) + timedelta(seconds=2)
     await context.schedule(scheduled_time)
 
     # Wait for timer to fire (with some tolerance)
@@ -368,7 +370,7 @@ async def test_timer_scheduling_and_firing(client, random_topic_and_group):
     assert timer_event["timer"].key == test_key
     # Allow 1 second tolerance for timer precision
     time_diff = abs((timer_event["timer"].time - scheduled_time).total_seconds())
-    assert time_diff <= 1, f"Timer fired at wrong time, difference: {time_diff} seconds"
+    assert time_diff <= TIMER_TOLERANCE_SECONDS, f"Timer fired at wrong time, difference: {time_diff} seconds"
 
 
 @pytest.mark.asyncio 
@@ -386,8 +388,8 @@ async def test_timer_unschedule(client, random_topic_and_group):
     context = message_event["context"]
 
     # Schedule two timers
-    timer1_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3)
-    timer2_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=4)
+    timer1_time = datetime.now(timezone.utc) + timedelta(seconds=3)
+    timer2_time = datetime.now(timezone.utc) + timedelta(seconds=4)
     
     await context.schedule(timer1_time)
     await context.schedule(timer2_time)
@@ -408,7 +410,7 @@ async def test_timer_unschedule(client, random_topic_and_group):
     
     # Should be the second timer
     time_diff = abs((timer_event["timer"].time - timer2_time).total_seconds())
-    assert time_diff <= 1
+    assert time_diff <= TIMER_TOLERANCE_SECONDS
 
 
 @pytest.mark.asyncio
@@ -426,8 +428,8 @@ async def test_timer_clear_and_schedule(client, random_topic_and_group):
     context = message_event["context"]
 
     # Schedule multiple timers
-    timer1_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=5)
-    timer2_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=6)
+    timer1_time = datetime.now(timezone.utc) + timedelta(seconds=5)
+    timer2_time = datetime.now(timezone.utc) + timedelta(seconds=6)
     await context.schedule(timer1_time)
     await context.schedule(timer2_time)
 
@@ -436,7 +438,7 @@ async def test_timer_clear_and_schedule(client, random_topic_and_group):
     assert len(scheduled_before) == 2
 
     # Clear all and schedule a new one (sooner)
-    new_timer_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=2)
+    new_timer_time = datetime.now(timezone.utc) + timedelta(seconds=2)
     await context.clear_and_schedule(new_timer_time)
 
     # Verify only one timer remains
@@ -448,7 +450,7 @@ async def test_timer_clear_and_schedule(client, random_topic_and_group):
     
     # Should be the new timer
     time_diff = abs((timer_event["timer"].time - new_timer_time).total_seconds())
-    assert time_diff <= 1
+    assert time_diff <= TIMER_TOLERANCE_SECONDS
 
 
 @pytest.mark.asyncio
@@ -466,9 +468,9 @@ async def test_timer_clear_scheduled(client, random_topic_and_group):
     context = message_event["context"]
 
     # Schedule multiple timers
-    timer1_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3)
-    timer2_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=4)
-    timer3_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=5)
+    timer1_time = datetime.now(timezone.utc) + timedelta(seconds=3)
+    timer2_time = datetime.now(timezone.utc) + timedelta(seconds=4)
+    timer3_time = datetime.now(timezone.utc) + timedelta(seconds=5)
     
     await context.schedule(timer1_time)
     await context.schedule(timer2_time)
@@ -513,11 +515,11 @@ async def test_timer_scheduled_retrieval(client, random_topic_and_group):
     assert len(scheduled_empty) == 0
 
     # Schedule multiple timers with different times
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.now(timezone.utc)
     timer_times = [
-        now + datetime.timedelta(seconds=10),
-        now + datetime.timedelta(seconds=20),
-        now + datetime.timedelta(seconds=30)
+        now + timedelta(seconds=10),
+        now + timedelta(seconds=20),
+        now + timedelta(seconds=30)
     ]
     
     for timer_time in timer_times:
@@ -529,7 +531,7 @@ async def test_timer_scheduled_retrieval(client, random_topic_and_group):
 
     # Verify all scheduled times are present (allowing for slight timing differences)
     for expected_time in timer_times:
-        found = any(abs((s - expected_time).total_seconds()) <= 1 for s in scheduled)
+        found = any(abs((s - expected_time).total_seconds()) <= TIMER_TOLERANCE_SECONDS for s in scheduled)
         assert found, f"Expected time {expected_time} not found in scheduled times"
 
 
