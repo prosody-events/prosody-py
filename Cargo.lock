@@ -1504,7 +1504,7 @@ dependencies = [
 
 [[package]]
 name = "prosody-py"
-version = "0.10.5"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "futures",
