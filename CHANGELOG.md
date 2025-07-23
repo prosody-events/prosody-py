@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/cincpro/prosody-py/compare/v0.10.5...v1.0.0) (2025-07-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* add timer scheduling support with Cassandra persistence ([#81](https://github.com/cincpro/prosody-py/issues/81))
+
+### Features
+
+* add timer scheduling support with Cassandra persistence ([#81](https://github.com/cincpro/prosody-py/issues/81)) ([1e12560](https://github.com/cincpro/prosody-py/commit/1e12560c31a13be9fd15852fcc0d042ad5c44daa))
+
 ## [0.10.5](https://github.com/cincpro/prosody-py/compare/v0.10.4...v0.10.5) (2025-03-21)
 
 
