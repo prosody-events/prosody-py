@@ -62,6 +62,13 @@ class ProsodyClient:
             max_retry_delay: Optional[Duration] = None,
             failure_topic: Optional[str] = None,
             probe_port: Optional[int] = None,
+            cassandra_nodes: Optional[StringOrList] = None,
+            cassandra_keyspace: Optional[str] = None,
+            cassandra_datacenter: Optional[str] = None,
+            cassandra_rack: Optional[str] = None,
+            cassandra_user: Optional[str] = None,
+            cassandra_password: Optional[str] = None,
+            cassandra_retention: Optional[Duration] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.
@@ -88,6 +95,13 @@ class ProsodyClient:
             max_retry_delay: Maximum delay between retries.
             failure_topic: Topic for failed messages in low-latency mode.
             probe_port: Port for the probe server. Set to None to disable.
+            cassandra_nodes: List of Cassandra contact nodes (hostnames or IPs with optional ports).
+            cassandra_keyspace: Keyspace to use for storing timer data. Defaults to 'prosody'.
+            cassandra_datacenter: Preferred datacenter for query routing and load balancing.
+            cassandra_rack: Preferred rack identifier for topology-aware routing.
+            cassandra_user: Username for authenticating with Cassandra cluster.
+            cassandra_password: Password for authenticating with Cassandra cluster.
+            cassandra_retention: Retention period for failed/unprocessed timer data. Defaults to 30 days.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.
@@ -108,7 +122,7 @@ class ProsodyClient:
         """
         ...
 
-    def consumer_state(self) -> Literal['unconfigured', 'configured', 'running']:
+    async def consumer_state(self) -> Literal['unconfigured', 'configured', 'running']:
         """
         Get the current state of the consumer.
 
@@ -117,7 +131,7 @@ class ProsodyClient:
         """
         ...
 
-    def subscribe(self, handler: EventHandler) -> None:
+    async def subscribe(self, handler: EventHandler) -> None:
         """
         Subscribe to messages using the provided handler.
 
@@ -133,7 +147,7 @@ class ProsodyClient:
         """
         ...
 
-    def assigned_partition_count(self) -> int:
+    async def assigned_partition_count(self) -> int:
         """
         Returns the number of partitions assigned to the consumer.
 
@@ -143,7 +157,7 @@ class ProsodyClient:
         """
         ...
 
-    def is_stalled(self) -> bool:
+    async def is_stalled(self) -> bool:
         """
         Checks if the consumer is stalled.
 
