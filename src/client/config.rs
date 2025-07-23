@@ -12,9 +12,11 @@ use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
 use prosody::high_level::HighLevelClient;
 use prosody::high_level::mode::{Mode, ModeError};
 use prosody::producer::ProducerConfigurationBuilder;
+use prosody::timers::store::cassandra::CassandraConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyAny, PyResult, Python};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
@@ -53,11 +55,12 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
             &ConsumerConfigurationBuilder::default(),
             &RetryConfigurationBuilder::default(),
             &FailureTopicConfigurationBuilder::default(),
+            &CassandraConfigurationBuilder::default(),
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         return Ok(ProsodyClient {
-            client,
+            client: Arc::new(client),
             get_context,
             inject,
         });
@@ -77,6 +80,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     let consumer_config = build_consumer_config(config)?;
     let retry_config = build_retry_config(config)?;
     let failure_topic_config = build_failure_topic_config(config)?;
+    let cassandra_config = build_cassandra_config(config)?;
 
     let client = HighLevelClient::new(
         mode,
@@ -84,11 +88,12 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         &consumer_config,
         &retry_config,
         &failure_topic_config,
+        &cassandra_config,
     )
     .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     Ok(ProsodyClient {
-        client,
+        client: Arc::new(client),
         get_context,
         inject,
     })
@@ -258,6 +263,61 @@ fn build_failure_topic_config(
 
     if let Some(topic) = config.get_item("failure_topic")? {
         builder.failure_topic(topic.extract::<String>()?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `CassandraConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `CassandraConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_cassandra_config(config: &Bound<PyDict>) -> PyResult<CassandraConfigurationBuilder> {
+    let mut builder = CassandraConfigurationBuilder::default();
+
+    // Cassandra nodes (optional, uses environment variable if not provided)
+    if let Some(nodes) = config.get_item("cassandra_nodes")? {
+        builder.nodes(string_or_vec(&nodes)?);
+    }
+
+    // Cassandra keyspace (optional, defaults to "prosody")
+    if let Some(keyspace) = config.get_item("cassandra_keyspace")? {
+        builder.keyspace(keyspace.extract::<String>()?);
+    }
+
+    // Cassandra datacenter (optional)
+    if let Some(datacenter) = config.get_item("cassandra_datacenter")? {
+        builder.datacenter(Some(datacenter.extract::<String>()?));
+    }
+
+    // Cassandra rack (optional)
+    if let Some(rack) = config.get_item("cassandra_rack")? {
+        builder.rack(Some(rack.extract::<String>()?));
+    }
+
+    // Cassandra user (optional)
+    if let Some(user) = config.get_item("cassandra_user")? {
+        builder.user(Some(user.extract::<String>()?));
+    }
+
+    // Cassandra password (optional)
+    if let Some(password) = config.get_item("cassandra_password")? {
+        builder.password(Some(password.extract::<String>()?));
+    }
+
+    // Cassandra retention (optional, defaults to 30 days)
+    if let Some(retention) = config.get_item("cassandra_retention")? {
+        builder.retention(decode_duration(&retention)?);
     }
 
     Ok(builder)
