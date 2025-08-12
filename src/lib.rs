@@ -28,7 +28,7 @@ mod util;
 
 /// Initializes the Python module and adds the necessary classes.
 ///
-/// This function is called by PyO3 when the module is imported in Python.
+/// This function is called by `PyO3` when the module is imported in Python.
 /// It initializes logging and adds the `ProsodyClient`, `Context`, and
 /// `Message` classes to the module.
 ///
