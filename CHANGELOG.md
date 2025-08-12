@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/cincpro/prosody-py/compare/v1.0.0...v1.0.1) (2025-08-12)
+
+
+### Bug Fixes
+
+* bump prosody to pick up OTEL fixes ([#83](https://github.com/cincpro/prosody-py/issues/83)) ([6c4714e](https://github.com/cincpro/prosody-py/commit/6c4714eaa5b033331804cdfc0e72e70293d214de))
+
 ## [1.0.0](https://github.com/cincpro/prosody-py/compare/v0.10.5...v1.0.0) (2025-07-23)
 
 
