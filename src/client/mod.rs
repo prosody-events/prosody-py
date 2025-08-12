@@ -44,7 +44,7 @@ pub struct ProsodyClient {
 
 #[pymethods]
 impl ProsodyClient {
-    /// Creates a new ProsodyClient with the given configuration.
+    /// Creates a new `ProsodyClient` with the given configuration.
     ///
     /// # Arguments
     ///
@@ -126,7 +126,7 @@ impl ProsodyClient {
     ///
     /// # Arguments
     ///
-    /// * `handler` - An instance implementing the EventHandler interface.
+    /// * `handler` - An instance implementing the `EventHandler` interface.
     ///
     /// # Errors
     ///
@@ -183,11 +183,11 @@ impl ProsodyClient {
         })
     }
 
-    /// Returns a string representation of the ProsodyClient.
+    /// Returns a string representation of the `ProsodyClient`.
     ///
     /// # Returns
     ///
-    /// A string representation of the ProsodyClient.
+    /// A string representation of the `ProsodyClient`.
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
@@ -215,11 +215,11 @@ impl ProsodyClient {
         ))
     }
 
-    /// Returns a human-readable string description of the ProsodyClient.
+    /// Returns a human-readable string description of the `ProsodyClient`.
     ///
     /// # Returns
     ///
-    /// A human-readable description of the ProsodyClient.
+    /// A human-readable description of the `ProsodyClient`.
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
@@ -281,7 +281,7 @@ impl ProsodyClient {
 
 #[allow(clippy::multiple_inherent_impl)]
 impl ProsodyClient {
-    fn consumer_state_sync(&self) -> ConsumerStateView<PythonHandler> {
+    fn consumer_state_sync(&self) -> ConsumerStateView<'_, PythonHandler> {
         let handle = Handle::try_current().unwrap_or_else(|_| get_runtime().handle().clone());
         block_in_place(|| handle.block_on(self.client.consumer_state()))
     }
