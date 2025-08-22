@@ -9,7 +9,7 @@ license = "UNLICENSED"
 name = "prosody-py"
 readme = "Readme.md"
 repository = "https://github.com/cincpro/prosody-py"
-version = "1.0.1"
+version = "1.0.2"
 
 [lib]
 crate-type = ["cdylib"]
