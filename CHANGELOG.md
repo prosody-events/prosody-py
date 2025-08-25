@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/cincpro/prosody-py/compare/v1.0.2...v1.1.0) (2025-08-25)
+
+
+### Features
+
+* support regex topic subscriptions ([#87](https://github.com/cincpro/prosody-py/issues/87)) ([ce50fb3](https://github.com/cincpro/prosody-py/commit/ce50fb3878850c1c9d90025a2d36e2d0e3e298a4))
+
 ## [1.0.2](https://github.com/cincpro/prosody-py/compare/v1.0.1...v1.0.2) (2025-08-22)
 
 
