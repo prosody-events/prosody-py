@@ -75,6 +75,11 @@ async def test_client_initialization(client):
     assert await client.consumer_state() == "configured"
 
 
+async def test_client_source_system(client):
+    # Check that the source_system property returns the configured value
+    assert client.source_system == "test-send"
+
+
 async def test_client_subscribe_unsubscribe(client):
     # Test subscribing and unsubscribing a handler
     handler = TestHandler()

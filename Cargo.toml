@@ -22,22 +22,26 @@ admin-client = []
 chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.30"
-pyo3 = { version = "0.25", features = ["chrono"] }
-pyo3-async-runtimes = { version = "0.25", features = ["tokio-runtime"] }
-prosody = { git = "https://github.com/cincpro/prosody.git", rev = "50d25304fa023bb3e7ae6d25af18d7a807cc35c8" } # replace once we have a package manager
-pyo3-log = "0.12"
-pythonize = "0.25"
+prosody = { git = "https://github.com/cincpro/prosody.git", rev = "3097f573b5e18c4c1c8c881970dac2dc1504154f" } # replace once we have a package manager
+pyo3 = { version = "0.26", features = ["chrono"] }
+pyo3-async-runtimes = { version = "0.26", features = ["tokio-runtime"] }
+pyo3-log = "0.13"
+pythonize = "0.26"
 serde_json = "1.0"
 thiserror = "2.0"
 tokio = { version = "1.46", features = ["rt-multi-thread"] }
 tracing = { version = "0.1", features = ["log-always"] }
 tracing-opentelemetry = "0.31"
 
+# temporarily patch opentelemetry tonic incompatibility
+opentelemetry-proto = "=0.30.0"
+
 [lints.rust]
 missing_docs = "warn"
 unsafe_code = "forbid"
 
 [lints.clippy]
+absolute_paths = "warn"
 blocks_in_conditions = "allow"
 cargo = { level = "warn", priority = -1 }
 cast_possible_truncation = "allow"

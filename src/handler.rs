@@ -23,7 +23,7 @@ use prosody::timers::Trigger;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
-use pyo3::{Bound, PyAny, PyErr, PyObject, PyResult, Python};
+use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 use pyo3_async_runtimes::{TaskLocals, into_future_with_locals};
 use pythonize::pythonize;
 use thiserror::Error;
@@ -56,12 +56,12 @@ pub struct PythonHandler(Arc<PythonHandlerImpl>);
 /// Implementation details for Python message handlers
 #[derive(Debug)]
 pub struct PythonHandlerImpl {
-    pub handle_method: PyObject,
-    pub timer_method: PyObject,
-    pub message_class: PyObject,
-    pub timer_class: PyObject,
-    pub event_class: PyObject,
-    pub event_set_method: PyObject,
+    pub handle_method: Py<PyAny>,
+    pub timer_method: Py<PyAny>,
+    pub message_class: Py<PyAny>,
+    pub timer_class: Py<PyAny>,
+    pub event_class: Py<PyAny>,
+    pub event_set_method: Py<PyAny>,
     locals: TaskLocals,
     propagator: TextMapCompositePropagator,
 }
@@ -122,32 +122,32 @@ impl PythonHandler {
     }
 
     /// Gets the Python message handler method
-    pub fn handle_method(&self) -> &PyObject {
+    pub fn handle_method(&self) -> &Py<PyAny> {
         &self.0.handle_method
     }
 
     /// Gets the Python Message class
-    pub fn message_class(&self) -> &PyObject {
+    pub fn message_class(&self) -> &Py<PyAny> {
         &self.0.message_class
     }
 
     /// Gets the Python Event class
-    pub fn event_class(&self) -> &PyObject {
+    pub fn event_class(&self) -> &Py<PyAny> {
         &self.0.event_class
     }
 
     /// Gets the Python Event.set method
-    pub fn event_set_method(&self) -> &PyObject {
+    pub fn event_set_method(&self) -> &Py<PyAny> {
         &self.0.event_set_method
     }
 
     /// Gets the Python timer handler method
-    pub fn timer_method(&self) -> &PyObject {
+    pub fn timer_method(&self) -> &Py<PyAny> {
         &self.0.timer_method
     }
 
     /// Gets the Python Timer class
-    pub fn timer_class(&self) -> &PyObject {
+    pub fn timer_class(&self) -> &Py<PyAny> {
         &self.0.timer_class
     }
 }
@@ -285,12 +285,12 @@ impl FallibleHandler for PythonHandler {
 /// # Errors
 ///
 /// Returns `PyErr` if accessing traceback information fails
-fn log_exception(result: &PyResult<PyObject>) -> PyResult<()> {
+fn log_exception(result: &PyResult<Py<PyAny>>) -> PyResult<()> {
     let Err(error) = result else {
         return Ok(());
     };
 
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let traceback = py.import("traceback")?;
         let exc_info = (error.get_type(py), error.value(py), error.traceback(py));
 
@@ -316,8 +316,8 @@ fn log_exception(result: &PyResult<PyObject>) -> PyResult<()> {
 /// # Errors
 ///
 /// Returns `PyErr` if setting the event fails
-fn cancel_task(event_set_method: &PyObject, shutdown_event: PyObject) -> PyResult<()> {
-    Python::with_gil(|py| {
+fn cancel_task(event_set_method: &Py<PyAny>, shutdown_event: Py<PyAny>) -> PyResult<()> {
+    Python::attach(|py| {
         event_set_method.call1(py, (shutdown_event,))?;
         Ok(())
     })
@@ -346,18 +346,18 @@ fn execute<C>(
     context: C,
     message: ConsumerMessage,
     serialized_context: HashMap<String, String>,
-    message_class: &PyObject,
-    event_class: &PyObject,
-    handle_method: &PyObject,
+    message_class: &Py<PyAny>,
+    event_class: &Py<PyAny>,
+    handle_method: &Py<PyAny>,
     locals: &TaskLocals,
 ) -> PyResult<(
-    PyObject,
-    impl Future<Output = PyResult<PyObject>> + Send + Sized,
+    Py<PyAny>,
+    impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
 )>
 where
     C: EventContext,
 {
-    Python::with_gil(move |py| {
+    Python::attach(move |py| {
         // Create Python message objects
         let message_context = Context(context.boxed());
         let payload = pythonize(py, message.payload())?;
@@ -412,18 +412,18 @@ fn execute_timer<C>(
     context: C,
     trigger: Trigger,
     serialized_context: HashMap<String, String>,
-    timer_class: &PyObject,
-    event_class: &PyObject,
-    timer_method: &PyObject,
+    timer_class: &Py<PyAny>,
+    event_class: &Py<PyAny>,
+    timer_method: &Py<PyAny>,
     locals: &TaskLocals,
 ) -> PyResult<(
-    PyObject,
-    impl Future<Output = PyResult<PyObject>> + Send + Sized,
+    Py<PyAny>,
+    impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
 )>
 where
     C: EventContext,
 {
-    Python::with_gil(move |py| {
+    Python::attach(move |py| {
         // Create Python timer object
         let timer_context = Context(context.boxed());
 
@@ -468,7 +468,7 @@ impl ClassifyError for WrappedPythonError {
     fn classify_error(&self) -> ErrorCategory {
         match self {
             WrappedPythonError::Python(error) => {
-                Python::with_gil(|py| match is_permanent_error(py, error) {
+                Python::attach(|py| match is_permanent_error(py, error) {
                     Ok(true) => ErrorCategory::Permanent,
                     _ => ErrorCategory::Transient,
                 })
