@@ -10,9 +10,7 @@ use prosody::high_level::HighLevelClient;
 use prosody::high_level::state::{ConsumerState, ConsumerStateView};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
-use pyo3::{
-    Bound, PyAny, PyObject, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods,
-};
+use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use pythonize::depythonize;
 use serde_json::Value;
@@ -38,8 +36,8 @@ mod format;
 #[pyclass]
 pub struct ProsodyClient {
     client: Arc<HighLevelClient<PythonHandler>>,
-    get_context: PyObject,
-    inject: PyObject,
+    get_context: Py<PyAny>,
+    inject: Py<PyAny>,
 }
 
 #[pymethods]
@@ -165,6 +163,17 @@ impl ProsodyClient {
     fn is_stalled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let client = self.client.clone();
         future_into_py(py, async move { Ok(client.is_stalled().await) })
+    }
+
+    /// Gets the source system identifier configured for the client.
+    ///
+    /// # Returns
+    ///
+    /// The source system identifier used to identify the originating service
+    /// or component in produced messages, enabling loop detection.
+    #[getter]
+    fn source_system(&self) -> &str {
+        &self.client.producer_config().source_system
     }
 
     /// Unsubscribes from messages and shuts down the consumer.

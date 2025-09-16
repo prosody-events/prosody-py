@@ -184,3 +184,17 @@ class ProsodyClient:
             promptly to cancellation to avoid delays during shutdown.
         """
         ...
+
+    @property
+    def source_system(self) -> str:
+        """
+        Gets the source system identifier configured for the client.
+
+        The source system identifier is used to identify the originating service
+        or component in produced messages, enabling loop detection and message
+        attribution.
+
+        Returns:
+            str: The source system identifier.
+        """
+        ...
