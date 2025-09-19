@@ -22,7 +22,7 @@ admin-client = []
 chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.30"
-prosody = { git = "https://github.com/cincpro/prosody.git", rev = "3097f573b5e18c4c1c8c881970dac2dc1504154f" } # replace once we have a package manager
+prosody = { git = "https://github.com/cincpro/prosody.git", rev = "494af97f143492aafc72b9b81986077e6e05d1ff" } # replace once we have a package manager
 pyo3 = { version = "0.26", features = ["chrono"] }
 pyo3-async-runtimes = { version = "0.26", features = ["tokio-runtime"] }
 pyo3-log = "0.13"

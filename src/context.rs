@@ -6,19 +6,51 @@
 
 use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
+use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::datetime::CompactDateTime;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3::gc::{PyTraverseError, PyVisit};
+use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
+use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tracing::{Instrument, info_span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Encapsulates context information for a Kafka message.
 ///
 /// This struct wraps a `BoxEventContext` from the `prosody` crate,
 /// making it accessible in a Python environment.
 #[pyclass]
-pub struct Context(pub BoxEventContext);
+pub struct Context {
+    pub inner: BoxEventContext,
+    pub get_current: Py<PyAny>,
+    pub inject: Py<PyAny>,
+    pub propagator: Arc<TextMapCompositePropagator>,
+}
 
+impl Context {
+    /// Helper method to extract tracing context and set it as parent for the
+    /// given span
+    fn setup_tracing_context(&self, py: Python, span: &tracing::Span) -> PyResult<()> {
+        let context = self.get_current.bind(py).call0()?;
+        let data = PyDict::new(py);
+        self.inject.call1(py, (&data, context))?;
+
+        let headers: HashMap<String, String> = data.extract()?;
+        let otel_context = self.propagator.extract(&headers);
+        span.set_parent(otel_context);
+
+        Ok(())
+    }
+}
+
+#[allow(
+    clippy::multiple_inherent_impl,
+    reason = "Python methods are implemented in a separate module"
+)]
 #[pymethods]
 impl Context {
     /// Schedule a new timer at the given execution time for the current message
@@ -40,10 +72,14 @@ impl Context {
             .try_into()
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
-        let context = self.0.clone();
+        let span = info_span!("schedule", %time);
+        self.setup_tracing_context(py, &span)?;
+
+        let context = self.inner.clone();
         future_into_py(py, async move {
             context
                 .schedule(time)
+                .instrument(span)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to schedule timer: {e}")))
         })
@@ -68,11 +104,18 @@ impl Context {
             .try_into()
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
-        let context = self.0.clone();
+        let span = info_span!("clear_and_schedule", %time);
+        self.setup_tracing_context(py, &span)?;
+
+        let context = self.inner.clone();
         future_into_py(py, async move {
-            context.clear_and_schedule(time).await.map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to clear and schedule timer: {e}"))
-            })
+            context
+                .clear_and_schedule(time)
+                .instrument(span)
+                .await
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to clear and schedule timer: {e}"))
+                })
         })
     }
 
@@ -90,10 +133,14 @@ impl Context {
             .try_into()
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
-        let context = self.0.clone();
+        let span = info_span!("unschedule", %time);
+        self.setup_tracing_context(py, &span)?;
+
+        let context = self.inner.clone();
         future_into_py(py, async move {
             context
                 .unschedule(time)
+                .instrument(span)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to unschedule timer: {e}")))
         })
@@ -105,11 +152,18 @@ impl Context {
     ///
     /// Returns a `PyRuntimeError` if the operation fails.
     fn clear_scheduled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let context = self.0.clone();
+        let span = info_span!("clear_scheduled");
+        self.setup_tracing_context(py, &span)?;
+
+        let context = self.inner.clone();
         future_into_py(py, async move {
-            context.clear_scheduled().await.map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to clear scheduled timers: {e}"))
-            })
+            context
+                .clear_scheduled()
+                .instrument(span)
+                .await
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to clear scheduled timers: {e}"))
+                })
         })
     }
 
@@ -123,12 +177,16 @@ impl Context {
     ///
     /// Returns a `PyRuntimeError` if the operation fails.
     fn scheduled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let context = self.0.clone();
+        let span = info_span!("scheduled");
+        self.setup_tracing_context(py, &span)?;
+
+        let context = self.inner.clone();
         future_into_py(py, async move {
             context
                 .scheduled()
                 .map_ok(<DateTime<Utc> as From<CompactDateTime>>::from)
                 .try_collect::<Vec<_>>()
+                .instrument(span)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to get scheduled times: {e}")))
         })
@@ -140,6 +198,54 @@ impl Context {
     ///
     /// True if shutdown has been requested, False otherwise
     fn should_shutdown(&self) -> bool {
-        self.0.should_shutdown()
+        self.inner.should_shutdown()
+    }
+
+    /// Returns a string representation of the `Context`.
+    ///
+    /// # Returns
+    ///
+    /// A string representation showing the context state.
+    fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
+        let class_name = slf.get_type().qualname()?;
+        let slf = slf.borrow();
+        Ok(format!(
+            "{}(shutdown_requested={})",
+            class_name,
+            slf.inner.should_shutdown()
+        ))
+    }
+
+    /// Returns a human-readable string description of the `Context`.
+    ///
+    /// # Returns
+    ///
+    /// A human-readable description of the context.
+    fn __str__(slf: &Bound<Self>) -> PyResult<String> {
+        let class_name = slf.get_type().qualname()?;
+        let slf = slf.borrow();
+        let status = if slf.inner.should_shutdown() {
+            "shutdown requested"
+        } else {
+            "active"
+        };
+        Ok(format!("{class_name}: {status}"))
+    }
+
+    /// Traverses Python objects contained in this Context for garbage
+    /// collection.
+    ///
+    /// # Arguments
+    ///
+    /// * `visit` - A `PyVisit` object used to visit Python objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(PyTraverseError)` if an error occurs during the traversal.
+    #[allow(clippy::needless_pass_by_value)]
+    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+        visit.call(self.get_current.as_any())?;
+        visit.call(self.inject.as_any())?;
+        Ok(())
     }
 }

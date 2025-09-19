@@ -3,6 +3,7 @@
 use crate::util::string_or_vec;
 use prosody::admin::ProsodyAdminClient;
 use pyo3::exceptions::PyRuntimeError;
+use pyo3::types::{PyAnyMethods, PyTypeMethods};
 use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::sync::Arc;
@@ -81,5 +82,25 @@ impl AdminClient {
                 .await
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))
         })
+    }
+
+    /// Returns a string representation of the `AdminClient`.
+    ///
+    /// # Returns
+    ///
+    /// A string representation of the `AdminClient`.
+    fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
+        let class_name = slf.get_type().qualname()?;
+        Ok(format!("{class_name}()"))
+    }
+
+    /// Returns a human-readable string description of the `AdminClient`.
+    ///
+    /// # Returns
+    ///
+    /// A human-readable description of the `AdminClient`.
+    fn __str__(slf: &Bound<Self>) -> PyResult<String> {
+        let class_name = slf.get_type().qualname()?;
+        Ok(format!("{class_name}: Kafka administration client"))
     }
 }
