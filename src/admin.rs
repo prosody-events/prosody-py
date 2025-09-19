@@ -91,7 +91,7 @@ impl AdminClient {
     /// A string representation of the `AdminClient`.
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
-        Ok(format!("{}()", class_name))
+        Ok(format!("{class_name}()"))
     }
 
     /// Returns a human-readable string description of the `AdminClient`.
@@ -101,6 +101,6 @@ impl AdminClient {
     /// A human-readable description of the `AdminClient`.
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
-        Ok(format!("{}: Kafka administration client", class_name))
+        Ok(format!("{class_name}: Kafka administration client"))
     }
 }
