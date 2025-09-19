@@ -65,7 +65,7 @@ class ProsodyHandler:
     async def on_message(self, context, message, opentelemetry_context, shutdown_event):
         otel_context = extract(carrier=opentelemetry_context)
 
-        with self.tracer.start_as_current_span("python-receive", context=otel_context):
+        with self.tracer.start_as_current_span("on_message", context=otel_context):
             handler_task = asyncio.create_task(self.handler.on_message(context, message))
             shutdown_task = asyncio.create_task(shutdown_event.wait())
 
@@ -88,7 +88,7 @@ class ProsodyHandler:
     async def on_timer(self, context, timer, opentelemetry_context, shutdown_event):
         otel_context = extract(carrier=opentelemetry_context)
 
-        with self.tracer.start_as_current_span("python-timer", context=otel_context):
+        with self.tracer.start_as_current_span("on_timer", context=otel_context):
             handler_task = asyncio.create_task(self.handler.on_timer(context, timer))
             shutdown_task = asyncio.create_task(shutdown_event.wait())
 
