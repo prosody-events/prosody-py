@@ -23,7 +23,7 @@ use prosody::timers::Trigger;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
-use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
+use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyErr, PyResult, Python};
 use pyo3_async_runtimes::{TaskLocals, into_future_with_locals};
 use pythonize::pythonize;
 use thiserror::Error;
@@ -32,6 +32,24 @@ use tracing::{debug, error, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::context::Context;
+
+/// Python objects and dependencies needed for message execution
+struct MessageExecutionContext<'a> {
+    message_class: &'a Py<PyAny>,
+    event_class: &'a Py<PyAny>,
+    handle_method: &'a Py<PyAny>,
+    locals: &'a TaskLocals,
+    propagator: Arc<TextMapCompositePropagator>,
+}
+
+/// Python objects and dependencies needed for timer execution
+struct TimerExecutionContext<'a> {
+    timer_class: &'a Py<PyAny>,
+    event_class: &'a Py<PyAny>,
+    timer_method: &'a Py<PyAny>,
+    locals: &'a TaskLocals,
+    propagator: Arc<TextMapCompositePropagator>,
+}
 
 /// Base Python class name for message handlers
 const HANDLER_CLASS_NAME: &str = "EventHandler";
@@ -63,7 +81,7 @@ pub struct PythonHandlerImpl {
     pub event_class: Py<PyAny>,
     pub event_set_method: Py<PyAny>,
     locals: TaskLocals,
-    propagator: TextMapCompositePropagator,
+    propagator: Arc<TextMapCompositePropagator>,
 }
 
 impl PythonHandler {
@@ -117,7 +135,7 @@ impl PythonHandler {
             event_class: event_class.unbind(),
             event_set_method: event_set_method.unbind(),
             locals,
-            propagator: new_propagator(),
+            propagator: Arc::new(new_propagator()),
         })))
     }
 
@@ -178,15 +196,15 @@ impl FallibleHandler for PythonHandler {
             .inject_context(&message.span().context(), &mut serialized_context);
 
         let shutdown_future = context.on_shutdown();
-        let (shutdown_event, complete_future) = execute(
-            context,
-            message,
-            serialized_context,
-            &self.0.message_class,
-            &self.0.event_class,
-            &self.0.handle_method,
-            &self.0.locals,
-        )?;
+        let execution_context = MessageExecutionContext {
+            message_class: &self.0.message_class,
+            event_class: &self.0.event_class,
+            handle_method: &self.0.handle_method,
+            locals: &self.0.locals,
+            propagator: self.0.propagator.clone(),
+        };
+        let (shutdown_event, complete_future) =
+            execute(context, message, serialized_context, execution_context)?;
 
         pin_mut!(complete_future);
         select! {
@@ -233,18 +251,18 @@ impl FallibleHandler for PythonHandler {
         let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
         self.0
             .propagator
-            .inject_context(&trigger.span.context(), &mut serialized_context);
+            .inject_context(&trigger.span().context(), &mut serialized_context);
 
         let shutdown_future = context.on_shutdown();
-        let (shutdown_event, complete_future) = execute_timer(
-            context,
-            trigger,
-            serialized_context,
-            &self.0.timer_class,
-            &self.0.event_class,
-            &self.0.timer_method,
-            &self.0.locals,
-        )?;
+        let timer_context = TimerExecutionContext {
+            timer_class: &self.0.timer_class,
+            event_class: &self.0.event_class,
+            timer_method: &self.0.timer_method,
+            locals: &self.0.locals,
+            propagator: self.0.propagator.clone(),
+        };
+        let (shutdown_event, complete_future) =
+            execute_timer(context, trigger, serialized_context, timer_context)?;
 
         pin_mut!(complete_future);
         select! {
@@ -346,10 +364,7 @@ fn execute<C>(
     context: C,
     message: ConsumerMessage,
     serialized_context: HashMap<String, String>,
-    message_class: &Py<PyAny>,
-    event_class: &Py<PyAny>,
-    handle_method: &Py<PyAny>,
-    locals: &TaskLocals,
+    execution_context: MessageExecutionContext<'_>,
 ) -> PyResult<(
     Py<PyAny>,
     impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
@@ -358,11 +373,27 @@ where
     C: EventContext,
 {
     Python::attach(move |py| {
+        // Get handles to OpenTelemetry functions
+        let get_current = py
+            .import("opentelemetry.context")?
+            .getattr("get_current")?
+            .into_py_any(py)?;
+
+        let inject = py
+            .import("opentelemetry.propagate")?
+            .getattr("inject")?
+            .into_py_any(py)?;
+
         // Create Python message objects
-        let message_context = Context(context.boxed());
+        let message_context = Context {
+            inner: context.boxed(),
+            get_current,
+            inject,
+            propagator: execution_context.propagator,
+        };
         let payload = pythonize(py, message.payload())?;
 
-        let message = message_class.call1(
+        let message = execution_context.message_class.call1(
             py,
             (
                 message.topic().as_ref(),
@@ -378,17 +409,18 @@ where
         let otel_context = serialized_context.into_py_dict(py)?;
 
         // Create asyncio.Event for shutdown signaling
-        let shutdown_event = event_class.call0(py)?;
+        let shutdown_event = execution_context.event_class.call0(py)?;
 
         // Create and convert handler coroutine to future
-        let coroutine = handle_method
+        let coroutine = execution_context
+            .handle_method
             .call1(
                 py,
                 (message_context, message, otel_context, &shutdown_event),
             )?
             .into_bound(py);
 
-        let complete_future = into_future_with_locals(locals, coroutine)?;
+        let complete_future = into_future_with_locals(execution_context.locals, coroutine)?;
         Ok((shutdown_event, complete_future))
     })
 }
@@ -412,10 +444,7 @@ fn execute_timer<C>(
     context: C,
     trigger: Trigger,
     serialized_context: HashMap<String, String>,
-    timer_class: &Py<PyAny>,
-    event_class: &Py<PyAny>,
-    timer_method: &Py<PyAny>,
-    locals: &TaskLocals,
+    timer_context: TimerExecutionContext<'_>,
 ) -> PyResult<(
     Py<PyAny>,
     impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
@@ -424,10 +453,26 @@ where
     C: EventContext,
 {
     Python::attach(move |py| {
-        // Create Python timer object
-        let timer_context = Context(context.boxed());
+        // Get handles to OpenTelemetry functions
+        let get_current = py
+            .import("opentelemetry.context")?
+            .getattr("get_current")?
+            .into_py_any(py)?;
 
-        let timer = timer_class.call1(
+        let inject = py
+            .import("opentelemetry.propagate")?
+            .getattr("inject")?
+            .into_py_any(py)?;
+
+        // Create Python timer object
+        let context_obj = Context {
+            inner: context.boxed(),
+            get_current,
+            inject,
+            propagator: timer_context.propagator,
+        };
+
+        let timer = timer_context.timer_class.call1(
             py,
             (trigger.key.as_ref(), {
                 let datetime_utc: DateTime<Utc> = trigger.time.into();
@@ -439,14 +484,15 @@ where
         let otel_context = serialized_context.into_py_dict(py)?;
 
         // Create asyncio.Event for shutdown signaling
-        let shutdown_event = event_class.call0(py)?;
+        let shutdown_event = timer_context.event_class.call0(py)?;
 
         // Create and convert handler coroutine to future
-        let coroutine = timer_method
-            .call1(py, (timer_context, timer, otel_context, &shutdown_event))?
+        let coroutine = timer_context
+            .timer_method
+            .call1(py, (context_obj, timer, otel_context, &shutdown_event))?
             .into_bound(py);
 
-        let complete_future = into_future_with_locals(locals, coroutine)?;
+        let complete_future = into_future_with_locals(timer_context.locals, coroutine)?;
         Ok((shutdown_event, complete_future))
     })
 }

@@ -51,6 +51,12 @@ test: up build-test
 test-watch: up build-test
 	ptw
 
+# Run tracing integration test with OpenTelemetry collector
+test-tracing:
+	OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+	OTEL_SERVICE_NAME=prosody-python-tracing-test \
+	pytest -m "" tests/test_tracing_integration.py::test_complete_distributed_trace -v -s
+
 shell: up build
 	python -m asyncio
 
