@@ -10,7 +10,8 @@ use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::datetime::CompactDateTime;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{PyAnyMethods, PyDict};
+use pyo3::gc::{PyTraverseError, PyVisit};
+use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::collections::HashMap;
@@ -198,5 +199,53 @@ impl Context {
     /// True if shutdown has been requested, False otherwise
     fn should_shutdown(&self) -> bool {
         self.inner.should_shutdown()
+    }
+
+    /// Returns a string representation of the `Context`.
+    ///
+    /// # Returns
+    ///
+    /// A string representation showing the context state.
+    fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
+        let class_name = slf.get_type().qualname()?;
+        let slf = slf.borrow();
+        Ok(format!(
+            "{}(shutdown_requested={})",
+            class_name,
+            slf.inner.should_shutdown()
+        ))
+    }
+
+    /// Returns a human-readable string description of the `Context`.
+    ///
+    /// # Returns
+    ///
+    /// A human-readable description of the context.
+    fn __str__(slf: &Bound<Self>) -> PyResult<String> {
+        let class_name = slf.get_type().qualname()?;
+        let slf = slf.borrow();
+        let status = if slf.inner.should_shutdown() {
+            "shutdown requested"
+        } else {
+            "active"
+        };
+        Ok(format!("{class_name}: {status}"))
+    }
+
+    /// Traverses Python objects contained in this Context for garbage
+    /// collection.
+    ///
+    /// # Arguments
+    ///
+    /// * `visit` - A `PyVisit` object used to visit Python objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(PyTraverseError)` if an error occurs during the traversal.
+    #[allow(clippy::needless_pass_by_value)]
+    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+        visit.call(self.get_current.as_any())?;
+        visit.call(self.inject.as_any())?;
+        Ok(())
     }
 }

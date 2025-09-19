@@ -23,7 +23,7 @@ use prosody::timers::Trigger;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
-use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyErr, PyResult, Python};
+use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 use pyo3_async_runtimes::{TaskLocals, into_future_with_locals};
 use pythonize::pythonize;
 use thiserror::Error;
@@ -40,6 +40,8 @@ struct MessageExecutionContext<'a> {
     handle_method: &'a Py<PyAny>,
     locals: &'a TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
+    otel_get_current: &'a Py<PyAny>,
+    otel_inject: &'a Py<PyAny>,
 }
 
 /// Python objects and dependencies needed for timer execution
@@ -49,6 +51,8 @@ struct TimerExecutionContext<'a> {
     timer_method: &'a Py<PyAny>,
     locals: &'a TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
+    otel_get_current: &'a Py<PyAny>,
+    otel_inject: &'a Py<PyAny>,
 }
 
 /// Base Python class name for message handlers
@@ -82,6 +86,8 @@ pub struct PythonHandlerImpl {
     pub event_set_method: Py<PyAny>,
     locals: TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
+    otel_get_current: Py<PyAny>,
+    otel_inject: Py<PyAny>,
 }
 
 impl PythonHandler {
@@ -127,6 +133,17 @@ impl PythonHandler {
         // Capture the running event loop
         let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
+        // Cache OpenTelemetry functions to avoid importing them on every message
+        let otel_get_current = py
+            .import("opentelemetry.context")?
+            .getattr("get_current")?
+            .unbind();
+
+        let otel_inject = py
+            .import("opentelemetry.propagate")?
+            .getattr("inject")?
+            .unbind();
+
         Ok(Self(Arc::new(PythonHandlerImpl {
             handle_method: handle_method.unbind(),
             timer_method: timer_method.unbind(),
@@ -136,6 +153,8 @@ impl PythonHandler {
             event_set_method: event_set_method.unbind(),
             locals,
             propagator: Arc::new(new_propagator()),
+            otel_get_current,
+            otel_inject,
         })))
     }
 
@@ -202,6 +221,8 @@ impl FallibleHandler for PythonHandler {
             handle_method: &self.0.handle_method,
             locals: &self.0.locals,
             propagator: self.0.propagator.clone(),
+            otel_get_current: &self.0.otel_get_current,
+            otel_inject: &self.0.otel_inject,
         };
         let (shutdown_event, complete_future) =
             execute(context, message, serialized_context, execution_context)?;
@@ -260,6 +281,8 @@ impl FallibleHandler for PythonHandler {
             timer_method: &self.0.timer_method,
             locals: &self.0.locals,
             propagator: self.0.propagator.clone(),
+            otel_get_current: &self.0.otel_get_current,
+            otel_inject: &self.0.otel_inject,
         };
         let (shutdown_event, complete_future) =
             execute_timer(context, trigger, serialized_context, timer_context)?;
@@ -373,22 +396,11 @@ where
     C: EventContext,
 {
     Python::attach(move |py| {
-        // Get handles to OpenTelemetry functions
-        let get_current = py
-            .import("opentelemetry.context")?
-            .getattr("get_current")?
-            .into_py_any(py)?;
-
-        let inject = py
-            .import("opentelemetry.propagate")?
-            .getattr("inject")?
-            .into_py_any(py)?;
-
-        // Create Python message objects
+        // Create Python message objects using cached OpenTelemetry functions
         let message_context = Context {
             inner: context.boxed(),
-            get_current,
-            inject,
+            get_current: execution_context.otel_get_current.clone_ref(py),
+            inject: execution_context.otel_inject.clone_ref(py),
             propagator: execution_context.propagator,
         };
         let payload = pythonize(py, message.payload())?;
@@ -453,22 +465,11 @@ where
     C: EventContext,
 {
     Python::attach(move |py| {
-        // Get handles to OpenTelemetry functions
-        let get_current = py
-            .import("opentelemetry.context")?
-            .getattr("get_current")?
-            .into_py_any(py)?;
-
-        let inject = py
-            .import("opentelemetry.propagate")?
-            .getattr("inject")?
-            .into_py_any(py)?;
-
-        // Create Python timer object
+        // Create Python timer object using cached OpenTelemetry functions
         let context_obj = Context {
             inner: context.boxed(),
-            get_current,
-            inject,
+            get_current: timer_context.otel_get_current.clone_ref(py),
+            inject: timer_context.otel_inject.clone_ref(py),
             propagator: timer_context.propagator,
         };
 
