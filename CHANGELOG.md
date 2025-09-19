@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/cincpro/prosody-py/compare/v1.1.1...v1.2.0) (2025-09-19)
+
+
+### Features
+
+* expose source system and remove deprecated methods ([#90](https://github.com/cincpro/prosody-py/issues/90)) ([e19be1f](https://github.com/cincpro/prosody-py/commit/e19be1f11d65cbbbfa79944c216bde57f7e6009c))
+
+
+### Bug Fixes
+
+* propagate span traces through context methods ([#92](https://github.com/cincpro/prosody-py/issues/92)) ([4376b68](https://github.com/cincpro/prosody-py/commit/4376b682e13748388fe0632e034ab566a3a0f2be))
+
 ## [1.1.1](https://github.com/cincpro/prosody-py/compare/v1.1.0...v1.1.1) (2025-09-12)
 
 
