@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/cincpro/prosody-py/compare/v1.2.0...v1.3.0) (2025-09-22)
+
+
+### Features
+
+* expose admin client ([#93](https://github.com/cincpro/prosody-py/issues/93)) ([12a070a](https://github.com/cincpro/prosody-py/commit/12a070aef4f596c544ee164c048d3e6f657c37a6))
+
 ## [1.2.0](https://github.com/cincpro/prosody-py/compare/v1.1.1...v1.2.0) (2025-09-19)
 
 
