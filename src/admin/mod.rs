@@ -26,8 +26,9 @@ impl AdminClient {
     /// # Arguments
     ///
     /// * `config` - Configuration options as keyword arguments:
-    ///   - `bootstrap_servers` - Kafka servers for connection (string or list of strings)
-    ///                          Can also be set via `PROSODY_BOOTSTRAP_SERVERS` environment variable
+    ///   - `bootstrap_servers` - Kafka servers for connection (string or list
+    ///     of strings) Can also be set via `PROSODY_BOOTSTRAP_SERVERS`
+    ///     environment variable
     ///
     /// # Errors
     ///
@@ -44,14 +45,18 @@ impl AdminClient {
     ///
     /// * `name` - The name of the topic to create.
     /// * `config` - Configuration options as keyword arguments:
-    ///   - `partition_count` - Number of partitions (u16, optional, uses broker default)
-    ///                        Can also be set via `PROSODY_TOPIC_PARTITIONS` environment variable
-    ///   - `replication_factor` - Replication factor (u16, optional, uses broker default)
-    ///                           Can also be set via `PROSODY_TOPIC_REPLICATION_FACTOR` environment variable
-    ///   - `cleanup_policy` - Cleanup policy ("delete", "compact", etc., optional)
-    ///                       Can also be set via `PROSODY_TOPIC_CLEANUP_POLICY` environment variable
-    ///   - `retention` - Message retention time (Duration/timedelta/float seconds, optional)
-    ///                  Can also be set via `PROSODY_TOPIC_RETENTION` environment variable
+    ///   - `partition_count` - Number of partitions (u16, optional, uses broker
+    ///     default) Can also be set via `PROSODY_TOPIC_PARTITIONS` environment
+    ///     variable
+    ///   - `replication_factor` - Replication factor (u16, optional, uses
+    ///     broker default) Can also be set via
+    ///     `PROSODY_TOPIC_REPLICATION_FACTOR` environment variable
+    ///   - `cleanup_policy` - Cleanup policy ("delete", "compact", etc.,
+    ///     optional) Can also be set via `PROSODY_TOPIC_CLEANUP_POLICY`
+    ///     environment variable
+    ///   - `retention` - Message retention time (Duration/timedelta/float
+    ///     seconds, optional) Can also be set via `PROSODY_TOPIC_RETENTION`
+    ///     environment variable
     ///
     /// # Errors
     ///

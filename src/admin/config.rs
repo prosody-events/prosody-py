@@ -7,8 +7,8 @@
 use crate::admin::AdminClient;
 use crate::util::string_or_vec;
 use prosody::admin::{
-    AdminConfiguration, AdminConfigurationBuilder, ProsodyAdminClient,
-    TopicConfiguration, TopicConfigurationBuilder,
+    AdminConfiguration, AdminConfigurationBuilder, ProsodyAdminClient, TopicConfiguration,
+    TopicConfigurationBuilder,
 };
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
