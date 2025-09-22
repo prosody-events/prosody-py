@@ -5,7 +5,7 @@
 //! objects and handling duration conversions.
 
 use crate::client::ProsodyClient;
-use crate::util::string_or_vec;
+use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
 use prosody::consumer::ConsumerConfigurationBuilder;
 use prosody::consumer::failure::retry::RetryConfigurationBuilder;
 use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
@@ -13,11 +13,10 @@ use prosody::high_level::HighLevelClient;
 use prosody::high_level::mode::{Mode, ModeError};
 use prosody::producer::ProducerConfigurationBuilder;
 use prosody::timers::store::cassandra::CassandraConfigurationBuilder;
-use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
-use pyo3::{Bound, IntoPyObjectExt, PyAny, PyResult, Python};
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
+use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
 /// configuration.
@@ -321,67 +320,4 @@ fn build_cassandra_config(config: &Bound<PyDict>) -> PyResult<CassandraConfigura
     }
 
     Ok(builder)
-}
-
-/// Decodes a Python object into a Rust `Duration`.
-///
-/// # Arguments
-///
-/// * `value` - A Python object representing a duration (either a `timedelta` or
-///   a float).
-///
-/// # Returns
-///
-/// A `PyResult` containing the decoded `Duration`.
-///
-/// # Errors
-///
-/// Returns a `PyTypeError` if the input is neither a `timedelta` nor a float.
-/// Returns a `PyValueError` if the float conversion fails.
-fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
-    // Try to decode as a timedelta first
-    if let Ok(delta) = value.downcast::<PyDelta>() {
-        let days = u64::try_from(delta.get_days())?;
-        let seconds = u64::try_from(delta.get_seconds())?;
-        let micros = u64::try_from(delta.get_microseconds())?;
-
-        let mut duration = Duration::from_secs(days * 24 * 60 * 60);
-        duration += Duration::from_secs(seconds);
-        duration += Duration::from_micros(micros);
-        return Ok(duration);
-    }
-
-    // If not a timedelta, try to decode as a float
-    if let Ok(seconds) = value.extract::<f64>() {
-        let duration = Duration::try_from_secs_f64(seconds)
-            .map_err(|error| PyValueError::new_err(error.to_string()))?;
-
-        return Ok(duration);
-    }
-
-    // If neither a timedelta nor a float, return an error
-    Err(PyTypeError::new_err(
-        "expected a timedelta or non-negative float representing seconds",
-    ))
-}
-
-/// Decodes an optional Python object into an optional Rust `Duration`.
-///
-/// # Arguments
-///
-/// * `value` - An optional Python object representing a duration.
-///
-/// # Returns
-///
-/// A `PyResult` containing an `Option<Duration>`.
-///
-/// # Errors
-///
-/// Propagates errors from `decode_duration`.
-fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> {
-    Ok(if value.is_none() {
-        None
-    } else {
-        Some(decode_duration(value)?)
-    })
 }
