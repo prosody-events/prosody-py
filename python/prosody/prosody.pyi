@@ -198,3 +198,99 @@ class ProsodyClient:
             str: The source system identifier.
         """
         ...
+
+
+class AdminClient:
+    """
+    A client for performing administrative operations on Kafka topics.
+
+    This class provides methods for creating and deleting Kafka topics with
+    configurable parameters and settings.
+    """
+
+    def __init__(
+        self,
+        *,
+        bootstrap_servers: Optional[StringOrList] = None,
+    ) -> None:
+        """
+        Initialize a new AdminClient.
+
+        Args:
+            bootstrap_servers: Kafka servers for initial connection.
+
+        Raises:
+            RuntimeError: If the client fails to initialize.
+            ValueError: If the configuration is invalid.
+
+        Examples:
+            # Single server
+            admin = AdminClient(bootstrap_servers="localhost:9094")
+
+            # Multiple servers
+            admin = AdminClient(bootstrap_servers=["localhost:9092", "localhost:9093"])
+
+            # Environment variable support (PROSODY_BOOTSTRAP_SERVERS)
+            admin = AdminClient()
+        """
+        ...
+
+    async def create_topic(
+        self,
+        name: str,
+        *,
+        partition_count: Optional[int] = None,
+        replication_factor: Optional[int] = None,
+        cleanup_policy: Optional[str] = None,
+        retention: Optional[Duration] = None,
+    ) -> None:
+        """
+        Create a new Kafka topic with the specified configuration.
+
+        Args:
+            name: The name of the topic to create.
+            partition_count: Number of partitions for the topic. Uses broker default if not specified.
+            replication_factor: Replication factor for the topic. Uses broker default if not specified.
+            cleanup_policy: Cleanup policy ("delete", "compact", "delete,compact"). Uses cluster default if not specified.
+            retention: Message retention time. Can be a timedelta object, float seconds, or duration string.
+                      Uses cluster default if not specified.
+
+        Raises:
+            RuntimeError: If the topic creation fails.
+            ValueError: If the configuration parameters are invalid.
+
+        Examples:
+            # Basic topic creation
+            await admin.create_topic("my-topic")
+
+            # Topic with specific configuration
+            await admin.create_topic(
+                "my-topic",
+                partition_count=4,
+                replication_factor=2,
+                cleanup_policy="delete",
+                retention=timedelta(days=7)
+            )
+
+            # Topic with retention as float seconds
+            await admin.create_topic(
+                "my-topic",
+                retention=604800.0  # 7 days in seconds
+            )
+        """
+        ...
+
+    async def delete_topic(self, name: str) -> None:
+        """
+        Delete an existing Kafka topic.
+
+        Args:
+            name: The name of the topic to delete.
+
+        Raises:
+            RuntimeError: If the topic deletion fails.
+
+        Example:
+            await admin.delete_topic("my-topic")
+        """
+        ...

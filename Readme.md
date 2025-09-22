@@ -624,6 +624,64 @@ While the process is automated, manual intervention may sometimes be necessary:
 Remember, all releases are automatically published to Gemfury. Ensure you have thoroughly tested your changes before
 merging to `main`.
 
+## Administrative Operations
+
+**⚠️ Important Note**: Topic management in production environments should typically be handled through GitOps using Strimzi KafkaTopic manifests. The `AdminClient` is provided for testing scenarios and specific cases where the data team requires manual topic creation and deletion.
+
+### AdminClient
+
+The `AdminClient` provides administrative operations for Kafka topics:
+
+```python
+from prosody import AdminClient
+
+# Initialize admin client
+admin = AdminClient(bootstrap_servers="localhost:9092")
+
+# Create a topic for testing
+await admin.create_topic(
+    "test-topic",
+    partition_count=4,
+    replication_factor=1,
+    cleanup_policy="delete",
+    retention=datetime.timedelta(days=7)  # or retention=604800.0 (seconds)
+)
+
+# Delete a topic
+await admin.delete_topic("test-topic")
+```
+
+#### Configuration Parameters
+
+The `AdminClient` constructor accepts:
+
+- `bootstrap_servers` (str | list[str]): Kafka bootstrap servers (required)
+
+Or via environment variable:
+
+```bash
+PROSODY_BOOTSTRAP_SERVERS=localhost:9092  # Single server
+PROSODY_BOOTSTRAP_SERVERS=localhost:9092,localhost:9093  # Multiple servers
+```
+
+#### Topic Configuration Options
+
+When creating topics, the following options are supported:
+
+- `partition_count` (int): Number of partitions (optional, uses broker default)
+- `replication_factor` (int): Replication factor (optional, uses broker default)
+- `cleanup_policy` (str): Cleanup policy such as "delete" or "compact" (optional)
+- `retention` (timedelta | float): Message retention time as timedelta object or seconds as float (optional)
+
+These can also be configured via environment variables:
+
+```bash
+PROSODY_TOPIC_PARTITIONS=4                    # Number of partitions
+PROSODY_TOPIC_REPLICATION_FACTOR=1           # Replication factor
+PROSODY_TOPIC_CLEANUP_POLICY=delete          # Cleanup policy
+PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d, 2h 30m, etc.)
+```
+
 ## API Reference
 
 ### ProsodyClient
@@ -633,6 +691,12 @@ merging to `main`.
 - `consumer_state() -> str`: Get the current state of the consumer.
 - `subscribe(handler: EventHandler) -> None`: Subscribe to messages using the provided handler.
 - `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
+
+### AdminClient
+
+- `__init__(**config)`: Initialize a new AdminClient with the given configuration.
+- `create_topic(name: str, **config) -> None`: Create a Kafka topic with optional configuration parameters.
+- `delete_topic(name: str) -> None`: Delete an existing Kafka topic.
 
 ### EventHandler
 
