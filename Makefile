@@ -25,7 +25,7 @@ build:
 	maturin develop --extras dev
 
 build-test:
-	maturin develop --extras dev --features admin-client
+	maturin develop --extras dev
 
 # Check for compilation errors without building
 check:

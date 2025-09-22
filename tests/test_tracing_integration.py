@@ -180,8 +180,8 @@ async def random_topic_and_group():
     topic = f"tracing-test-{timestamp}-{random_id}"
     group = f"test-group-{random_id}"
 
-    admin = AdminClient("localhost:9094")
-    await admin.create_topic(topic, 1, 1)
+    admin = AdminClient(bootstrap_servers="localhost:9094")
+    await admin.create_topic(topic, partition_count=1, replication_factor=1)
     await asyncio.sleep(1)  # Allow topic creation to propagate
 
     yield topic, group

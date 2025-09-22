@@ -46,8 +46,8 @@ async def random_topic_and_group():
     # Generate a random topic and consumer group using a UUID to ensure isolation between tests
     topic = f"test-topic-{uuid.uuid4().hex}"
     group = f"test-group-{uuid.uuid4().hex}"
-    admin = AdminClient("localhost:9094")
-    await admin.create_topic(topic, 4, 1)
+    admin = AdminClient(bootstrap_servers="localhost:9094")
+    await admin.create_topic(topic, partition_count=4, replication_factor=1)
     await asyncio.sleep(1)
     yield topic, group
     await admin.delete_topic(topic)

@@ -1,6 +1,6 @@
 import logging
 
-from prosody.prosody import ProsodyClient
+from prosody.prosody import ProsodyClient, AdminClient
 
 from prosody.context import Context
 from prosody.errors import EventHandlerError, PermanentError, TransientError, permanent, transient
