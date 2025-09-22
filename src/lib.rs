@@ -8,6 +8,7 @@
 #![allow(clippy::multiple_crate_versions)]
 #![warn(missing_docs)]
 
+use crate::admin::AdminClient;
 use crate::client::ProsodyClient;
 use crate::context::Context;
 use ::prosody::tracing::{Identity, initialize_tracing};
@@ -15,12 +16,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pymodule};
 
-#[cfg(feature = "admin-client")]
-use crate::admin::AdminClient;
-
-#[cfg(feature = "admin-client")]
 mod admin;
-
 mod client;
 mod context;
 mod handler;
@@ -59,7 +55,6 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
         .getattr("modules")?
         .set_item("prosody.context", context_module)?;
 
-    #[cfg(feature = "admin-client")]
     prosody_module.add_class::<AdminClient>()?;
 
     Ok(())

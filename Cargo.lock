@@ -1430,7 +1430,7 @@ dependencies = [
 [[package]]
 name = "prosody"
 version = "0.10.8"
-source = "git+https://github.com/cincpro/prosody.git?rev=494af97f143492aafc72b9b81986077e6e05d1ff#494af97f143492aafc72b9b81986077e6e05d1ff"
+source = "git+https://github.com/cincpro/prosody.git?rev=babd8952138501b66be40b9194732cda9727721a#babd8952138501b66be40b9194732cda9727721a"
 dependencies = [
  "ahash",
  "aho-corasick",
@@ -1859,9 +1859,9 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "saa"
-version = "3.2.1"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "293e425dca7c7889a87de14ff29a4112f18a155119295671cd7fb8c70015a1c5"
+checksum = "14e9fa21973077ea653ab459c4746540e49f21fed90f49efa1b5a7dbbc4ca3af"
 
 [[package]]
 name = "same-file"
@@ -1874,9 +1874,9 @@ dependencies = [
 
 [[package]]
 name = "scc"
-version = "3.0.7"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f0c0b27fa9a31fc2bad3b9ce122188c9df8158bdcbc3c73e3c0bc38aa69c61e"
+checksum = "db652791ad0074be7e117e9e778a961cd66e1382c6b160c96a4502971d7211a6"
 dependencies = [
  "saa",
  "sdd",
@@ -1947,9 +1947,9 @@ dependencies = [
 
 [[package]]
 name = "sdd"
-version = "4.1.0"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56f857d078ef91d82bf888837a353a3afb9c5b60bf352109ecb4e01307b8b953"
+checksum = "289309f6b5c6a090488f188a75e98d96007e763b892018de92b5889eb09a03f4"
 
 [[package]]
 name = "serde"
@@ -2712,7 +2712,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2790,15 +2790,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.61.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e201184e40b2ede64bc2ea34968b28e33622acdbbf37104f0e4a33f7abe657aa"
-dependencies = [
- "windows-link",
 ]
 
 [[package]]
