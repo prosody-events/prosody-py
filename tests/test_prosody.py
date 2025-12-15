@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List
 
 import pytest
+import tsasync
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from prosody.prosody import AdminClient
@@ -28,7 +29,7 @@ class TestHandler(EventHandler):
     def __init__(self):
         self.messages: List[Message] = []
         self.message_count = 0
-        self.message_received = asyncio.Event()
+        self.message_received = tsasync.Event()
 
     async def on_message(self, context: Context, message: Message) -> None:
         with tracer.start_as_current_span("receive"):
@@ -224,7 +225,7 @@ async def test_same_key_message_order(client, random_topic_and_group):
 class TransientErrorHandler(EventHandler):
     def __init__(self):
         self.received_message = False
-        self.retry_event = asyncio.Event()
+        self.retry_event = tsasync.Event()
 
     @transient(ValueError)
     async def on_message(self, context: Context, message: Message) -> None:
@@ -259,7 +260,7 @@ async def test_transient_error_decorator(client, random_topic_and_group):
 
 class PermanentErrorHandler(EventHandler):
     def __init__(self):
-        self.error_raised = asyncio.Event()
+        self.error_raised = tsasync.Event()
         self.message_count = 0
 
     @permanent(ValueError)
