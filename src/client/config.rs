@@ -14,8 +14,8 @@ use prosody::consumer::middleware::retry::RetryConfigurationBuilder;
 use prosody::consumer::middleware::scheduler::SchedulerConfigurationBuilder;
 use prosody::consumer::middleware::timeout::TimeoutConfigurationBuilder;
 use prosody::consumer::middleware::topic::FailureTopicConfigurationBuilder;
-use prosody::high_level::{ConsumerBuilders, HighLevelClient};
 use prosody::high_level::mode::{Mode, ModeError};
+use prosody::high_level::{ConsumerBuilders, HighLevelClient};
 use prosody::producer::ProducerConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
@@ -379,7 +379,8 @@ fn build_scheduler_config(config: &Bound<PyDict>) -> PyResult<SchedulerConfigura
 ///
 /// # Returns
 ///
-/// A `PyResult` containing the constructed `MonopolizationConfigurationBuilder`.
+/// A `PyResult` containing the constructed
+/// `MonopolizationConfigurationBuilder`.
 ///
 /// # Errors
 ///
