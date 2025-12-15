@@ -57,11 +57,12 @@ class ProsodyClient:
             poll_interval: Optional[Duration] = None,
             commit_interval: Optional[Duration] = None,
             mode: Optional[Literal['pipeline', 'low-latency', 'best-effort']] = None,
-            retry_base: Optional[int] = None,
+            retry_base: Optional[Duration] = None,
             max_retries: Optional[int] = None,
             max_retry_delay: Optional[Duration] = None,
             failure_topic: Optional[str] = None,
             probe_port: Optional[int] = None,
+            slab_size: Optional[Duration] = None,
             cassandra_nodes: Optional[StringOrList] = None,
             cassandra_keyspace: Optional[str] = None,
             cassandra_datacenter: Optional[str] = None,
@@ -69,6 +70,27 @@ class ProsodyClient:
             cassandra_user: Optional[str] = None,
             cassandra_password: Optional[str] = None,
             cassandra_retention: Optional[Duration] = None,
+            # Scheduler configuration
+            scheduler_failure_weight: Optional[float] = None,
+            scheduler_max_wait: Optional[Duration] = None,
+            scheduler_wait_weight: Optional[float] = None,
+            scheduler_cache_size: Optional[int] = None,
+            # Monopolization configuration
+            monopolization_enabled: Optional[bool] = None,
+            monopolization_threshold: Optional[float] = None,
+            monopolization_window: Optional[Duration] = None,
+            monopolization_cache_size: Optional[int] = None,
+            # Defer configuration
+            defer_enabled: Optional[bool] = None,
+            defer_base: Optional[Duration] = None,
+            defer_max_delay: Optional[Duration] = None,
+            defer_failure_threshold: Optional[float] = None,
+            defer_failure_window: Optional[Duration] = None,
+            defer_cache_size: Optional[int] = None,
+            defer_seek_timeout: Optional[Duration] = None,
+            defer_discard_threshold: Optional[int] = None,
+            # Timeout configuration
+            timeout: Optional[Duration] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.
@@ -95,6 +117,7 @@ class ProsodyClient:
             max_retry_delay: Maximum delay between retries.
             failure_topic: Topic for failed messages in low-latency mode.
             probe_port: Port for the probe server. Set to None to disable.
+            slab_size: Timer slab partitioning duration. Controls how timers are grouped.
             cassandra_nodes: List of Cassandra contact nodes (hostnames or IPs with optional ports).
             cassandra_keyspace: Keyspace to use for storing timer data. Defaults to 'prosody'.
             cassandra_datacenter: Preferred datacenter for query routing and load balancing.
@@ -102,6 +125,23 @@ class ProsodyClient:
             cassandra_user: Username for authenticating with Cassandra cluster.
             cassandra_password: Password for authenticating with Cassandra cluster.
             cassandra_retention: Retention period for failed/unprocessed timer data. Defaults to 30 days.
+            scheduler_failure_weight: Target proportion of execution time for failure/retry task processing (0.0 to 1.0).
+            scheduler_max_wait: Wait duration at which urgency boost reaches maximum intensity.
+            scheduler_wait_weight: Maximum urgency boost (in seconds of virtual time) for waiting tasks.
+            scheduler_cache_size: Cache capacity for tracking per-key virtual time in the scheduler.
+            monopolization_enabled: Whether monopolization detection is enabled.
+            monopolization_threshold: Threshold for monopolization detection (0.0 to 1.0).
+            monopolization_window: Rolling window duration for monopolization detection.
+            monopolization_cache_size: Cache size for tracking key execution intervals.
+            defer_enabled: Whether deferral is enabled for transient failures.
+            defer_base: Base exponential backoff delay for deferred retries.
+            defer_max_delay: Maximum delay between deferred retries.
+            defer_failure_threshold: Failure rate threshold for enabling deferral (0.0 to 1.0).
+            defer_failure_window: Sliding window duration for failure rate tracking.
+            defer_cache_size: Cache size for defer middleware.
+            defer_seek_timeout: Timeout for Kafka seek operations.
+            defer_discard_threshold: Messages to read sequentially before seeking.
+            timeout: Fixed timeout duration for handler execution. Defaults to 80% of stall threshold.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.

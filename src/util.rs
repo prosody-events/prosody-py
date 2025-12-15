@@ -48,7 +48,7 @@ pub fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
 /// Returns a `PyValueError` if the float conversion fails.
 pub fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
     // Try to decode as a timedelta first
-    if let Ok(delta) = value.downcast::<PyDelta>() {
+    if let Ok(delta) = Bound::cast::<PyDelta>(value) {
         let days = u64::try_from(delta.get_days())?;
         let seconds = u64::try_from(delta.get_seconds())?;
         let micros = u64::try_from(delta.get_microseconds())?;
