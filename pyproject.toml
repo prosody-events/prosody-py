@@ -33,9 +33,9 @@ requires-python = ">=3.8"
 dev = [
     "opentelemetry-exporter-otlp>=1.26.0,<2.0.0",
     "opentelemetry-sdk>=1.26.0,<2.0.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest-asyncio>=1.0.0,<2.0.0",
     "pytest-watch>=4.2.0",
-    "pytest>=7.3.1",
+    "pytest>=8.2.0",
 ]
 
 [tool.maturin]
@@ -44,4 +44,5 @@ python-source = "python"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
