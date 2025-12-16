@@ -13,12 +13,12 @@ use pyo3::prelude::*;
 use std::fmt::Debug;
 use std::fmt::Write as _;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::Layer;
 
 /// Capacity of the log message channel.
 /// Messages are dropped if the channel is full to prevent backpressure.
@@ -40,8 +40,6 @@ struct LogEvent {
 /// chain.
 pub struct PythonLoggingLayer {
     sender: SyncSender<LogEvent>,
-    // Handle kept to ensure thread lives as long as the layer
-    _worker: JoinHandle<()>,
 }
 
 impl PythonLoggingLayer {
@@ -63,15 +61,12 @@ impl PythonLoggingLayer {
         // Cache Python's logging.getLogger function for the worker thread
         let get_logger: Py<PyAny> = py.import("logging")?.getattr("getLogger")?.unbind();
 
-        let worker = thread::Builder::new()
+        thread::Builder::new()
             .name("python-log-bridge".to_owned())
             .spawn(move || worker_loop(receiver, get_logger))
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(Self {
-            sender,
-            _worker: worker,
-        })
+        Ok(Self { sender })
     }
 }
 
@@ -149,16 +144,6 @@ impl MessageVisitor {
 }
 
 impl Visit for MessageVisitor {
-    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        if field.name() == "message" {
-            self.message = format!("{value:?}");
-        } else if self.message.is_empty() {
-            self.message = format!("{}: {:?}", field.name(), value);
-        } else {
-            let _ = write!(self.message, " {}={:?}", field.name(), value);
-        }
-    }
-
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             value.clone_into(&mut self.message);
@@ -166,6 +151,16 @@ impl Visit for MessageVisitor {
             self.message = format!("{}: {}", field.name(), value);
         } else {
             let _ = write!(self.message, " {}={}", field.name(), value);
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.message = format!("{value:?}");
+        } else if self.message.is_empty() {
+            self.message = format!("{}: {:?}", field.name(), value);
+        } else {
+            let _ = write!(self.message, " {}={:?}", field.name(), value);
         }
     }
 }

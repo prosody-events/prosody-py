@@ -65,25 +65,8 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-          pip install py-spy
           maturin develop --extras dev
-
-          # Run pytest with timeout, dumping stack traces every 10 seconds
-          PY_SPY_PATH=$(which py-spy)
-          timeout 300 bash -c "
-            pytest -v &
-            PYTEST_PID=\$!
-
-            # Dump stack traces every 10 seconds
-            while kill -0 \$PYTEST_PID 2>/dev/null; do
-              sleep 10
-              echo '=== py-spy stack dump at \$(date) ==='
-              sudo $PY_SPY_PATH dump --pid \$PYTEST_PID --native || true
-              echo '=== end stack dump ==='
-            done &
-
-            wait \$PYTEST_PID
-          "
+          pytest -v
         env:
           PROSODY_BOOTSTRAP_SERVERS: localhost:9094
           PROSODY_CASSANDRA_NODES: localhost:9042
