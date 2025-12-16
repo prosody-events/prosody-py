@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/cincpro/prosody-py/compare/v2.0.0...v2.0.1) (2025-12-16)
+
+
+### Bug Fixes
+
+* remove deprecated x86 macOS builds from release workflow ([#99](https://github.com/cincpro/prosody-py/issues/99)) ([98e3d40](https://github.com/cincpro/prosody-py/commit/98e3d4002bbd9acecc69927195a1810dcfb74dc6))
+
 ## [2.0.0](https://github.com/cincpro/prosody-py/compare/v1.3.0...v2.0.0) (2025-12-16)
 
 
