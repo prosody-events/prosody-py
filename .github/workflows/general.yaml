@@ -56,11 +56,11 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Install Maturin from crates.io
         uses: baptiste0928/cargo-install@v3
         with:
           crate: maturin
-      - uses: Swatinem/rust-cache@v2
       - name: Build and run tests
         run: |
           python -m venv venv
@@ -103,7 +103,6 @@ jobs:
         uses: baptiste0928/cargo-install@v3
         with:
           crate: cargo-udeps
-      - uses: Swatinem/rust-cache@v2
       - name: Run cargo udeps
         run: cargo +nightly udeps
 
