@@ -11,7 +11,8 @@
 use crate::admin::AdminClient;
 use crate::client::ProsodyClient;
 use crate::context::Context;
-use ::prosody::tracing::{Identity, initialize_tracing};
+use crate::logging::PythonLoggingLayer;
+use ::prosody::tracing::initialize_tracing;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pymodule};
@@ -20,6 +21,7 @@ mod admin;
 mod client;
 mod context;
 mod handler;
+mod logging;
 mod util;
 
 /// Initializes the Python module and adds the necessary classes.
@@ -38,7 +40,11 @@ mod util;
 /// error occurs.
 #[pymodule]
 fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
-    initialize_tracing::<Identity>(None)
+    // Initialize tracing with our non-blocking Python logging layer.
+    // This layer queues log events and forwards them to Python's logging
+    // system on a dedicated background thread, avoiding GIL deadlocks.
+    let python_logging = PythonLoggingLayer::new(py)?;
+    initialize_tracing(Some(python_logging))
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
     // Add classes to the module
