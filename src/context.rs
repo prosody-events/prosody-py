@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::event_context::BoxEventContext;
+use prosody::timers::TimerType;
 use prosody::timers::datetime::CompactDateTime;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::gc::{PyTraverseError, PyVisit};
@@ -16,7 +17,7 @@ use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{Instrument, info_span};
+use tracing::{Instrument, error, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Encapsulates context information for a Kafka message.
@@ -41,7 +42,9 @@ impl Context {
 
         let headers: HashMap<String, String> = data.extract()?;
         let otel_context = self.propagator.extract(&headers);
-        span.set_parent(otel_context);
+        if let Err(err) = span.set_parent(otel_context) {
+            error!("failed to set parent span: {err:#}");
+        }
 
         Ok(())
     }
@@ -78,7 +81,7 @@ impl Context {
         let context = self.inner.clone();
         future_into_py(py, async move {
             context
-                .schedule(time)
+                .schedule(time, TimerType::Application)
                 .instrument(span)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to schedule timer: {e}")))
@@ -110,7 +113,7 @@ impl Context {
         let context = self.inner.clone();
         future_into_py(py, async move {
             context
-                .clear_and_schedule(time)
+                .clear_and_schedule(time, TimerType::Application)
                 .instrument(span)
                 .await
                 .map_err(|e| {
@@ -139,7 +142,7 @@ impl Context {
         let context = self.inner.clone();
         future_into_py(py, async move {
             context
-                .unschedule(time)
+                .unschedule(time, TimerType::Application)
                 .instrument(span)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to unschedule timer: {e}")))
@@ -158,7 +161,7 @@ impl Context {
         let context = self.inner.clone();
         future_into_py(py, async move {
             context
-                .clear_scheduled()
+                .clear_scheduled(TimerType::Application)
                 .instrument(span)
                 .await
                 .map_err(|e| {
@@ -183,7 +186,7 @@ impl Context {
         let context = self.inner.clone();
         future_into_py(py, async move {
             context
-                .scheduled()
+                .scheduled(TimerType::Application)
                 .map_ok(<DateTime<Utc> as From<CompactDateTime>>::from)
                 .try_collect::<Vec<_>>()
                 .instrument(span)
@@ -192,13 +195,32 @@ impl Context {
         })
     }
 
-    /// Check if shutdown has been requested.
+    /// Check if cancellation has been requested.
+    ///
+    /// Cancellation includes both message-level cancellation (e.g., timeout)
+    /// and partition shutdown.
     ///
     /// # Returns
     ///
-    /// True if shutdown has been requested, False otherwise
-    fn should_shutdown(&self) -> bool {
-        self.inner.should_shutdown()
+    /// True if cancellation has been requested, False otherwise
+    fn should_cancel(&self) -> bool {
+        self.inner.should_cancel()
+    }
+
+    /// Waits for a cancellation signal.
+    ///
+    /// Cancellation includes both message-level cancellation (e.g., timeout)
+    /// and partition shutdown.
+    ///
+    /// # Returns
+    ///
+    /// A coroutine that completes when cancellation is signaled.
+    fn on_cancel<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let context = self.inner.clone();
+        future_into_py(py, async move {
+            context.on_cancel().await;
+            Ok(())
+        })
     }
 
     /// Returns a string representation of the `Context`.
@@ -210,9 +232,9 @@ impl Context {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         Ok(format!(
-            "{}(shutdown_requested={})",
+            "{}(cancelled={})",
             class_name,
-            slf.inner.should_shutdown()
+            slf.inner.should_cancel()
         ))
     }
 
@@ -224,8 +246,8 @@ impl Context {
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
-        let status = if slf.inner.should_shutdown() {
-            "shutdown requested"
+        let status = if slf.inner.should_cancel() {
+            "cancelled"
         } else {
             "active"
         };

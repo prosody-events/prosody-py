@@ -14,12 +14,12 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
-use prosody::consumer::Keyed;
 use prosody::consumer::event_context::EventContext;
-use prosody::consumer::failure::{ClassifyError, ErrorCategory, FallibleHandler};
 use prosody::consumer::message::ConsumerMessage;
+use prosody::consumer::middleware::{ClassifyError, ErrorCategory, FallibleHandler};
+use prosody::consumer::{DemandType, Keyed};
 use prosody::propagator::new_propagator;
-use prosody::timers::Trigger;
+use prosody::timers::{TimerType, Trigger};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
@@ -198,23 +198,30 @@ impl FallibleHandler for PythonHandler {
     ///
     /// * `context` - Message processing context
     /// * `message` - Kafka message to process
+    /// * `_demand_type` - Whether this is normal processing or failure retry
     ///
     /// # Errors
     ///
     /// Returns `WrappedPythonError` on Python exceptions or task cancellation
     /// failures
-    #[instrument(level = "debug", skip(self, context), err)]
-    async fn on_message<C>(&self, context: C, message: ConsumerMessage) -> Result<(), Self::Error>
+    #[instrument(level = "debug", skip(self, context, demand_type), err)]
+    async fn on_message<C>(
+        &self,
+        context: C,
+        message: ConsumerMessage,
+        demand_type: DemandType,
+    ) -> Result<(), Self::Error>
     where
         C: EventContext,
     {
+        let _ = demand_type; // Not used in Python handler
         // Propagate tracing context to Python
         let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
         self.0
             .propagator
             .inject_context(&message.span().context(), &mut serialized_context);
 
-        let shutdown_future = context.on_shutdown();
+        let cancel_future = context.on_cancel();
         let execution_context = MessageExecutionContext {
             message_class: &self.0.message_class,
             event_class: &self.0.event_class,
@@ -237,15 +244,15 @@ impl FallibleHandler for PythonHandler {
                 result?;
             }
 
-            // Handle shutdown request
-            () = shutdown_future => {
-                debug!("shutdown signal received; cancelling task");
+            // Handle cancel request
+            () = cancel_future => {
+                debug!("cancel signal received; cancelling task");
                 cancel_task(&self.0.event_set_method, shutdown_event)?;
 
                 debug!("waiting for task to cleanup");
                 complete_future.await?;
 
-                debug!("task shutdown");
+                debug!("task cancelled");
             }
         }
 
@@ -258,23 +265,35 @@ impl FallibleHandler for PythonHandler {
     ///
     /// * `context` - Timer processing context
     /// * `trigger` - Timer trigger to process
+    /// * `_demand_type` - Whether this is normal processing or failure retry
     ///
     /// # Errors
     ///
     /// Returns `WrappedPythonError` on Python exceptions or task cancellation
     /// failures
-    #[instrument(level = "debug", skip(self, context), err)]
-    async fn on_timer<C>(&self, context: C, trigger: Trigger) -> Result<(), Self::Error>
+    #[instrument(level = "debug", skip(self, context, demand_type), err)]
+    async fn on_timer<C>(
+        &self,
+        context: C,
+        trigger: Trigger,
+        demand_type: DemandType,
+    ) -> Result<(), Self::Error>
     where
         C: EventContext,
     {
+        let _ = demand_type; // Not used in Python handler
+
+        // Only process application timers; internal timers are handled by middleware
+        if trigger.timer_type != TimerType::Application {
+            return Ok(());
+        }
         // Propagate tracing context to Python
         let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
         self.0
             .propagator
             .inject_context(&trigger.span().context(), &mut serialized_context);
 
-        let shutdown_future = context.on_shutdown();
+        let cancel_future = context.on_cancel();
         let timer_context = TimerExecutionContext {
             timer_class: &self.0.timer_class,
             event_class: &self.0.event_class,
@@ -297,19 +316,27 @@ impl FallibleHandler for PythonHandler {
                 result?;
             }
 
-            // Handle shutdown request
-            () = shutdown_future => {
-                debug!("shutdown signal received; cancelling timer task");
+            // Handle cancel request
+            () = cancel_future => {
+                debug!("cancel signal received; cancelling timer task");
                 cancel_task(&self.0.event_set_method, shutdown_event)?;
 
                 debug!("waiting for timer task to cleanup");
                 complete_future.await?;
 
-                debug!("timer task shutdown");
+                debug!("timer task cancelled");
             }
         }
 
         Ok(())
+    }
+
+    /// Shuts down the handler.
+    ///
+    /// This is a no-op for the Python handler since resources are managed
+    /// by the Python runtime through garbage collection.
+    async fn shutdown(self) {
+        // No cleanup required - Python handles resource cleanup via GC
     }
 }
 

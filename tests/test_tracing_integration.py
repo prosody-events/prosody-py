@@ -56,6 +56,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 
 import pytest
+import tsasync
 
 # OpenTelemetry dependencies (required for this test)
 from opentelemetry import trace
@@ -77,8 +78,8 @@ class TracingHandler(EventHandler):
     """Test handler that creates spans and schedules timers with proper tracing"""
 
     def __init__(self):
-        self.message_received_event = asyncio.Event()
-        self.timer_fired_event = asyncio.Event()
+        self.message_received_event = tsasync.Event()
+        self.timer_fired_event = tsasync.Event()
         self.tracer = trace.get_tracer("prosody-python-test")
         self.logger = logger
 
