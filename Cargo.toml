@@ -19,7 +19,17 @@ name = "prosody"
 chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.31"
-prosody = { git = "https://github.com/cincpro/prosody.git", rev = "46fa386dcfe351ab83158e742a43d96ff0a4f7d4" } # replace once we have a package manager
+# x86_64-unknown-linux-gnu: use libz-static
+[target.'cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))'.dependencies]
+prosody = { git = "https://github.com/cincpro/prosody.git", rev = "46fa386dcfe351ab83158e742a43d96ff0a4f7d4", features = [
+    "libz-static",
+] }
+
+# All other targets: use external-lz4
+[target.'cfg(not(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu")))'.dependencies]
+prosody = { git = "https://github.com/cincpro/prosody.git", rev = "46fa386dcfe351ab83158e742a43d96ff0a4f7d4", features = [
+    "external-lz4",
+] }
 pyo3 = { version = "0.27", features = ["chrono"] }
 pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
 tracing-subscriber = "0.3"
