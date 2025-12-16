@@ -337,8 +337,8 @@ class CallbackTimerHandler(EventHandler):
     __test__ = False
 
     def __init__(self, message_callback=None):
-        self.timer_events = asyncio.Queue()
-        self.results = asyncio.Queue()
+        self.timer_events = tsasync.Channel()
+        self.results = tsasync.Channel()
         self.message_callback = message_callback
 
     async def on_message(self, context: Context, message: Message) -> None:
@@ -346,15 +346,15 @@ class CallbackTimerHandler(EventHandler):
             try:
                 result = await self.message_callback(context, message)
                 if result is not None:
-                    await self.results.put({"success": True, **result})
+                    await self.results.send({"success": True, **result})
             except Exception as e:
-                await self.results.put({"success": False, "error": str(e)})
+                await self.results.send({"success": False, "error": str(e)})
         else:
             # Default behavior - just store the message
-            await self.results.put({"context": context, "message": message})
+            await self.results.send({"context": context, "message": message})
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
-        await self.timer_events.put({
+        await self.timer_events.send({
             "context": context,
             "timer": timer
         })
@@ -389,12 +389,12 @@ async def test_timer_scheduling_and_firing(client, random_topic_and_group):
     await client.send(topic, test_key, {"test": "data"})
 
     # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
     assert operation_result["success"], f"Timer scheduling failed: {operation_result.get('error')}"
     scheduled_time = operation_result["scheduled_time"]
 
     # Wait for timer to fire (with some tolerance)
-    timer_event = await asyncio.wait_for(handler.timer_events.get(), timeout=5.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=5.0)
 
     assert timer_event["timer"].key == test_key
     # Allow 1 second tolerance for timer precision
@@ -436,13 +436,13 @@ async def test_timer_unschedule(client, random_topic_and_group):
     await client.send(topic, test_key, {"test": "data"})
 
     # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
     assert operation_result["success"], f"Timer unschedule operation failed: {operation_result.get('error')}"
     assert operation_result["remaining_timers"] == 1
     expected_timer_time = operation_result["expected_timer_time"]
 
     # Wait for the remaining timer to fire
-    timer_event = await asyncio.wait_for(handler.timer_events.get(), timeout=6.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=6.0)
 
     # Should be the second timer
     time_diff = abs((timer_event["timer"].time - expected_timer_time).total_seconds())
@@ -483,13 +483,13 @@ async def test_timer_clear_and_schedule(client, random_topic_and_group):
     await client.send(topic, test_key, {"test": "data"})
 
     # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
     assert operation_result["success"], f"Clear and schedule operation failed: {operation_result.get('error')}"
     assert operation_result["remaining_timers"] == 1
     new_timer_time = operation_result["new_timer_time"]
 
     # Wait for the new timer to fire
-    timer_event = await asyncio.wait_for(handler.timer_events.get(), timeout=4.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=4.0)
 
     # Should be the new timer
     time_diff = abs((timer_event["timer"].time - new_timer_time).total_seconds())
@@ -529,13 +529,13 @@ async def test_timer_clear_scheduled(client, random_topic_and_group):
     await client.send(topic, test_key, {"test": "data"})
 
     # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
     assert operation_result["success"], f"Clear all operation failed: {operation_result.get('error')}"
     assert operation_result["remaining_timers"] == 0
 
     # Wait to ensure no timers fire
     try:
-        await asyncio.wait_for(handler.timer_events.get(), timeout=6.0)
+        await asyncio.wait_for(handler.timer_events.receive(), timeout=6.0)
         assert False, "No timers should have fired after clearing"
     except asyncio.TimeoutError:
         # This is expected - no timers should fire
@@ -578,7 +578,7 @@ async def test_timer_scheduled_retrieval(client, random_topic_and_group):
     await client.send(topic, test_key, {"test": "data"})
 
     # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
     assert operation_result["success"], f"Scheduled retrieval operation failed: {operation_result.get('error')}"
     assert operation_result["scheduled_count"] == 3
 
