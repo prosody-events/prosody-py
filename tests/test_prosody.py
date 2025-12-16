@@ -83,12 +83,33 @@ async def test_client_source_system(client):
 
 async def test_client_subscribe_unsubscribe(client):
     # Test subscribing and unsubscribing a handler
-    handler = TestHandler()
-    await client.subscribe(handler)
-    assert await client.consumer_state() == "running"
+    import asyncio
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+    logger = logging.getLogger(__name__)
 
+    logger.info(f"TEST: Starting test_client_subscribe_unsubscribe")
+    logger.info(f"TEST: Current event loop: {asyncio.get_running_loop()}")
+
+    handler = TestHandler()
+    logger.info(f"TEST: Created handler, about to call subscribe()")
+
+    await client.subscribe(handler)
+    logger.info(f"TEST: subscribe() completed")
+
+    state = await client.consumer_state()
+    logger.info(f"TEST: consumer_state() = {state}")
+    assert state == "running"
+
+    logger.info(f"TEST: About to call unsubscribe()")
     await client.unsubscribe()
-    assert await client.consumer_state() == "configured"
+    logger.info(f"TEST: unsubscribe() completed")
+
+    state = await client.consumer_state()
+    logger.info(f"TEST: consumer_state() = {state}")
+    assert state == "configured"
+
+    logger.info(f"TEST: test_client_subscribe_unsubscribe completed")
 
 
 async def test_send_and_receive_message(client, random_topic_and_group):
