@@ -41,9 +41,6 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     initialize_tracing::<Identity>(None)
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
-    // Initialize logging for the module
-    pyo3_log::init();
-
     // Add classes to the module
     prosody_module.add_class::<ProsodyClient>()?;
 
