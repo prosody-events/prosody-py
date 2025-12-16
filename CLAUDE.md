@@ -43,3 +43,16 @@ Services:
 ### Thread Safety
 
 Tests use `tsasync.Event` and `tsasync.Channel` instead of `asyncio.Event` and `asyncio.Queue` because handlers are called from Rust threads, not the Python event loop thread. Standard asyncio primitives are not thread-safe for cross-thread signaling.
+
+### Code Quality
+
+Always run clippy and format before committing:
+
+```bash
+cargo clippy
+cargo +nightly fmt
+```
+
+Both must pass with no warnings or errors.
+
+**Lint allows**: Do not add `#[allow(...)]` attributes without asking the user for permission first. All clippy and rustc warnings should be fixed properly, not suppressed.

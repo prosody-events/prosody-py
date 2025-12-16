@@ -10,7 +10,7 @@
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{IntoPyDict, PyDict};
 use std::fmt::Debug;
 use std::fmt::Write as _;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
@@ -28,10 +28,16 @@ const CHANNEL_CAPACITY: usize = 1024;
 /// A log event ready to be forwarded to Python, containing all metadata
 /// needed to create an idiomatic Python `LogRecord`.
 struct LogEvent {
-    /// Python logging level (ERROR=40, WARNING=30, INFO=20, DEBUG=10)
-    level: u32,
+    /// Python logging level (ERROR=40, WARNING=30, INFO=20, DEBUG=10, TRACE=5)
+    level: u8,
     /// Logger name (Rust module path like `prosody::consumer::middleware`)
     name: String,
+    /// Source file path from Rust (if available)
+    pathname: Option<String>,
+    /// Source line number (if available)
+    lineno: Option<u32>,
+    /// Function/span name
+    func_name: String,
     /// The formatted log message
     msg: String,
     /// Additional structured fields from tracing as key-value pairs
@@ -115,7 +121,7 @@ fn worker_loop(receiver: Receiver<LogEvent>, get_logger: Py<PyAny>) {
 /// Forwards a log event to Python's logging system using idiomatic `LogRecord`.
 ///
 /// Creates a proper Python `LogRecord` with source location metadata (pathname,
-/// lineno, funcName) so Python formatters can display Rust source locations.
+/// lineno, `funcName`) so Python formatters can display Rust source locations.
 fn forward_to_python(py: Python, get_logger: &Py<PyAny>, event: &LogEvent) -> PyResult<()> {
     let logger = get_logger.call1(py, (&event.name,))?;
 
@@ -134,25 +140,49 @@ fn forward_to_python(py: Python, get_logger: &Py<PyAny>, event: &LogEvent) -> Py
         extra.set_item(key, value)?;
     }
 
-    // Build kwargs for _log to override LogRecord fields
-    let kwargs = PyDict::new(py);
-    kwargs.set_item("extra", extra)?;
-    kwargs.set_item("stack_info", false)?;
-    kwargs.set_item("exc_info", py.None())?;
+    // Create a proper LogRecord using makeRecord with all Rust source metadata
+    // makeRecord signature: makeRecord(name, level, fn, lno, msg, args, exc_info,
+    // func=None, extra=None, sinfo=None)
+    //
+    // For pathname and lineno, we pass the actual values if available, otherwise
+    // we pass empty string / 0 as Python's logging module requires these positional
+    // args but will display them correctly when using standard formatters.
+    let pathname = event.pathname.as_deref().unwrap_or("");
+    let lineno = event.lineno.unwrap_or(0);
 
-    // Call _log to create the log record
-    // Python signature: _log(level, msg, args, exc_info=None, extra=None, stack_info=False)
-    logger.call_method(py, "_log", (event.level, &event.msg, ()), Some(&kwargs))?;
+    let kwargs = [
+        (
+            "func",
+            event.func_name.as_str().into_pyobject(py)?.into_any(),
+        ),
+        ("extra", extra.into_any()),
+        ("sinfo", py.None().into_bound(py).into_any()),
+    ]
+    .into_py_dict(py)?;
 
-    // For truly idiomatic logging, we'd use makeRecord to set pathname/lineno/funcName
-    // but that requires more complex integration. The extra dict approach is simpler
-    // and works with structured logging libraries like structlog.
+    let record = logger.call_method(
+        py,
+        "makeRecord",
+        (
+            &event.name, // name
+            event.level, // level
+            pathname,    // fn (filename/pathname)
+            lineno,      // lno (line number)
+            &event.msg,  // msg
+            (),          // args (empty tuple)
+            py.None(),   // exc_info
+        ),
+        Some(&kwargs),
+    )?;
+
+    // Handle the record through the logger
+    logger.call_method1(py, "handle", (record,))?;
 
     Ok(())
 }
 
 /// Map tracing level to Python logging level.
-const fn level_to_python(level: Level) -> u32 {
+const fn level_to_python(level: Level) -> u8 {
     match level {
         Level::ERROR => 40, // logging.ERROR
         Level::WARN => 30,  // logging.WARNING
@@ -178,22 +208,9 @@ impl MessageVisitor {
 }
 
 impl Visit for MessageVisitor {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "message" {
-            value.clone_into(&mut self.message);
-        } else {
-            self.fields
-                .push((field.name().to_owned(), value.to_owned()));
-        }
-    }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        if field.name() == "message" {
-            self.message = format!("{value:?}");
-        } else {
-            self.fields
-                .push((field.name().to_owned(), format!("{value:?}")));
-        }
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        self.fields
+            .push((field.name().to_owned(), value.to_string()));
     }
 
     fn record_i64(&mut self, field: &Field, value: i64) {
@@ -211,9 +228,22 @@ impl Visit for MessageVisitor {
             .push((field.name().to_owned(), value.to_string()));
     }
 
-    fn record_f64(&mut self, field: &Field, value: f64) {
-        self.fields
-            .push((field.name().to_owned(), value.to_string()));
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            value.clone_into(&mut self.message);
+        } else {
+            self.fields
+                .push((field.name().to_owned(), value.to_owned()));
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.message = format!("{value:?}");
+        } else {
+            self.fields
+                .push((field.name().to_owned(), format!("{value:?}")));
+        }
     }
 }
 
@@ -242,6 +272,9 @@ where
         let log_event = LogEvent {
             level: level_to_python(*metadata.level()),
             name: metadata.target().to_owned(),
+            pathname: metadata.file().map(ToOwned::to_owned),
+            lineno: metadata.line(),
+            func_name: metadata.name().to_owned(),
             msg,
             extra: visitor.fields,
         };
