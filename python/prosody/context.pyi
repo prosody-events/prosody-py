@@ -51,11 +51,26 @@ class Context:
         """
         ...
     
-    def should_shutdown(self) -> bool:
+    def should_cancel(self) -> bool:
         """
-        Check if shutdown has been requested.
-        
+        Check if cancellation has been requested.
+
+        Cancellation includes both message-level cancellation (e.g., timeout)
+        and partition shutdown.
+
         Returns:
-            True if shutdown has been requested, False otherwise
+            True if cancellation has been requested, False otherwise
+        """
+        ...
+
+    async def on_cancel(self) -> None:
+        """
+        Waits for a cancellation signal.
+
+        Cancellation includes both message-level cancellation (e.g., timeout)
+        and partition shutdown.
+
+        Returns:
+            A coroutine that completes when cancellation is signaled.
         """
         ...

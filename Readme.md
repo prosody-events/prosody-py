@@ -6,15 +6,14 @@ strategies, and integrated OpenTelemetry support for distributed tracing.
 
 ## Features
 
-- Rust-powered Kafka client
-- Message production and consumption support
-- Configurable modes: pipeline, low-latency, and best-effort
-- OpenTelemetry integration for distributed tracing
-- Efficient parallel processing with key-based ordering
-- Intelligent partition pausing for backpressure management
-- Mock Kafka broker support for testing
-- Event type filtering for selectively processing messages
-- Source system tracking to prevent message processing loops
+- **Kafka Consumer**: Per-key ordering with cross-key concurrency, offset management, consumer groups
+- **Kafka Producer**: Idempotent delivery with configurable retries
+- **Timer System**: Persistent scheduled execution backed by Cassandra or in-memory store
+- **Quality of Service**: Fair scheduling limits concurrency and prevents failures from starving fresh traffic. Pipeline mode adds deferred retry and monopolization detection
+- **Distributed Tracing**: OpenTelemetry integration for tracing message flow across services
+- **Backpressure**: Pauses partitions when handlers fall behind
+- **Mocking**: In-memory Kafka broker for tests (`mock=True`)
+- **Failure Handling**: Pipeline (retry forever), Low-Latency (dead letter), Best-Effort (log and skip)
 
 ## Installation
 
@@ -90,21 +89,174 @@ Prosody enables efficient, parallel processing of Kafka messages while maintaini
 - **Concurrent Processing**: Simultaneous processing of different keys
 - **Backpressure Management**: Pause consumption from backed-up partitions
 
+## Quality of Service
+
+All modes use **fair scheduling** to limit concurrency and distribute execution time. Pipeline mode adds **deferred
+retry** and **monopolization detection**.
+
+### Fair Scheduling (All Modes)
+
+The scheduler controls which message runs next and how many run concurrently.
+
+**Virtual Time (VT):** Each key accumulates VT equal to its handler execution time. The scheduler picks the key with the
+lowest VT. A key that runs for 500ms accumulates 500ms of VT; a key that hasn't run recently has zero VT and gets
+priority.
+
+**Two-Class Split:** Normal messages and failure retries have separate VT pools. The scheduler allocates execution time
+between them (default: 70% normal, 30% failure). During a failure spike, retries get at most 30% of execution time—fresh
+messages continue processing.
+
+**Starvation Prevention:** Tasks receive a quadratic priority boost based on wait time. A task waiting 2 minutes
+(configurable) gets maximum boost, overriding VT disadvantage.
+
+### Deferred Retry (Pipeline Mode)
+
+Moves failing keys to timer-based retry so the partition can continue processing other keys.
+
+On transient failure: store the message offset in Cassandra, schedule a timer, return success. The partition advances.
+When the timer fires, reload the message from Kafka and retry.
+
+```python
+# Configure defer behavior
+client = ProsodyClient(
+    group_id="my-consumer-group",
+    subscribed_topics="my-topic",
+    defer_enabled=True,           # Enable deferral (default: True)
+    defer_base=1.0,               # Wait 1s before first retry
+    defer_max_delay=86400.0,      # Cap at 24 hours
+    defer_failure_threshold=0.9,  # Disable when >90% failing
+)
+```
+
+**Failure Rate Gating:** When >90% of recent messages fail, deferral disables. The retry middleware blocks the
+partition, applying backpressure upstream.
+
+### Monopolization Detection (Pipeline Mode)
+
+Rejects keys that consume too much execution time.
+
+The middleware tracks per-key execution time in 5-minute rolling windows. Keys exceeding 90% of window time are rejected
+with a transient error, routing them through defer.
+
+```python
+# Configure monopolization detection
+client = ProsodyClient(
+    group_id="my-consumer-group",
+    subscribed_topics="my-topic",
+    monopolization_enabled=True,     # Enable detection (default: True)
+    monopolization_threshold=0.9,    # Reject keys using >90% of window
+    monopolization_window=300.0,     # 5-minute window
+)
+```
+
+### Handler Timeout
+
+Handlers are automatically cancelled if they exceed a deadline:
+
+```python
+client = ProsodyClient(
+    group_id="my-consumer-group",
+    subscribed_topics="my-topic",
+    timeout=30.0,             # Cancel after 30 seconds
+    stall_threshold=60.0,     # Report unhealthy after 60 seconds
+)
+```
+
+When a handler times out, `context.should_cancel()` returns `True` and `await context.on_cancel()` completes. The handler
+should exit promptly. If not specified, timeout defaults to 80% of `stall_threshold`.
+
 ## Configuration
 
-The `ProsodyClient` constructor accepts these key parameters:
+Configure via constructor options or environment variables. Options fall back to environment variables when unset.
 
-- `bootstrap_servers` (str | list[str]): Kafka bootstrap servers (required)
-- `group_id` (str): Consumer group ID (required for consumption)
-- `subscribed_topics` (str | list[str]): Topics to subscribe to (required for consumption)
-- `source_system` (str): Identifier for the producing system to prevent loops (defaults to group_id)
-- `allowed_events` (str | list[str]): Prefixes of event types to process (processes all if unspecified)
-- `mode` (str): 'pipeline' (default), 'low-latency', or 'best-effort'
+### Core
 
-Additional optional parameters control behavior like message committal, polling intervals, and retry logic. Most
-parameters can be set via environment variables (e.g., `PROSODY_BOOTSTRAP_SERVERS`).
+| Option / Environment Variable           | Description                                       | Default      |
+|-----------------------------------------|---------------------------------------------------|--------------|
+| `bootstrap_servers` / `PROSODY_BOOTSTRAP_SERVERS` | Kafka servers to connect to             | -            |
+| `group_id` / `PROSODY_GROUP_ID`         | Consumer group name                               | -            |
+| `subscribed_topics` / `PROSODY_SUBSCRIBED_TOPICS` | Topics to read from                     | -            |
+| `allowed_events` / `PROSODY_ALLOWED_EVENTS` | Only process events matching these prefixes   | (all)        |
+| `source_system` / `PROSODY_SOURCE_SYSTEM` | Tag for outgoing messages (prevents reprocessing)| `<group_id>` |
+| `mock` / `PROSODY_MOCK`                 | Use in-memory Kafka for testing                   | False        |
 
-Refer to the API documentation for detailed information on all parameters and their default values.
+### Consumer
+
+| Option / Environment Variable           | Description                                          | Default                |
+|-----------------------------------------|------------------------------------------------------|------------------------|
+| `max_concurrency` / `PROSODY_MAX_CONCURRENCY` | Max messages being processed simultaneously    | 32                     |
+| `max_uncommitted` / `PROSODY_MAX_UNCOMMITTED` | Max queued messages before pausing consumption | 64                     |
+| `max_enqueued_per_key` / `PROSODY_MAX_ENQUEUED_PER_KEY` | Max queued messages per key before pausing | 8                  |
+| `timeout` / `PROSODY_TIMEOUT`           | Cancel handler if it runs longer than this           | 80% of stall threshold |
+| `commit_interval` / `PROSODY_COMMIT_INTERVAL` | How often to save progress to Kafka            | 1s                     |
+| `poll_interval` / `PROSODY_POLL_INTERVAL` | How often to fetch new messages from Kafka         | 100ms                  |
+| `shutdown_timeout` / `PROSODY_SHUTDOWN_TIMEOUT` | Wait this long for in-flight work before force-quit | 30s             |
+| `stall_threshold` / `PROSODY_STALL_THRESHOLD` | Report unhealthy if no progress for this long  | 5m                     |
+| `probe_port` / `PROSODY_PROBE_PORT`     | HTTP port for health checks (None to disable)        | 8000                   |
+| `failure_topic` / `PROSODY_FAILURE_TOPIC` | Send unprocessable messages here (dead letter queue) | -                    |
+| `idempotence_cache_size` / `PROSODY_IDEMPOTENCE_CACHE_SIZE` | Track this many message IDs to skip duplicates | 4096          |
+| `slab_size` / `PROSODY_SLAB_SIZE`       | Timer storage granularity (rarely needs changing)    | 1h                     |
+
+### Producer
+
+| Option / Environment Variable           | Description                     | Default |
+|-----------------------------------------|---------------------------------|---------|
+| `send_timeout` / `PROSODY_SEND_TIMEOUT` | Give up sending after this long | 1s      |
+
+### Retry
+
+When a handler fails, retry with exponential backoff:
+
+| Option / Environment Variable           | Description                       | Default |
+|-----------------------------------------|-----------------------------------|---------|
+| `max_retries` / `PROSODY_MAX_RETRIES`   | Give up after this many attempts  | 3       |
+| `retry_base` / `PROSODY_RETRY_BASE`     | Wait this long before first retry | 20ms    |
+| `max_retry_delay` / `PROSODY_RETRY_MAX_DELAY` | Never wait longer than this  | 5m      |
+
+### Deferral (Pipeline Mode)
+
+| Option / Environment Variable           | Description                                       | Default |
+|-----------------------------------------|---------------------------------------------------|---------|
+| `defer_enabled` / `PROSODY_DEFER_ENABLED` | Enable deferral for new messages                | true    |
+| `defer_base` / `PROSODY_DEFER_BASE`     | Wait this long before first deferred retry        | 1s      |
+| `defer_max_delay` / `PROSODY_DEFER_MAX_DELAY` | Never wait longer than this                 | 24h     |
+| `defer_failure_threshold` / `PROSODY_DEFER_FAILURE_THRESHOLD` | Disable deferral when failure rate exceeds this | 0.9 |
+| `defer_failure_window` / `PROSODY_DEFER_FAILURE_WINDOW` | Measure failure rate over this time window | 5m     |
+| `defer_cache_size` / `PROSODY_DEFER_CACHE_SIZE` | Track this many deferred keys in memory     | 1024    |
+| `defer_seek_timeout` / `PROSODY_DEFER_SEEK_TIMEOUT` | Timeout when loading deferred messages    | 30s     |
+| `defer_discard_threshold` / `PROSODY_DEFER_DISCARD_THRESHOLD` | Read optimization (rarely needs changing) | 100  |
+
+### Monopolization Detection (Pipeline Mode)
+
+| Option / Environment Variable           | Description                             | Default |
+|-----------------------------------------|-----------------------------------------|---------|
+| `monopolization_enabled` / `PROSODY_MONOPOLIZATION_ENABLED` | Enable hot key protection   | true    |
+| `monopolization_threshold` / `PROSODY_MONOPOLIZATION_THRESHOLD` | Max handler time as fraction of window | 0.9 |
+| `monopolization_window` / `PROSODY_MONOPOLIZATION_WINDOW` | Measurement window            | 5m      |
+| `monopolization_cache_size` / `PROSODY_MONOPOLIZATION_CACHE_SIZE` | Max distinct keys to track  | 8192    |
+
+### Fair Scheduling (All Modes)
+
+| Option / Environment Variable           | Description                                                      | Default |
+|-----------------------------------------|------------------------------------------------------------------|---------|
+| `scheduler_failure_weight` / `PROSODY_SCHEDULER_FAILURE_WEIGHT` | Fraction of processing time reserved for retries | 0.3    |
+| `scheduler_max_wait` / `PROSODY_SCHEDULER_MAX_WAIT` | Messages waiting this long get maximum priority          | 2m      |
+| `scheduler_wait_weight` / `PROSODY_SCHEDULER_WAIT_WEIGHT` | Priority boost for waiting messages (higher = more aggressive) | 200.0 |
+| `scheduler_cache_size` / `PROSODY_SCHEDULER_CACHE_SIZE` | Max distinct keys to track                             | 8192    |
+
+### Cassandra
+
+Persistent storage for timers and deferred retries (not needed if `mock=True`):
+
+| Option / Environment Variable           | Description                        | Default |
+|-----------------------------------------|------------------------------------|---------|
+| `cassandra_nodes` / `PROSODY_CASSANDRA_NODES` | Servers to connect to (host:port) | -      |
+| `cassandra_keyspace` / `PROSODY_CASSANDRA_KEYSPACE` | Keyspace name              | prosody |
+| `cassandra_user` / `PROSODY_CASSANDRA_USER` | Username                         | -       |
+| `cassandra_password` / `PROSODY_CASSANDRA_PASSWORD` | Password                   | -       |
+| `cassandra_datacenter` / `PROSODY_CASSANDRA_DATACENTER` | Prefer this datacenter for queries | - |
+| `cassandra_rack` / `PROSODY_CASSANDRA_RACK` | Prefer this rack for queries     | -       |
+| `cassandra_retention` / `PROSODY_CASSANDRA_RETENTION` | Delete data older than this | 1y     |
 
 ## Liveness and Readiness Probes
 
@@ -739,7 +891,8 @@ Represents the context of a Kafka message, providing timer scheduling methods:
 - `unschedule(time: datetime) -> None`: Removes a timer scheduled for the specified time
 - `clear_scheduled() -> None`: Removes all scheduled timers
 - `scheduled() -> List[datetime]`: Returns a list of all scheduled timer times
-- `should_shutdown() -> bool`: Check if shutdown has been requested
+- `should_cancel() -> bool`: Check if cancellation has been requested (includes timeout and shutdown)
+- `on_cancel() -> Coroutine`: Awaitable that completes when cancellation is signaled
 
 ### Timer
 

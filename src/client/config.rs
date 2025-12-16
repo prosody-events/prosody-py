@@ -6,13 +6,17 @@
 
 use crate::client::ProsodyClient;
 use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
+use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
-use prosody::consumer::failure::retry::RetryConfigurationBuilder;
-use prosody::consumer::failure::topic::FailureTopicConfigurationBuilder;
-use prosody::high_level::HighLevelClient;
+use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
+use prosody::consumer::middleware::monopolization::MonopolizationConfigurationBuilder;
+use prosody::consumer::middleware::retry::RetryConfigurationBuilder;
+use prosody::consumer::middleware::scheduler::SchedulerConfigurationBuilder;
+use prosody::consumer::middleware::timeout::TimeoutConfigurationBuilder;
+use prosody::consumer::middleware::topic::FailureTopicConfigurationBuilder;
 use prosody::high_level::mode::{Mode, ModeError};
+use prosody::high_level::{ConsumerBuilders, HighLevelClient};
 use prosody::producer::ProducerConfigurationBuilder;
-use prosody::timers::store::cassandra::CassandraConfigurationBuilder;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
@@ -48,12 +52,20 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
 
     // If no config is provided, create a client with default configurations
     let Some(config) = config else {
+        let consumer_builders = ConsumerBuilders {
+            consumer: ConsumerConfigurationBuilder::default(),
+            retry: RetryConfigurationBuilder::default(),
+            failure_topic: FailureTopicConfigurationBuilder::default(),
+            scheduler: SchedulerConfigurationBuilder::default(),
+            monopolization: MonopolizationConfigurationBuilder::default(),
+            defer: DeferConfigurationBuilder::default(),
+            timeout: TimeoutConfigurationBuilder::default(),
+        };
+
         let client = HighLevelClient::new(
             Mode::default(),
             &mut ProducerConfigurationBuilder::default(),
-            &ConsumerConfigurationBuilder::default(),
-            &RetryConfigurationBuilder::default(),
-            &FailureTopicConfigurationBuilder::default(),
+            &consumer_builders,
             &CassandraConfigurationBuilder::default(),
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -76,17 +88,13 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     };
 
     let mut producer_config = build_producer_config(config)?;
-    let consumer_config = build_consumer_config(config)?;
-    let retry_config = build_retry_config(config)?;
-    let failure_topic_config = build_failure_topic_config(config)?;
+    let consumer_builders = build_consumer_builders(config)?;
     let cassandra_config = build_cassandra_config(config)?;
 
     let client = HighLevelClient::new(
         mode,
         &mut producer_config,
-        &consumer_config,
-        &retry_config,
-        &failure_topic_config,
+        &consumer_builders,
         &cassandra_config,
     )
     .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
@@ -175,10 +183,6 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.idempotence_cache_size(idempotence_cache_size.extract::<usize>()?);
     }
 
-    if let Some(max_concurrency) = config.get_item("max_concurrency")? {
-        builder.max_concurrency(max_concurrency.extract::<usize>()?);
-    }
-
     if let Some(max_uncommitted) = config.get_item("max_uncommitted")? {
         builder.max_uncommitted(max_uncommitted.extract::<usize>()?);
     }
@@ -205,6 +209,10 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
 
     if let Some(probe_port) = config.get_item("probe_port")? {
         builder.probe_port(probe_port.extract::<Option<u16>>()?);
+    }
+
+    if let Some(slab_size) = config.get_item("slab_size")? {
+        builder.slab_size(decode_duration(&slab_size)?);
     }
 
     Ok(builder)
@@ -320,4 +328,183 @@ fn build_cassandra_config(config: &Bound<PyDict>) -> PyResult<CassandraConfigura
     }
 
     Ok(builder)
+}
+
+/// Builds a `SchedulerConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `SchedulerConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_scheduler_config(config: &Bound<PyDict>) -> PyResult<SchedulerConfigurationBuilder> {
+    let mut builder = SchedulerConfigurationBuilder::default();
+
+    if let Some(max_concurrency) = config.get_item("max_concurrency")? {
+        builder.max_concurrency(max_concurrency.extract::<usize>()?);
+    }
+
+    if let Some(failure_weight) = config.get_item("scheduler_failure_weight")? {
+        builder.failure_weight(failure_weight.extract::<f64>()?);
+    }
+
+    if let Some(max_wait) = config.get_item("scheduler_max_wait")? {
+        builder.max_wait(decode_duration(&max_wait)?);
+    }
+
+    if let Some(wait_weight) = config.get_item("scheduler_wait_weight")? {
+        builder.wait_weight(wait_weight.extract::<f64>()?);
+    }
+
+    if let Some(cache_size) = config.get_item("scheduler_cache_size")? {
+        builder.cache_size(cache_size.extract::<usize>()?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `MonopolizationConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed
+/// `MonopolizationConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_monopolization_config(
+    config: &Bound<PyDict>,
+) -> PyResult<MonopolizationConfigurationBuilder> {
+    let mut builder = MonopolizationConfigurationBuilder::default();
+
+    if let Some(enabled) = config.get_item("monopolization_enabled")? {
+        builder.enabled(enabled.extract::<bool>()?);
+    }
+
+    if let Some(threshold) = config.get_item("monopolization_threshold")? {
+        builder.monopolization_threshold(threshold.extract::<f64>()?);
+    }
+
+    if let Some(window) = config.get_item("monopolization_window")? {
+        builder.window_duration(decode_duration(&window)?);
+    }
+
+    if let Some(cache_size) = config.get_item("monopolization_cache_size")? {
+        builder.cache_size(cache_size.extract::<usize>()?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `DeferConfigurationBuilder` from the provided Python configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `DeferConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_defer_config(config: &Bound<PyDict>) -> PyResult<DeferConfigurationBuilder> {
+    let mut builder = DeferConfigurationBuilder::default();
+
+    if let Some(enabled) = config.get_item("defer_enabled")? {
+        builder.enabled(enabled.extract::<bool>()?);
+    }
+
+    if let Some(base) = config.get_item("defer_base")? {
+        builder.base(decode_duration(&base)?);
+    }
+
+    if let Some(max_delay) = config.get_item("defer_max_delay")? {
+        builder.max_delay(decode_duration(&max_delay)?);
+    }
+
+    if let Some(failure_threshold) = config.get_item("defer_failure_threshold")? {
+        builder.failure_threshold(failure_threshold.extract::<f64>()?);
+    }
+
+    if let Some(failure_window) = config.get_item("defer_failure_window")? {
+        builder.failure_window(decode_duration(&failure_window)?);
+    }
+
+    if let Some(cache_size) = config.get_item("defer_cache_size")? {
+        builder.cache_size(cache_size.extract::<usize>()?);
+    }
+
+    if let Some(seek_timeout) = config.get_item("defer_seek_timeout")? {
+        builder.seek_timeout(decode_duration(&seek_timeout)?);
+    }
+
+    if let Some(discard_threshold) = config.get_item("defer_discard_threshold")? {
+        builder.discard_threshold(discard_threshold.extract::<i64>()?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `TimeoutConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `TimeoutConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_timeout_config(config: &Bound<PyDict>) -> PyResult<TimeoutConfigurationBuilder> {
+    let mut builder = TimeoutConfigurationBuilder::default();
+
+    if let Some(timeout) = config.get_item("timeout")? {
+        builder.timeout(Some(decode_duration(&timeout)?));
+    }
+
+    Ok(builder)
+}
+
+/// Builds `ConsumerBuilders` from the provided Python configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `ConsumerBuilders`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders> {
+    Ok(ConsumerBuilders {
+        consumer: build_consumer_config(config)?,
+        retry: build_retry_config(config)?,
+        failure_topic: build_failure_topic_config(config)?,
+        scheduler: build_scheduler_config(config)?,
+        monopolization: build_monopolization_config(config)?,
+        defer: build_defer_config(config)?,
+        timeout: build_timeout_config(config)?,
+    })
 }
