@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.3](https://github.com/cincpro/prosody-py/compare/v2.0.2...v2.0.3) (2025-12-16)
+
+
+### Bug Fixes
+
+* update prosody to fix cross-topic key collisions ([#103](https://github.com/cincpro/prosody-py/issues/103)) ([432d71e](https://github.com/cincpro/prosody-py/commit/432d71e243c36254974b5640e536c82934f05da0))
+
 ## [2.0.2](https://github.com/cincpro/prosody-py/compare/v2.0.1...v2.0.2) (2025-12-16)
 
 
