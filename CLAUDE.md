@@ -20,11 +20,13 @@ source .venv/bin/activate
 # Build and install the package (required before running tests)
 maturin develop --extras dev
 
-# Run tests
-pytest
+# Run tests and save output to a file for reference
+pytest -v 2>&1 | tee /tmp/pytest-output.txt
 ```
 
 The `maturin develop` step compiles the Rust code and installs the package in development mode. Skipping this step will run tests against stale code.
+
+**Save test output**: Always redirect test output to a file (e.g., using `tee` or `>`) so you can refer back to it without re-running tests. Avoid using `head`, `tail`, or `grep` on test output streams as this often leads to needing to re-run tests multiple times.
 
 ### Local Services
 
