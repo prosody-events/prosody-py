@@ -530,7 +530,7 @@ async def test_timer_scheduling_and_firing(client, random_topic_and_group):
     scheduled_time = operation_result["scheduled_time"]
 
     logger.debug("TEST: Waiting for timer to fire...")
-    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=10.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: Timer fired")
 
     assert timer_event["timer"].key == test_key
@@ -588,7 +588,7 @@ async def test_timer_unschedule(client, random_topic_and_group):
     expected_timer_time = operation_result["expected_timer_time"]
 
     logger.debug("TEST: Waiting for timer to fire...")
-    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=10.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Timer fired")
 
     time_diff = abs((timer_event["timer"].time - expected_timer_time).total_seconds())
@@ -645,7 +645,7 @@ async def test_timer_clear_and_schedule(client, random_topic_and_group):
     new_timer_time = operation_result["new_timer_time"]
 
     logger.debug("TEST: Waiting for timer to fire...")
-    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=10.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Timer fired")
 
     time_diff = abs((timer_event["timer"].time - new_timer_time).total_seconds())
