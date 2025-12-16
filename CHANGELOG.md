@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.0](https://github.com/cincpro/prosody-py/compare/v1.3.0...v2.0.0) (2025-12-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* add QoS middleware and rename shutdown to cancel ([#95](https://github.com/cincpro/prosody-py/issues/95))
+
+### Features
+
+* add QoS middleware and rename shutdown to cancel ([#95](https://github.com/cincpro/prosody-py/issues/95)) ([5a11b5d](https://github.com/cincpro/prosody-py/commit/5a11b5dabeb384d74aca426c0cf20c819efeab74))
+
+
+### Bug Fixes
+
+* replace pyo3-log with non-blocking Python logging layer ([#98](https://github.com/cincpro/prosody-py/issues/98)) ([169d7ec](https://github.com/cincpro/prosody-py/commit/169d7ec5e203875878cdcb725f2a0f5b0d958125))
+* use thread-safe channels in timer tests ([#97](https://github.com/cincpro/prosody-py/issues/97)) ([ca80186](https://github.com/cincpro/prosody-py/commit/ca8018674017a8a74d23e8460eb48e55cdf77d45))
+
 ## [1.3.0](https://github.com/cincpro/prosody-py/compare/v1.2.0...v1.3.0) (2025-09-22)
 
 
