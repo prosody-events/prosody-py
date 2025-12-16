@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 # Timer precision tolerance for tests (in seconds)
 TIMER_TOLERANCE_SECONDS = 1
 
+# Default timeout for all async operations (in seconds)
+DEFAULT_TIMEOUT = 30.0
+
 provider = TracerProvider()
 
 # Sets the global default tracer provider
@@ -65,7 +68,7 @@ async def random_topic_and_group():
     logger.debug("FIXTURE: AdminClient created")
 
     logger.debug("FIXTURE: Calling create_topic()...")
-    await admin.create_topic(topic, partition_count=4, replication_factor=1)
+    await asyncio.wait_for(admin.create_topic(topic, partition_count=4, replication_factor=1), timeout=DEFAULT_TIMEOUT)
     logger.debug("FIXTURE: create_topic() completed")
 
     logger.debug("FIXTURE: Sleeping 1 second...")
@@ -77,7 +80,7 @@ async def random_topic_and_group():
 
     logger.debug("FIXTURE random_topic_and_group: TEARDOWN STARTING")
     logger.debug("FIXTURE: Calling delete_topic()...")
-    await admin.delete_topic(topic)
+    await asyncio.wait_for(admin.delete_topic(topic), timeout=DEFAULT_TIMEOUT)
     logger.debug("FIXTURE: delete_topic() completed")
     logger.debug("FIXTURE random_topic_and_group: TEARDOWN COMPLETED")
 
@@ -107,12 +110,12 @@ async def client(random_topic_and_group):
 
     logger.debug("FIXTURE client: TEARDOWN STARTING")
     logger.debug("FIXTURE client: Checking consumer_state()...")
-    state = await client.consumer_state()
+    state = await asyncio.wait_for(client.consumer_state(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"FIXTURE client: consumer_state() = {state}")
 
     if state == "running":
         logger.debug("FIXTURE client: Calling unsubscribe()...")
-        await client.unsubscribe()
+        await asyncio.wait_for(client.unsubscribe(), timeout=DEFAULT_TIMEOUT)
         logger.debug("FIXTURE client: unsubscribe() completed")
 
     logger.debug("FIXTURE client: TEARDOWN COMPLETED")
@@ -122,7 +125,7 @@ async def test_client_initialization(client):
     logger.debug("=" * 40)
     logger.debug("TEST test_client_initialization: STARTING")
     assert isinstance(client, ProsodyClient)
-    state = await client.consumer_state()
+    state = await asyncio.wait_for(client.consumer_state(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: consumer_state() = {state}")
     assert state == "configured"
     logger.debug("TEST test_client_initialization: PASSED")
@@ -145,20 +148,20 @@ async def test_client_subscribe_unsubscribe(client):
     logger.debug("TEST: TestHandler created")
 
     logger.debug("TEST: Calling client.subscribe(handler)...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: subscribe() completed")
 
     logger.debug("TEST: Calling consumer_state()...")
-    state = await client.consumer_state()
+    state = await asyncio.wait_for(client.consumer_state(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: consumer_state() = {state}")
     assert state == "running"
 
     logger.debug("TEST: Calling unsubscribe()...")
-    await client.unsubscribe()
+    await asyncio.wait_for(client.unsubscribe(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: unsubscribe() completed")
 
     logger.debug("TEST: Calling consumer_state() again...")
-    state = await client.consumer_state()
+    state = await asyncio.wait_for(client.consumer_state(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: consumer_state() = {state}")
     assert state == "configured"
 
@@ -176,18 +179,18 @@ async def test_send_and_receive_message(client, random_topic_and_group):
     handler = TestHandler()
 
     logger.debug("TEST: Calling subscribe()...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: subscribe() completed")
 
     test_key = "test-key"
     test_payload = {"content": "Hello, Kafka!"}
     logger.debug(f"TEST: Sending message key={test_key}")
     with tracer.start_as_current_span("send"):
-        await client.send(topic, test_key, test_payload)
+        await asyncio.wait_for(client.send(topic, test_key, test_payload), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: send() completed")
 
     logger.debug("TEST: Waiting for message...")
-    await asyncio.wait_for(handler.message_received.wait(), timeout=30.0)
+    await asyncio.wait_for(handler.message_received.wait(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message received")
 
     assert len(handler.messages) == 1
@@ -233,7 +236,7 @@ async def test_multiple_messages(client, random_topic_and_group):
     topic, _ = random_topic_and_group
     logger.debug("TEST: Creating handler and subscribing...")
     handler = TestHandler()
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     messages = [
@@ -245,16 +248,16 @@ async def test_multiple_messages(client, random_topic_and_group):
     logger.debug(f"TEST: Sending {len(messages)} messages...")
     with tracer.start_as_current_span("send_multiple"):
         for key, payload in messages:
-            await client.send(topic, key, payload)
+            await asyncio.wait_for(client.send(topic, key, payload), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: All messages sent")
 
     async def wait_for_messages():
         while handler.message_count < len(messages):
-            await handler.message_received.wait()
+            await asyncio.wait_for(handler.message_received.wait(), timeout=DEFAULT_TIMEOUT)
             handler.message_received.clear()
 
     logger.debug("TEST: Waiting for all messages...")
-    await asyncio.wait_for(wait_for_messages(), timeout=30.0)
+    await asyncio.wait_for(wait_for_messages(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: All messages received")
 
     assert len(handler.messages) == len(messages)
@@ -284,20 +287,20 @@ async def test_same_key_message_order(client, random_topic_and_group):
     logger.debug(f"TEST: Sending {len(messages)} messages with same key...")
     with tracer.start_as_current_span("send_same_key_messages"):
         for payload in messages:
-            await client.send(topic, test_key, payload)
+            await asyncio.wait_for(client.send(topic, test_key, payload), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: All messages sent")
 
     logger.debug("TEST: Subscribing...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     async def wait_for_messages():
         while handler.message_count < len(messages):
-            await handler.message_received.wait()
+            await asyncio.wait_for(handler.message_received.wait(), timeout=DEFAULT_TIMEOUT)
             handler.message_received.clear()
 
     logger.debug("TEST: Waiting for all messages...")
-    await asyncio.wait_for(wait_for_messages(), timeout=30.0)
+    await asyncio.wait_for(wait_for_messages(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: All messages received")
 
     assert len(handler.messages) == len(messages)
@@ -345,17 +348,17 @@ async def test_transient_error_decorator(client, random_topic_and_group):
     handler = TransientErrorHandler()
 
     logger.debug("TEST: Subscribing...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     test_key = "test-key"
     test_payload = {"content": "Trigger transient error"}
     logger.debug(f"TEST: Sending message key={test_key}")
-    await client.send(topic, test_key, test_payload)
+    await asyncio.wait_for(client.send(topic, test_key, test_payload), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message sent")
 
     logger.debug("TEST: Waiting for retry...")
-    await asyncio.wait_for(handler.retry_event.wait(), timeout=30.0)
+    await asyncio.wait_for(handler.retry_event.wait(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST test_transient_error_decorator: PASSED")
 
 
@@ -389,17 +392,17 @@ async def test_permanent_error_decorator(client, random_topic_and_group):
     handler = PermanentErrorHandler()
 
     logger.debug("TEST: Subscribing...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     test_key = "test-key"
     test_payload = {"content": "Trigger permanent error"}
     logger.debug(f"TEST: Sending message key={test_key}")
-    await client.send(topic, test_key, test_payload)
+    await asyncio.wait_for(client.send(topic, test_key, test_payload), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message sent")
 
     logger.debug("TEST: Waiting for error...")
-    await asyncio.wait_for(handler.error_raised.wait(), timeout=30.0)
+    await asyncio.wait_for(handler.error_raised.wait(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Error raised, sleeping 5 seconds...")
 
     await asyncio.sleep(5)
@@ -431,13 +434,13 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
     logger.debug("TEST: Client created")
 
     logger.debug("TEST: Subscribing...")
-    await client_with_best_effort.subscribe(handler)
+    await asyncio.wait_for(client_with_best_effort.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     test_key = "test-key"
     test_payload = {"content": "Trigger transient error"}
     logger.debug(f"TEST: Sending message key={test_key}")
-    await client_with_best_effort.send(topic, test_key, test_payload)
+    await asyncio.wait_for(client_with_best_effort.send(topic, test_key, test_payload), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message sent, sleeping 5 seconds...")
 
     await asyncio.sleep(5)
@@ -446,7 +449,7 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
     assert not handler.retry_event.is_set()
 
     logger.debug("TEST: Unsubscribing...")
-    await client_with_best_effort.unsubscribe()
+    await asyncio.wait_for(client_with_best_effort.unsubscribe(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST test_best_effort_mode_does_not_retry: PASSED")
 
 
@@ -504,7 +507,7 @@ async def test_timer_scheduling_and_firing(client, random_topic_and_group):
     async def schedule_timer_callback(context: Context, message: Message):
         logger.debug("schedule_timer_callback: Scheduling timer...")
         scheduled_time = datetime.now(timezone.utc) + timedelta(seconds=2)
-        await context.schedule(scheduled_time)
+        await asyncio.wait_for(context.schedule(scheduled_time), timeout=DEFAULT_TIMEOUT)
         logger.debug(f"schedule_timer_callback: Timer scheduled for {scheduled_time}")
         return {"scheduled_time": scheduled_time}
 
@@ -512,22 +515,22 @@ async def test_timer_scheduling_and_firing(client, random_topic_and_group):
     handler = CallbackTimerHandler(schedule_timer_callback)
 
     logger.debug("TEST: Subscribing...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     test_key = "timer-test-key"
     logger.debug(f"TEST: Sending message key={test_key}")
-    await client.send(topic, test_key, {"test": "data"})
+    await asyncio.wait_for(client.send(topic, test_key, {"test": "data"}), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message sent")
 
     logger.debug("TEST: Waiting for result...")
-    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: Result received: {operation_result}")
     assert operation_result["success"]
     scheduled_time = operation_result["scheduled_time"]
 
     logger.debug("TEST: Waiting for timer to fire...")
-    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=5.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: Timer fired")
 
     assert timer_event["timer"].key == test_key
@@ -548,17 +551,17 @@ async def test_timer_unschedule(client, random_topic_and_group):
         timer1_time = datetime.now(timezone.utc) + timedelta(seconds=3)
         timer2_time = datetime.now(timezone.utc) + timedelta(seconds=4)
 
-        await context.schedule(timer1_time)
-        await context.schedule(timer2_time)
+        await asyncio.wait_for(context.schedule(timer1_time), timeout=DEFAULT_TIMEOUT)
+        await asyncio.wait_for(context.schedule(timer2_time), timeout=DEFAULT_TIMEOUT)
 
-        scheduled = await context.scheduled()
+        scheduled = await asyncio.wait_for(context.scheduled(), timeout=DEFAULT_TIMEOUT)
         logger.debug(f"unschedule_timer_callback: {len(scheduled)} timers scheduled")
         assert len(scheduled) == 2
 
         logger.debug("unschedule_timer_callback: Unscheduling first timer...")
-        await context.unschedule(timer1_time)
+        await asyncio.wait_for(context.unschedule(timer1_time), timeout=DEFAULT_TIMEOUT)
 
-        scheduled_after = await context.scheduled()
+        scheduled_after = await asyncio.wait_for(context.scheduled(), timeout=DEFAULT_TIMEOUT)
         logger.debug(f"unschedule_timer_callback: {len(scheduled_after)} timers remaining")
         return {
             "remaining_timers": len(scheduled_after),
@@ -569,23 +572,23 @@ async def test_timer_unschedule(client, random_topic_and_group):
     handler = CallbackTimerHandler(unschedule_timer_callback)
 
     logger.debug("TEST: Subscribing...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     test_key = "unschedule-test-key"
     logger.debug(f"TEST: Sending message key={test_key}")
-    await client.send(topic, test_key, {"test": "data"})
+    await asyncio.wait_for(client.send(topic, test_key, {"test": "data"}), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message sent")
 
     logger.debug("TEST: Waiting for result...")
-    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: Result: {operation_result}")
     assert operation_result["success"]
     assert operation_result["remaining_timers"] == 1
     expected_timer_time = operation_result["expected_timer_time"]
 
     logger.debug("TEST: Waiting for timer to fire...")
-    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=6.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Timer fired")
 
     time_diff = abs((timer_event["timer"].time - expected_timer_time).total_seconds())
@@ -604,18 +607,18 @@ async def test_timer_clear_and_schedule(client, random_topic_and_group):
         logger.debug("clear_and_schedule_callback: Scheduling timers...")
         timer1_time = datetime.now(timezone.utc) + timedelta(seconds=5)
         timer2_time = datetime.now(timezone.utc) + timedelta(seconds=6)
-        await context.schedule(timer1_time)
-        await context.schedule(timer2_time)
+        await asyncio.wait_for(context.schedule(timer1_time), timeout=DEFAULT_TIMEOUT)
+        await asyncio.wait_for(context.schedule(timer2_time), timeout=DEFAULT_TIMEOUT)
 
-        scheduled_before = await context.scheduled()
+        scheduled_before = await asyncio.wait_for(context.scheduled(), timeout=DEFAULT_TIMEOUT)
         logger.debug(f"clear_and_schedule_callback: {len(scheduled_before)} timers scheduled")
         assert len(scheduled_before) == 2
 
         new_timer_time = datetime.now(timezone.utc) + timedelta(seconds=2)
         logger.debug("clear_and_schedule_callback: Calling clear_and_schedule...")
-        await context.clear_and_schedule(new_timer_time)
+        await asyncio.wait_for(context.clear_and_schedule(new_timer_time), timeout=DEFAULT_TIMEOUT)
 
-        scheduled_after = await context.scheduled()
+        scheduled_after = await asyncio.wait_for(context.scheduled(), timeout=DEFAULT_TIMEOUT)
         logger.debug(f"clear_and_schedule_callback: {len(scheduled_after)} timers remaining")
         return {
             "remaining_timers": len(scheduled_after),
@@ -626,23 +629,23 @@ async def test_timer_clear_and_schedule(client, random_topic_and_group):
     handler = CallbackTimerHandler(clear_and_schedule_callback)
 
     logger.debug("TEST: Subscribing...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     test_key = "clear-schedule-test-key"
     logger.debug(f"TEST: Sending message key={test_key}")
-    await client.send(topic, test_key, {"test": "data"})
+    await asyncio.wait_for(client.send(topic, test_key, {"test": "data"}), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message sent")
 
     logger.debug("TEST: Waiting for result...")
-    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: Result: {operation_result}")
     assert operation_result["success"]
     assert operation_result["remaining_timers"] == 1
     new_timer_time = operation_result["new_timer_time"]
 
     logger.debug("TEST: Waiting for timer to fire...")
-    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=4.0)
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Timer fired")
 
     time_diff = abs((timer_event["timer"].time - new_timer_time).total_seconds())
@@ -663,18 +666,18 @@ async def test_timer_clear_scheduled(client, random_topic_and_group):
         timer2_time = datetime.now(timezone.utc) + timedelta(seconds=4)
         timer3_time = datetime.now(timezone.utc) + timedelta(seconds=5)
 
-        await context.schedule(timer1_time)
-        await context.schedule(timer2_time)
-        await context.schedule(timer3_time)
+        await asyncio.wait_for(context.schedule(timer1_time), timeout=DEFAULT_TIMEOUT)
+        await asyncio.wait_for(context.schedule(timer2_time), timeout=DEFAULT_TIMEOUT)
+        await asyncio.wait_for(context.schedule(timer3_time), timeout=DEFAULT_TIMEOUT)
 
-        scheduled_before = await context.scheduled()
+        scheduled_before = await asyncio.wait_for(context.scheduled(), timeout=DEFAULT_TIMEOUT)
         logger.debug(f"clear_scheduled_callback: {len(scheduled_before)} timers scheduled")
         assert len(scheduled_before) == 3
 
         logger.debug("clear_scheduled_callback: Calling clear_scheduled...")
-        await context.clear_scheduled()
+        await asyncio.wait_for(context.clear_scheduled(), timeout=DEFAULT_TIMEOUT)
 
-        scheduled_after = await context.scheduled()
+        scheduled_after = await asyncio.wait_for(context.scheduled(), timeout=DEFAULT_TIMEOUT)
         logger.debug(f"clear_scheduled_callback: {len(scheduled_after)} timers remaining")
         return {"remaining_timers": len(scheduled_after)}
 
@@ -682,16 +685,16 @@ async def test_timer_clear_scheduled(client, random_topic_and_group):
     handler = CallbackTimerHandler(clear_scheduled_callback)
 
     logger.debug("TEST: Subscribing...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     test_key = "clear-all-test-key"
     logger.debug(f"TEST: Sending message key={test_key}")
-    await client.send(topic, test_key, {"test": "data"})
+    await asyncio.wait_for(client.send(topic, test_key, {"test": "data"}), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message sent")
 
     logger.debug("TEST: Waiting for result...")
-    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: Result: {operation_result}")
     assert operation_result["success"]
     assert operation_result["remaining_timers"] == 0
@@ -716,7 +719,7 @@ async def test_timer_scheduled_retrieval(client, random_topic_and_group):
 
     async def scheduled_retrieval_callback(context: Context, message: Message):
         logger.debug("scheduled_retrieval_callback: Checking initial state...")
-        scheduled_empty = await context.scheduled()
+        scheduled_empty = await asyncio.wait_for(context.scheduled(), timeout=DEFAULT_TIMEOUT)
         assert len(scheduled_empty) == 0
 
         now = datetime.now(timezone.utc)
@@ -728,9 +731,9 @@ async def test_timer_scheduled_retrieval(client, random_topic_and_group):
 
         logger.debug(f"scheduled_retrieval_callback: Scheduling {len(timer_times)} timers...")
         for timer_time in timer_times:
-            await context.schedule(timer_time)
+            await asyncio.wait_for(context.schedule(timer_time), timeout=DEFAULT_TIMEOUT)
 
-        scheduled = await context.scheduled()
+        scheduled = await asyncio.wait_for(context.scheduled(), timeout=DEFAULT_TIMEOUT)
         logger.debug(f"scheduled_retrieval_callback: {len(scheduled)} timers scheduled")
         return {
             "scheduled_count": len(scheduled),
@@ -742,16 +745,16 @@ async def test_timer_scheduled_retrieval(client, random_topic_and_group):
     handler = CallbackTimerHandler(scheduled_retrieval_callback)
 
     logger.debug("TEST: Subscribing...")
-    await client.subscribe(handler)
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Subscribed")
 
     test_key = "scheduled-retrieval-test"
     logger.debug(f"TEST: Sending message key={test_key}")
-    await client.send(topic, test_key, {"test": "data"})
+    await asyncio.wait_for(client.send(topic, test_key, {"test": "data"}), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST: Message sent")
 
     logger.debug("TEST: Waiting for result...")
-    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"TEST: Result: {operation_result}")
     assert operation_result["success"]
     assert operation_result["scheduled_count"] == 3

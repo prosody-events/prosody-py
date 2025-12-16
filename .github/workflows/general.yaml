@@ -66,7 +66,7 @@ jobs:
           python -m venv venv
           source venv/bin/activate
           maturin develop --extras dev
-          pytest
+          pytest -v
         env:
           PROSODY_BOOTSTRAP_SERVERS: localhost:9094
           PROSODY_CASSANDRA_NODES: localhost:9042
