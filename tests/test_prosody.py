@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List
@@ -10,6 +11,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from prosody.prosody import AdminClient
 
 from prosody import ProsodyClient, EventHandler, Message, Context, Timer, permanent, transient
+
+# Use pytest's built-in logging; logs will appear at DEBUG level
+logger = logging.getLogger(__name__)
 
 # Timer precision tolerance for tests (in seconds)
 TIMER_TOLERANCE_SECONDS = 1
@@ -27,36 +31,67 @@ class TestHandler(EventHandler):
     __test__ = False
 
     def __init__(self):
+        logger.debug("TestHandler.__init__() called")
         self.messages: List[Message] = []
         self.message_count = 0
         self.message_received = tsasync.Event()
+        logger.debug("TestHandler.__init__() completed")
 
     async def on_message(self, context: Context, message: Message) -> None:
+        logger.debug(f"TestHandler.on_message() called with key={message.key}")
         with tracer.start_as_current_span("receive"):
             self.messages.append(message)
             self.message_count += 1
             self.message_received.set()
+        logger.debug(f"TestHandler.on_message() completed")
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
-        # Not used in tests, but required by abstract base class
+        logger.debug(f"TestHandler.on_timer() called")
         pass
 
 
 @pytest.fixture
 async def random_topic_and_group():
-    # Generate a random topic and consumer group using a UUID to ensure isolation between tests
+    logger.debug("=" * 40)
+    logger.debug("FIXTURE random_topic_and_group: STARTING")
+    logger.debug(f"FIXTURE: Current event loop: {asyncio.get_running_loop()}")
+
     topic = f"test-topic-{uuid.uuid4().hex}"
     group = f"test-group-{uuid.uuid4().hex}"
+    logger.debug(f"FIXTURE: topic={topic}, group={group}")
+
+    logger.debug("FIXTURE: Creating AdminClient...")
     admin = AdminClient(bootstrap_servers="localhost:9094")
+    logger.debug("FIXTURE: AdminClient created")
+
+    logger.debug("FIXTURE: Calling create_topic()...")
     await admin.create_topic(topic, partition_count=4, replication_factor=1)
+    logger.debug("FIXTURE: create_topic() completed")
+
+    logger.debug("FIXTURE: Sleeping 1 second...")
     await asyncio.sleep(1)
+    logger.debug("FIXTURE: Sleep completed")
+
+    logger.debug("FIXTURE: About to yield topic and group")
     yield topic, group
+
+    logger.debug("FIXTURE random_topic_and_group: TEARDOWN STARTING")
+    logger.debug("FIXTURE: Calling delete_topic()...")
     await admin.delete_topic(topic)
+    logger.debug("FIXTURE: delete_topic() completed")
+    logger.debug("FIXTURE random_topic_and_group: TEARDOWN COMPLETED")
 
 
 @pytest.fixture
 async def client(random_topic_and_group):
+    logger.debug("=" * 40)
+    logger.debug("FIXTURE client: STARTING")
+    logger.debug(f"FIXTURE client: Current event loop: {asyncio.get_running_loop()}")
+
     topic, group = random_topic_and_group
+    logger.debug(f"FIXTURE client: Got topic={topic}, group={group}")
+
+    logger.debug("FIXTURE client: Creating ProsodyClient...")
     client = ProsodyClient(
         bootstrap_servers="localhost:9094",
         source_system="test-send",
@@ -65,58 +100,110 @@ async def client(random_topic_and_group):
         probe_port=None,
         cassandra_nodes="localhost:9042",
     )
+    logger.debug("FIXTURE client: ProsodyClient created")
+
+    logger.debug("FIXTURE client: About to yield client")
     yield client
-    if await client.consumer_state() == "running":
+
+    logger.debug("FIXTURE client: TEARDOWN STARTING")
+    logger.debug("FIXTURE client: Checking consumer_state()...")
+    state = await client.consumer_state()
+    logger.debug(f"FIXTURE client: consumer_state() = {state}")
+
+    if state == "running":
+        logger.debug("FIXTURE client: Calling unsubscribe()...")
         await client.unsubscribe()
+        logger.debug("FIXTURE client: unsubscribe() completed")
+
+    logger.debug("FIXTURE client: TEARDOWN COMPLETED")
 
 
 async def test_client_initialization(client):
-    # Check that the client is an instance of ProsodyClient and in configured state
+    logger.debug("=" * 40)
+    logger.debug("TEST test_client_initialization: STARTING")
     assert isinstance(client, ProsodyClient)
-    assert await client.consumer_state() == "configured"
+    state = await client.consumer_state()
+    logger.debug(f"TEST: consumer_state() = {state}")
+    assert state == "configured"
+    logger.debug("TEST test_client_initialization: PASSED")
 
 
 async def test_client_source_system(client):
-    # Check that the source_system property returns the configured value
+    logger.debug("=" * 40)
+    logger.debug("TEST test_client_source_system: STARTING")
     assert client.source_system == "test-send"
+    logger.debug("TEST test_client_source_system: PASSED")
 
 
 async def test_client_subscribe_unsubscribe(client):
-    # Test subscribing and unsubscribing a handler
-    handler = TestHandler()
-    await client.subscribe(handler)
-    assert await client.consumer_state() == "running"
+    logger.debug("=" * 40)
+    logger.debug("TEST test_client_subscribe_unsubscribe: STARTING")
+    logger.debug(f"TEST: Current event loop: {asyncio.get_running_loop()}")
 
+    logger.debug("TEST: Creating TestHandler...")
+    handler = TestHandler()
+    logger.debug("TEST: TestHandler created")
+
+    logger.debug("TEST: Calling client.subscribe(handler)...")
+    await client.subscribe(handler)
+    logger.debug("TEST: subscribe() completed")
+
+    logger.debug("TEST: Calling consumer_state()...")
+    state = await client.consumer_state()
+    logger.debug(f"TEST: consumer_state() = {state}")
+    assert state == "running"
+
+    logger.debug("TEST: Calling unsubscribe()...")
     await client.unsubscribe()
-    assert await client.consumer_state() == "configured"
+    logger.debug("TEST: unsubscribe() completed")
+
+    logger.debug("TEST: Calling consumer_state() again...")
+    state = await client.consumer_state()
+    logger.debug(f"TEST: consumer_state() = {state}")
+    assert state == "configured"
+
+    logger.debug("TEST test_client_subscribe_unsubscribe: PASSED")
 
 
 async def test_send_and_receive_message(client, random_topic_and_group):
-    # Test sending and receiving a message using the random topic
-    topic, _ = random_topic_and_group
-    handler = TestHandler()
-    await client.subscribe(handler)
+    logger.debug("=" * 40)
+    logger.debug("TEST test_send_and_receive_message: STARTING")
 
-    # Send a test message
+    topic, _ = random_topic_and_group
+    logger.debug(f"TEST: topic={topic}")
+
+    logger.debug("TEST: Creating TestHandler...")
+    handler = TestHandler()
+
+    logger.debug("TEST: Calling subscribe()...")
+    await client.subscribe(handler)
+    logger.debug("TEST: subscribe() completed")
+
     test_key = "test-key"
     test_payload = {"content": "Hello, Kafka!"}
+    logger.debug(f"TEST: Sending message key={test_key}")
     with tracer.start_as_current_span("send"):
         await client.send(topic, test_key, test_payload)
+    logger.debug("TEST: send() completed")
 
-    # Wait for the message to be received
+    logger.debug("TEST: Waiting for message...")
     await asyncio.wait_for(handler.message_received.wait(), timeout=30.0)
+    logger.debug("TEST: Message received")
 
-    # Check if the message was received
     assert len(handler.messages) == 1
     received_message = handler.messages[0]
     assert received_message.topic == topic
     assert received_message.key == test_key
     assert received_message.payload == test_payload
+    logger.debug("TEST test_send_and_receive_message: PASSED")
 
 
 async def test_client_configuration(random_topic_and_group):
-    # Test creating a client with additional configuration options
+    logger.debug("=" * 40)
+    logger.debug("TEST test_client_configuration: STARTING")
+
     topic, group = random_topic_and_group
+    logger.debug("TEST: Creating ProsodyClient with mock=True...")
     client = ProsodyClient(
         bootstrap_servers=["localhost:9092", "localhost:9093"],
         source_system="test-send",
@@ -134,54 +221,57 @@ async def test_client_configuration(random_topic_and_group):
         cassandra_nodes=["localhost:9042", "localhost:9043"],
         mock=True
     )
+    logger.debug("TEST: ProsodyClient created")
     assert isinstance(client, ProsodyClient)
+    logger.debug("TEST test_client_configuration: PASSED")
 
 
 async def test_multiple_messages(client, random_topic_and_group):
-    # Test sending and receiving multiple messages
+    logger.debug("=" * 40)
+    logger.debug("TEST test_multiple_messages: STARTING")
+
     topic, _ = random_topic_and_group
+    logger.debug("TEST: Creating handler and subscribing...")
     handler = TestHandler()
     await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
 
-    # Send multiple test messages
     messages = [
         ("key1", {"content": "Message 1"}),
         ("key2", {"content": "Message 2"}),
         ("key3", {"content": "Message 3"})
     ]
 
+    logger.debug(f"TEST: Sending {len(messages)} messages...")
     with tracer.start_as_current_span("send_multiple"):
         for key, payload in messages:
             await client.send(topic, key, payload)
+    logger.debug("TEST: All messages sent")
 
-    # Wait for all messages to be received
     async def wait_for_messages():
         while handler.message_count < len(messages):
             await handler.message_received.wait()
             handler.message_received.clear()
 
+    logger.debug("TEST: Waiting for all messages...")
     await asyncio.wait_for(wait_for_messages(), timeout=30.0)
+    logger.debug("TEST: All messages received")
 
-    # Check if all messages were received
     assert len(handler.messages) == len(messages)
-
-    # Create sets of expected and received messages for comparison
     expected_messages = set((key, frozenset(payload.items())) for key, payload in messages)
     received_messages = set((msg.key, frozenset(msg.payload.items())) for msg in handler.messages)
-
-    # Check if all sent messages were received, regardless of order
     assert expected_messages == received_messages
-
-    # Verify that all messages have the correct topic
     assert all(msg.topic == topic for msg in handler.messages)
+    logger.debug("TEST test_multiple_messages: PASSED")
 
 
 async def test_same_key_message_order(client, random_topic_and_group):
-    # Test that messages with the same key are received in the order they were sent
+    logger.debug("=" * 40)
+    logger.debug("TEST test_same_key_message_order: STARTING")
+
     topic, _ = random_topic_and_group
     handler = TestHandler()
 
-    # Send multiple test messages with the same key
     test_key = "same-key"
     messages = [
         {"content": "Message 1", "sequence": 1},
@@ -191,120 +281,144 @@ async def test_same_key_message_order(client, random_topic_and_group):
         {"content": "Message 5", "sequence": 5},
     ]
 
+    logger.debug(f"TEST: Sending {len(messages)} messages with same key...")
     with tracer.start_as_current_span("send_same_key_messages"):
         for payload in messages:
             await client.send(topic, test_key, payload)
+    logger.debug("TEST: All messages sent")
 
-    # Subscribe after messages are already on the topic
+    logger.debug("TEST: Subscribing...")
     await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
 
-    # Wait for all messages to be received
     async def wait_for_messages():
         while handler.message_count < len(messages):
             await handler.message_received.wait()
             handler.message_received.clear()
 
+    logger.debug("TEST: Waiting for all messages...")
     await asyncio.wait_for(wait_for_messages(), timeout=30.0)
+    logger.debug("TEST: All messages received")
 
-    # Check if all messages were received
     assert len(handler.messages) == len(messages)
-
-    # Check if messages with the same key were received in the order they were sent
     received_messages = [msg for msg in handler.messages if msg.key == test_key]
     received_sequences = [msg.payload["sequence"] for msg in received_messages]
     expected_sequences = [msg["sequence"] for msg in messages]
 
-    assert received_sequences == expected_sequences, f"Expected sequence {expected_sequences}, but got {received_sequences}"
-
-    # Verify that all messages have the correct topic and key
+    assert received_sequences == expected_sequences
     for msg in received_messages:
         assert msg.topic == topic
         assert msg.key == test_key
+    logger.debug("TEST test_same_key_message_order: PASSED")
 
 
 class TransientErrorHandler(EventHandler):
     def __init__(self):
+        logger.debug("TransientErrorHandler.__init__() called")
         self.received_message = False
         self.retry_event = tsasync.Event()
+        logger.debug("TransientErrorHandler.__init__() completed")
 
     @transient(ValueError)
     async def on_message(self, context: Context, message: Message) -> None:
-        # On first receipt, trigger a transient error; on retry, mark success
+        logger.debug(f"TransientErrorHandler.on_message() called, received_message={self.received_message}")
         if self.received_message:
+            logger.debug("TransientErrorHandler: Setting retry_event")
             self.retry_event.set()
         else:
             self.received_message = True
+            logger.debug("TransientErrorHandler: Raising ValueError")
             raise ValueError("Transient error occurred")
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
-        # Not used in tests, but required by abstract base class
+        logger.debug("TransientErrorHandler.on_timer() called")
         pass
 
 
 @pytest.mark.asyncio
 async def test_transient_error_decorator(client, random_topic_and_group):
-    # Test that the transient error decorator causes a retry
-    topic, _ = random_topic_and_group
-    handler = TransientErrorHandler()
-    await client.subscribe(handler)
+    logger.debug("=" * 40)
+    logger.debug("TEST test_transient_error_decorator: STARTING")
 
-    # Send a test message that triggers a transient error
+    topic, _ = random_topic_and_group
+    logger.debug("TEST: Creating TransientErrorHandler...")
+    handler = TransientErrorHandler()
+
+    logger.debug("TEST: Subscribing...")
+    await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
+
     test_key = "test-key"
     test_payload = {"content": "Trigger transient error"}
-
+    logger.debug(f"TEST: Sending message key={test_key}")
     await client.send(topic, test_key, test_payload)
+    logger.debug("TEST: Message sent")
 
-    # Wait for the message to be retried
+    logger.debug("TEST: Waiting for retry...")
     await asyncio.wait_for(handler.retry_event.wait(), timeout=30.0)
+    logger.debug("TEST test_transient_error_decorator: PASSED")
 
 
 class PermanentErrorHandler(EventHandler):
     def __init__(self):
+        logger.debug("PermanentErrorHandler.__init__() called")
         self.error_raised = tsasync.Event()
         self.message_count = 0
+        logger.debug("PermanentErrorHandler.__init__() completed")
 
     @permanent(ValueError)
     async def on_message(self, context: Context, message: Message) -> None:
-        # Mark that an error occurred and increase the count
+        logger.debug(f"PermanentErrorHandler.on_message() called, count={self.message_count}")
         self.message_count += 1
         self.error_raised.set()
+        logger.debug("PermanentErrorHandler: Raising ValueError")
         raise ValueError("Permanent error occurred")
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
-        # Not used in tests, but required by abstract base class
+        logger.debug("PermanentErrorHandler.on_timer() called")
         pass
 
 
 @pytest.mark.asyncio
 async def test_permanent_error_decorator(client, random_topic_and_group):
-    # Test that the permanent error decorator causes the error to be raised only once
-    topic, _ = random_topic_and_group
-    handler = PermanentErrorHandler()
-    await client.subscribe(handler)
+    logger.debug("=" * 40)
+    logger.debug("TEST test_permanent_error_decorator: STARTING")
 
-    # Send a test message that triggers a permanent error
+    topic, _ = random_topic_and_group
+    logger.debug("TEST: Creating PermanentErrorHandler...")
+    handler = PermanentErrorHandler()
+
+    logger.debug("TEST: Subscribing...")
+    await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
+
     test_key = "test-key"
     test_payload = {"content": "Trigger permanent error"}
-
+    logger.debug(f"TEST: Sending message key={test_key}")
     await client.send(topic, test_key, test_payload)
+    logger.debug("TEST: Message sent")
 
-    # Wait for the error to be raised
+    logger.debug("TEST: Waiting for error...")
     await asyncio.wait_for(handler.error_raised.wait(), timeout=30.0)
+    logger.debug("TEST: Error raised, sleeping 5 seconds...")
 
-    # Wait a bit to allow for any potential retries
     await asyncio.sleep(5)
+    logger.debug(f"TEST: message_count={handler.message_count}")
 
-    # Check that the message was processed only once
     assert handler.message_count == 1
+    logger.debug("TEST test_permanent_error_decorator: PASSED")
 
 
 @pytest.mark.asyncio
 async def test_best_effort_mode_does_not_retry(random_topic_and_group):
-    # Test that in best effort mode, the transient error is not retried
+    logger.debug("=" * 40)
+    logger.debug("TEST test_best_effort_mode_does_not_retry: STARTING")
+
     topic, group = random_topic_and_group
+    logger.debug("TEST: Creating TransientErrorHandler...")
     handler = TransientErrorHandler()
 
-    # Configure client for "best effort" mode, ensuring it doesn't do retries
+    logger.debug("TEST: Creating ProsodyClient with mode=best-effort...")
     client_with_best_effort = ProsodyClient(
         bootstrap_servers="localhost:9094",
         source_system="test-send",
@@ -314,22 +428,26 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
         cassandra_nodes="localhost:9042",
         mode="best-effort"
     )
+    logger.debug("TEST: Client created")
 
+    logger.debug("TEST: Subscribing...")
     await client_with_best_effort.subscribe(handler)
+    logger.debug("TEST: Subscribed")
 
-    # Send a test message that triggers a transient error
     test_key = "test-key"
     test_payload = {"content": "Trigger transient error"}
-
+    logger.debug(f"TEST: Sending message key={test_key}")
     await client_with_best_effort.send(topic, test_key, test_payload)
+    logger.debug("TEST: Message sent, sleeping 5 seconds...")
 
-    # Allow time for processing
     await asyncio.sleep(5)
+    logger.debug(f"TEST: retry_event.is_set()={handler.retry_event.is_set()}")
 
-    # Check that the transient error was raised only once
     assert not handler.retry_event.is_set()
 
+    logger.debug("TEST: Unsubscribing...")
     await client_with_best_effort.unsubscribe()
+    logger.debug("TEST test_best_effort_mode_does_not_retry: PASSED")
 
 
 class CallbackTimerHandler(EventHandler):
@@ -337,27 +455,33 @@ class CallbackTimerHandler(EventHandler):
     __test__ = False
 
     def __init__(self, message_callback=None):
-        self.timer_events = asyncio.Queue()
-        self.results = asyncio.Queue()
+        logger.debug("CallbackTimerHandler.__init__() called")
+        self.timer_events = tsasync.Channel()
+        self.results = tsasync.Channel()
         self.message_callback = message_callback
+        logger.debug("CallbackTimerHandler.__init__() completed")
 
     async def on_message(self, context: Context, message: Message) -> None:
+        logger.debug(f"CallbackTimerHandler.on_message() called with key={message.key}")
         if self.message_callback:
             try:
                 result = await self.message_callback(context, message)
                 if result is not None:
-                    await self.results.put({"success": True, **result})
+                    await self.results.send({"success": True, **result})
             except Exception as e:
-                await self.results.put({"success": False, "error": str(e)})
+                logger.error(f"CallbackTimerHandler.on_message() error: {e}")
+                await self.results.send({"success": False, "error": str(e)})
         else:
-            # Default behavior - just store the message
-            await self.results.put({"context": context, "message": message})
+            await self.results.send({"context": context, "message": message})
+        logger.debug("CallbackTimerHandler.on_message() completed")
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
-        await self.timer_events.put({
+        logger.debug(f"CallbackTimerHandler.on_timer() called with key={timer.key}")
+        await self.timer_events.send({
             "context": context,
             "timer": timer
         })
+        logger.debug("CallbackTimerHandler.on_timer() completed")
 
 
 class TimerTestHandler(CallbackTimerHandler):
@@ -372,137 +496,169 @@ class TimerTestHandler(CallbackTimerHandler):
 
 @pytest.mark.asyncio
 async def test_timer_scheduling_and_firing(client, random_topic_and_group):
-    """Test basic timer scheduling and firing functionality"""
+    logger.debug("=" * 40)
+    logger.debug("TEST test_timer_scheduling_and_firing: STARTING")
+
     topic, _ = random_topic_and_group
 
     async def schedule_timer_callback(context: Context, message: Message):
-        # Schedule a timer 2 seconds from now
+        logger.debug("schedule_timer_callback: Scheduling timer...")
         scheduled_time = datetime.now(timezone.utc) + timedelta(seconds=2)
         await context.schedule(scheduled_time)
+        logger.debug(f"schedule_timer_callback: Timer scheduled for {scheduled_time}")
         return {"scheduled_time": scheduled_time}
 
+    logger.debug("TEST: Creating CallbackTimerHandler...")
     handler = CallbackTimerHandler(schedule_timer_callback)
+
+    logger.debug("TEST: Subscribing...")
     await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
 
-    # Send a message to trigger timer scheduling
     test_key = "timer-test-key"
+    logger.debug(f"TEST: Sending message key={test_key}")
     await client.send(topic, test_key, {"test": "data"})
+    logger.debug("TEST: Message sent")
 
-    # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
-    assert operation_result["success"], f"Timer scheduling failed: {operation_result.get('error')}"
+    logger.debug("TEST: Waiting for result...")
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    logger.debug(f"TEST: Result received: {operation_result}")
+    assert operation_result["success"]
     scheduled_time = operation_result["scheduled_time"]
 
-    # Wait for timer to fire (with some tolerance)
-    timer_event = await asyncio.wait_for(handler.timer_events.get(), timeout=5.0)
+    logger.debug("TEST: Waiting for timer to fire...")
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=5.0)
+    logger.debug(f"TEST: Timer fired")
 
     assert timer_event["timer"].key == test_key
-    # Allow 1 second tolerance for timer precision
     time_diff = abs((timer_event["timer"].time - scheduled_time).total_seconds())
-    assert time_diff <= TIMER_TOLERANCE_SECONDS, f"Timer fired at wrong time, difference: {time_diff} seconds"
+    assert time_diff <= TIMER_TOLERANCE_SECONDS
+    logger.debug("TEST test_timer_scheduling_and_firing: PASSED")
 
 
 @pytest.mark.asyncio
 async def test_timer_unschedule(client, random_topic_and_group):
-    """Test unscheduling specific timers"""
+    logger.debug("=" * 40)
+    logger.debug("TEST test_timer_unschedule: STARTING")
+
     topic, _ = random_topic_and_group
 
     async def unschedule_timer_callback(context: Context, message: Message):
-        # Schedule two timers
+        logger.debug("unschedule_timer_callback: Scheduling timers...")
         timer1_time = datetime.now(timezone.utc) + timedelta(seconds=3)
         timer2_time = datetime.now(timezone.utc) + timedelta(seconds=4)
 
         await context.schedule(timer1_time)
         await context.schedule(timer2_time)
 
-        # Verify both are scheduled
         scheduled = await context.scheduled()
+        logger.debug(f"unschedule_timer_callback: {len(scheduled)} timers scheduled")
         assert len(scheduled) == 2
 
-        # Unschedule the first timer
+        logger.debug("unschedule_timer_callback: Unscheduling first timer...")
         await context.unschedule(timer1_time)
 
-        # Verify only one remains
         scheduled_after = await context.scheduled()
+        logger.debug(f"unschedule_timer_callback: {len(scheduled_after)} timers remaining")
         return {
             "remaining_timers": len(scheduled_after),
             "expected_timer_time": timer2_time
         }
 
+    logger.debug("TEST: Creating CallbackTimerHandler...")
     handler = CallbackTimerHandler(unschedule_timer_callback)
+
+    logger.debug("TEST: Subscribing...")
     await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
 
     test_key = "unschedule-test-key"
+    logger.debug(f"TEST: Sending message key={test_key}")
     await client.send(topic, test_key, {"test": "data"})
+    logger.debug("TEST: Message sent")
 
-    # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
-    assert operation_result["success"], f"Timer unschedule operation failed: {operation_result.get('error')}"
+    logger.debug("TEST: Waiting for result...")
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    logger.debug(f"TEST: Result: {operation_result}")
+    assert operation_result["success"]
     assert operation_result["remaining_timers"] == 1
     expected_timer_time = operation_result["expected_timer_time"]
 
-    # Wait for the remaining timer to fire
-    timer_event = await asyncio.wait_for(handler.timer_events.get(), timeout=6.0)
+    logger.debug("TEST: Waiting for timer to fire...")
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=6.0)
+    logger.debug("TEST: Timer fired")
 
-    # Should be the second timer
     time_diff = abs((timer_event["timer"].time - expected_timer_time).total_seconds())
     assert time_diff <= TIMER_TOLERANCE_SECONDS
+    logger.debug("TEST test_timer_unschedule: PASSED")
 
 
 @pytest.mark.asyncio
 async def test_timer_clear_and_schedule(client, random_topic_and_group):
-    """Test clearing all timers and scheduling a new one"""
+    logger.debug("=" * 40)
+    logger.debug("TEST test_timer_clear_and_schedule: STARTING")
+
     topic, _ = random_topic_and_group
 
     async def clear_and_schedule_callback(context: Context, message: Message):
-        # Schedule multiple timers
+        logger.debug("clear_and_schedule_callback: Scheduling timers...")
         timer1_time = datetime.now(timezone.utc) + timedelta(seconds=5)
         timer2_time = datetime.now(timezone.utc) + timedelta(seconds=6)
         await context.schedule(timer1_time)
         await context.schedule(timer2_time)
 
-        # Verify both are scheduled
         scheduled_before = await context.scheduled()
+        logger.debug(f"clear_and_schedule_callback: {len(scheduled_before)} timers scheduled")
         assert len(scheduled_before) == 2
 
-        # Clear all and schedule a new one (sooner)
         new_timer_time = datetime.now(timezone.utc) + timedelta(seconds=2)
+        logger.debug("clear_and_schedule_callback: Calling clear_and_schedule...")
         await context.clear_and_schedule(new_timer_time)
 
-        # Verify only one timer remains
         scheduled_after = await context.scheduled()
+        logger.debug(f"clear_and_schedule_callback: {len(scheduled_after)} timers remaining")
         return {
             "remaining_timers": len(scheduled_after),
             "new_timer_time": new_timer_time
         }
 
+    logger.debug("TEST: Creating CallbackTimerHandler...")
     handler = CallbackTimerHandler(clear_and_schedule_callback)
+
+    logger.debug("TEST: Subscribing...")
     await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
 
     test_key = "clear-schedule-test-key"
+    logger.debug(f"TEST: Sending message key={test_key}")
     await client.send(topic, test_key, {"test": "data"})
+    logger.debug("TEST: Message sent")
 
-    # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
-    assert operation_result["success"], f"Clear and schedule operation failed: {operation_result.get('error')}"
+    logger.debug("TEST: Waiting for result...")
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    logger.debug(f"TEST: Result: {operation_result}")
+    assert operation_result["success"]
     assert operation_result["remaining_timers"] == 1
     new_timer_time = operation_result["new_timer_time"]
 
-    # Wait for the new timer to fire
-    timer_event = await asyncio.wait_for(handler.timer_events.get(), timeout=4.0)
+    logger.debug("TEST: Waiting for timer to fire...")
+    timer_event = await asyncio.wait_for(handler.timer_events.receive(), timeout=4.0)
+    logger.debug("TEST: Timer fired")
 
-    # Should be the new timer
     time_diff = abs((timer_event["timer"].time - new_timer_time).total_seconds())
     assert time_diff <= TIMER_TOLERANCE_SECONDS
+    logger.debug("TEST test_timer_clear_and_schedule: PASSED")
 
 
 @pytest.mark.asyncio
 async def test_timer_clear_scheduled(client, random_topic_and_group):
-    """Test clearing all scheduled timers"""
+    logger.debug("=" * 40)
+    logger.debug("TEST test_timer_clear_scheduled: STARTING")
+
     topic, _ = random_topic_and_group
 
     async def clear_scheduled_callback(context: Context, message: Message):
-        # Schedule multiple timers
+        logger.debug("clear_scheduled_callback: Scheduling timers...")
         timer1_time = datetime.now(timezone.utc) + timedelta(seconds=3)
         timer2_time = datetime.now(timezone.utc) + timedelta(seconds=4)
         timer3_time = datetime.now(timezone.utc) + timedelta(seconds=5)
@@ -511,48 +667,58 @@ async def test_timer_clear_scheduled(client, random_topic_and_group):
         await context.schedule(timer2_time)
         await context.schedule(timer3_time)
 
-        # Verify all are scheduled
         scheduled_before = await context.scheduled()
+        logger.debug(f"clear_scheduled_callback: {len(scheduled_before)} timers scheduled")
         assert len(scheduled_before) == 3
 
-        # Clear all scheduled timers
+        logger.debug("clear_scheduled_callback: Calling clear_scheduled...")
         await context.clear_scheduled()
 
-        # Verify no timers remain
         scheduled_after = await context.scheduled()
+        logger.debug(f"clear_scheduled_callback: {len(scheduled_after)} timers remaining")
         return {"remaining_timers": len(scheduled_after)}
 
+    logger.debug("TEST: Creating CallbackTimerHandler...")
     handler = CallbackTimerHandler(clear_scheduled_callback)
+
+    logger.debug("TEST: Subscribing...")
     await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
 
     test_key = "clear-all-test-key"
+    logger.debug(f"TEST: Sending message key={test_key}")
     await client.send(topic, test_key, {"test": "data"})
+    logger.debug("TEST: Message sent")
 
-    # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
-    assert operation_result["success"], f"Clear all operation failed: {operation_result.get('error')}"
+    logger.debug("TEST: Waiting for result...")
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    logger.debug(f"TEST: Result: {operation_result}")
+    assert operation_result["success"]
     assert operation_result["remaining_timers"] == 0
 
-    # Wait to ensure no timers fire
+    logger.debug("TEST: Verifying no timers fire...")
     try:
-        await asyncio.wait_for(handler.timer_events.get(), timeout=6.0)
+        await asyncio.wait_for(handler.timer_events.receive(), timeout=6.0)
         assert False, "No timers should have fired after clearing"
     except asyncio.TimeoutError:
-        # This is expected - no timers should fire
+        logger.debug("TEST: Timeout as expected - no timers fired")
         pass
+
+    logger.debug("TEST test_timer_clear_scheduled: PASSED")
 
 
 @pytest.mark.asyncio
 async def test_timer_scheduled_retrieval(client, random_topic_and_group):
-    """Test retrieving scheduled timer times"""
+    logger.debug("=" * 40)
+    logger.debug("TEST test_timer_scheduled_retrieval: STARTING")
+
     topic, _ = random_topic_and_group
 
     async def scheduled_retrieval_callback(context: Context, message: Message):
-        # Initially should be empty
+        logger.debug("scheduled_retrieval_callback: Checking initial state...")
         scheduled_empty = await context.scheduled()
         assert len(scheduled_empty) == 0
 
-        # Schedule multiple timers with different times
         now = datetime.now(timezone.utc)
         timer_times = [
             now + timedelta(seconds=10),
@@ -560,36 +726,46 @@ async def test_timer_scheduled_retrieval(client, random_topic_and_group):
             now + timedelta(seconds=30)
         ]
 
+        logger.debug(f"scheduled_retrieval_callback: Scheduling {len(timer_times)} timers...")
         for timer_time in timer_times:
             await context.schedule(timer_time)
 
-        # Retrieve scheduled times
         scheduled = await context.scheduled()
+        logger.debug(f"scheduled_retrieval_callback: {len(scheduled)} timers scheduled")
         return {
             "scheduled_count": len(scheduled),
             "expected_times": timer_times,
             "scheduled_times": scheduled
         }
 
+    logger.debug("TEST: Creating CallbackTimerHandler...")
     handler = CallbackTimerHandler(scheduled_retrieval_callback)
+
+    logger.debug("TEST: Subscribing...")
     await client.subscribe(handler)
+    logger.debug("TEST: Subscribed")
 
     test_key = "scheduled-retrieval-test"
+    logger.debug(f"TEST: Sending message key={test_key}")
     await client.send(topic, test_key, {"test": "data"})
+    logger.debug("TEST: Message sent")
 
-    # Wait for operation to complete
-    operation_result = await asyncio.wait_for(handler.results.get(), timeout=30.0)
-    assert operation_result["success"], f"Scheduled retrieval operation failed: {operation_result.get('error')}"
+    logger.debug("TEST: Waiting for result...")
+    operation_result = await asyncio.wait_for(handler.results.receive(), timeout=30.0)
+    logger.debug(f"TEST: Result: {operation_result}")
+    assert operation_result["success"]
     assert operation_result["scheduled_count"] == 3
 
     expected_times = operation_result["expected_times"]
     scheduled_times = operation_result["scheduled_times"]
 
-    # Verify all scheduled times are present (allowing for slight timing differences)
     for expected_time in expected_times:
-        found = any(abs((s - expected_time).total_seconds()) <= TIMER_TOLERANCE_SECONDS for s in scheduled_times)
+        found = False
+        for scheduled_time in scheduled_times:
+            time_diff = abs((scheduled_time - expected_time).total_seconds())
+            if time_diff <= TIMER_TOLERANCE_SECONDS:
+                found = True
+                break
         assert found, f"Expected time {expected_time} not found in scheduled times"
 
-
-if __name__ == "__main__":
-    pytest.main()
+    logger.debug("TEST test_timer_scheduled_retrieval: PASSED")

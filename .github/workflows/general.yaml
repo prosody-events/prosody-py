@@ -32,6 +32,11 @@ jobs:
           KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
           KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
           KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+        options: >-
+          --health-cmd "kafka-topics.sh --bootstrap-server localhost:9092 --list"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 15
       cassandra:
         image: cassandra:latest
         ports:
@@ -51,11 +56,11 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Install Maturin from crates.io
         uses: baptiste0928/cargo-install@v3
         with:
           crate: maturin
-      - uses: Swatinem/rust-cache@v2
       - name: Build and run tests
         run: |
           python -m venv venv
@@ -98,7 +103,6 @@ jobs:
         uses: baptiste0928/cargo-install@v3
         with:
           crate: cargo-udeps
-      - uses: Swatinem/rust-cache@v2
       - name: Run cargo udeps
         run: cargo +nightly udeps
 
