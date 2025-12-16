@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/cincpro/prosody-py/compare/v2.0.1...v2.0.2) (2025-12-16)
+
+
+### Bug Fixes
+
+* bundle zlib statically ([#101](https://github.com/cincpro/prosody-py/issues/101)) ([0980502](https://github.com/cincpro/prosody-py/commit/09805028d5dcb0bb3c98d4466969458c75f36616))
+
 ## [2.0.1](https://github.com/cincpro/prosody-py/compare/v2.0.0...v2.0.1) (2025-12-16)
 
 
