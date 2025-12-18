@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
-use tracing::{Instrument, error, info_span};
+use tracing::{Instrument, debug, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::client::config::try_build_config;
@@ -92,7 +92,7 @@ impl ProsodyClient {
         let context = self.client.propagator().extract(&headers);
         let span = info_span!("python-send", %topic, %key);
         if let Err(err) = span.set_parent(context) {
-            error!("failed to set parent span: {err:#}");
+            debug!("failed to set parent span: {err:#}");
         }
 
         // Send the message using the producer
