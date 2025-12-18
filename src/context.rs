@@ -17,7 +17,7 @@ use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{Instrument, error, info_span};
+use tracing::{Instrument, debug, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Encapsulates context information for a Kafka message.
@@ -43,7 +43,7 @@ impl Context {
         let headers: HashMap<String, String> = data.extract()?;
         let otel_context = self.propagator.extract(&headers);
         if let Err(err) = span.set_parent(otel_context) {
-            error!("failed to set parent span: {err:#}");
+            debug!("failed to set parent span: {err:#}");
         }
 
         Ok(())
