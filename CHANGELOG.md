@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.4](https://github.com/cincpro/prosody-py/compare/v2.0.3...v2.0.4) (2025-12-18)
+
+
+### Bug Fixes
+
+* downgrade span parent extraction failures to debug level ([#105](https://github.com/cincpro/prosody-py/issues/105)) ([1e13123](https://github.com/cincpro/prosody-py/commit/1e131237806e3692e2aaaf7d2752d2e94229ad2f))
+
 ## [2.0.3](https://github.com/cincpro/prosody-py/compare/v2.0.2...v2.0.3) (2025-12-16)
 
 
