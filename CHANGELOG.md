@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.6](https://github.com/cincpro/prosody-py/compare/v2.0.5...v2.0.6) (2026-01-10)
+
+
+### Bug Fixes
+
+* update prosody to fix timeout-induced partition stalls ([#108](https://github.com/cincpro/prosody-py/issues/108)) ([5897408](https://github.com/cincpro/prosody-py/commit/5897408257e3c30c9595e29fd2a3a56098c1a5fc))
+
 ## [2.0.5](https://github.com/cincpro/prosody-py/compare/v2.0.4...v2.0.5) (2025-12-22)
 
 
