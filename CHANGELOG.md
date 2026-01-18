@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.7](https://github.com/cincpro/prosody-py/compare/v2.0.6...v2.0.7) (2026-01-18)
+
+
+### Bug Fixes
+
+* update prosody to fix partition resume after rebalance ([#110](https://github.com/cincpro/prosody-py/issues/110)) ([c26845d](https://github.com/cincpro/prosody-py/commit/c26845df86ebcce67110d4dd8cda33b4a3fccb06))
+
 ## [2.0.6](https://github.com/cincpro/prosody-py/compare/v2.0.5...v2.0.6) (2026-01-10)
 
 
