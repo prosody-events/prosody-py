@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/cincpro/prosody-py/compare/v2.0.7...v2.1.0) (2026-01-23)
+
+
+### Features
+
+* non-blocking timer retry ([#113](https://github.com/cincpro/prosody-py/issues/113)) ([8ebcc6c](https://github.com/cincpro/prosody-py/commit/8ebcc6c800d00e8fcc15b398a03fe20528cd2f44))
+
 ## [2.0.7](https://github.com/cincpro/prosody-py/compare/v2.0.6...v2.0.7) (2026-01-18)
 
 
