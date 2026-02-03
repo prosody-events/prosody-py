@@ -16,6 +16,7 @@ use ::prosody::tracing::initialize_tracing;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pymodule};
+use tikv_jemallocator::Jemalloc;
 
 mod admin;
 mod client;
@@ -23,6 +24,10 @@ mod context;
 mod handler;
 mod logging;
 mod util;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 /// Initializes the Python module and adds the necessary classes.
 ///
