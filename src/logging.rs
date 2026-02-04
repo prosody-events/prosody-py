@@ -253,6 +253,9 @@ where
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let metadata = event.metadata();
+        if !metadata.is_event() {
+            return;
+        }
 
         // Extract message and fields from event
         let mut visitor = MessageVisitor::new();
