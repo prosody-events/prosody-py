@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -13,20 +15,22 @@ env:
   CARGO_PROFILE_TEST_DEBUG: 0
 
 jobs:
-#  release-please:
-#    runs-on: ubuntu-latest
-#    outputs:
-#      release_created: ${{ steps.release.outputs.release_created }}
-#      tag_name: ${{ steps.release.outputs.tag_name }}
-#    steps:
-#      - uses: google-github-actions/release-please-action@v3
-#        id: release
-#        with:
-#          release-type: rust
-#          package-name: prosody
-#          token: ${{ secrets.TEMP_GH_ALL_REPOS_RW }}
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: google-github-actions/release-please-action@v3
+        id: release
+        with:
+          release-type: rust
+          package-name: prosody
+          token: ${{ secrets.TEMP_GH_ALL_REPOS_RW }}
 
   linux:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -77,6 +81,8 @@ jobs:
           path: dist
 
   musllinux:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -126,6 +132,8 @@ jobs:
           path: dist
 
   windows:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -156,6 +164,8 @@ jobs:
           path: dist
 
   macos:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
@@ -186,6 +196,8 @@ jobs:
           path: dist
 
   sdist:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -205,19 +217,19 @@ jobs:
           name: wheels-sdist
           path: dist
 
-#  release:
-#    name: Release
-#    runs-on: ubuntu-latest
-#    needs: [ release-please, linux, musllinux, windows, macos, sdist ]
-#    if: ${{ needs.release-please.outputs.release_created }}
-#    steps:
-#      - uses: actions/download-artifact@v4
-#      - name: Publish to Gemfury
-#        uses: PyO3/maturin-action@v1
-#        env:
-#          MATURIN_REPOSITORY_URL: https://push.fury.io/realgeeks/
-#          MATURIN_USERNAME: ${{ secrets.GEMFURY_PUSH_TOKEN }}
-#          MATURIN_PASSWORD:
-#        with:
-#          command: upload
-#          args: --non-interactive --skip-existing wheels-*/*
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [ release-please, linux, musllinux, windows, macos, sdist ]
+    if: ${{ needs.release-please.outputs.release_created }}
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Publish to Gemfury
+        uses: PyO3/maturin-action@v1
+        env:
+          MATURIN_REPOSITORY_URL: https://push.fury.io/realgeeks/
+          MATURIN_USERNAME: ${{ secrets.GEMFURY_PUSH_TOKEN }}
+          MATURIN_PASSWORD:
+        with:
+          command: upload
+          args: --non-interactive --skip-existing wheels-*/*
