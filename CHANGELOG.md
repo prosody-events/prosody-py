@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.1.1](https://github.com/cincpro/prosody-py/compare/v2.1.0...v2.1.1) (2026-02-26)
+
+
+### Bug Fixes
+
+* graceful slab_loader shutdown, remove timer backpressure gaps, and new API surface ([#117](https://github.com/cincpro/prosody-py/issues/117)) ([bf34f07](https://github.com/cincpro/prosody-py/commit/bf34f07fdc3c7460b7f7552f9cf0cef1bc1aa3c9))
+* only log events, not spans ([#116](https://github.com/cincpro/prosody-py/issues/116)) ([1b8df39](https://github.com/cincpro/prosody-py/commit/1b8df391f6c8920bdf13ea042f210a2fc4aff48a))
+* remove max_enqueued_per_key from type signatures ([#118](https://github.com/cincpro/prosody-py/issues/118)) ([f4b0f88](https://github.com/cincpro/prosody-py/commit/f4b0f885245785ebe7486f85ac1c725bc3e6b9e9))
+
+
+### Performance Improvements
+
+* use jemalloc allocator ([#114](https://github.com/cincpro/prosody-py/issues/114)) ([e4c8b1f](https://github.com/cincpro/prosody-py/commit/e4c8b1f16f307f286a4e528c9dc595b00fd3303a))
+
 ## [2.1.0](https://github.com/cincpro/prosody-py/compare/v2.0.7...v2.1.0) (2026-01-23)
 
 
