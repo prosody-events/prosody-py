@@ -19,12 +19,12 @@ name = "prosody"
 chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.31"
-prosody = { git = "https://github.com/cincpro/prosody.git", rev = "438fedb5fa8e58f4f754f09c30dd43514723e0c8", features = [
+prosody = { git = "https://github.com/cincpro/prosody.git", rev = "7b5b5e3508b10e508823586cb59a270b8b0eff9a", default-features = false, features = [
     "libz-static",
 ] } # replace once we have a package manager
-pyo3 = { version = "0.27", features = ["chrono"] }
-pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
-pythonize = "0.27"
+pyo3 = { version = "0.28", features = ["chrono"] }
+pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
+pythonize = "0.28"
 serde_json = "1.0"
 thiserror = "2.0"
 tokio = { version = "1.46", features = ["rt-multi-thread"] }
