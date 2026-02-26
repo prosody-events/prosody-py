@@ -29,6 +29,7 @@ jobs:
   linux:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - runner: ubuntu-latest
@@ -58,10 +59,17 @@ jobs:
             elif command -v yum > /dev/null; then
               yum install -y cmake libcurl-devel
             elif command -v apt-get > /dev/null; then
-              dpkg --add-architecture arm64 || true
+              dpkg --add-architecture arm64
+              sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
+              . /etc/os-release
+              echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${VERSION_CODENAME} main restricted universe multiverse" >> /etc/apt/sources.list
+              echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${VERSION_CODENAME}-updates main restricted universe multiverse" >> /etc/apt/sources.list
+              echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${VERSION_CODENAME}-security main restricted universe multiverse" >> /etc/apt/sources.list
               apt-get update
-              apt-get install -y cmake libcurl4-openssl-dev libcurl4-openssl-dev:arm64 || \
-                apt-get install -y cmake libcurl4-openssl-dev
+              apt-get install -y cmake libcurl4-openssl-dev:arm64
+              # Symlink arm64 curl headers into cross-compiler sysroot paths
+              ln -sf /usr/include/aarch64-linux-gnu/curl /usr/aarch64-linux-gnu/include/curl
+              ln -sf /usr/include/aarch64-linux-gnu/curl /usr/aarch64-unknown-linux-gnu/usr/include/curl || true
             fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
@@ -74,6 +82,7 @@ jobs:
   musllinux:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - runner: ubuntu-latest
@@ -104,6 +113,10 @@ jobs:
               yum install -y cmake libcurl-devel
             elif command -v apt-get > /dev/null; then
               apt-get update && apt-get install -y cmake libcurl4-openssl-dev
+              # The musl cross-compiler has its own sysroot; symlink curl headers into it
+              for sysroot in /usr/local/musl/*/usr/include; do
+                [ -d "$sysroot" ] && ln -sf /usr/include/curl "$sysroot/curl" || true
+              done
             fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
