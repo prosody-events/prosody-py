@@ -47,12 +47,19 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          CFLAGS: "-UWITH_OAUTHBEARER_OIDC"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: ${{ matrix.platform.target == 'aarch64' && '2_24' || 'auto' }}
+          before-script-linux: |
+            if command -v apk > /dev/null; then
+              apk add --no-cache cmake make curl-dev
+            elif command -v yum > /dev/null; then
+              yum install -y cmake libcurl-devel
+            elif command -v apt-get > /dev/null; then
+              apt-get update && apt-get install -y cmake libcurl4-openssl-dev
+            fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
       - name: Upload wheels
@@ -82,12 +89,19 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          CFLAGS: "-UWITH_OAUTHBEARER_OIDC"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: musllinux_1_2
+          before-script-linux: |
+            if command -v apk > /dev/null; then
+              apk add --no-cache cmake make curl-dev
+            elif command -v yum > /dev/null; then
+              yum install -y cmake libcurl-devel
+            elif command -v apt-get > /dev/null; then
+              apt-get update && apt-get install -y cmake libcurl4-openssl-dev
+            fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
       - name: Upload wheels
@@ -116,7 +130,6 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          CFLAGS: "-UWITH_OAUTHBEARER_OIDC"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -147,7 +160,6 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-          CFLAGS: "-UWITH_OAUTHBEARER_OIDC"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
