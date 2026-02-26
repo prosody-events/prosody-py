@@ -58,7 +58,10 @@ jobs:
             elif command -v yum > /dev/null; then
               yum install -y cmake libcurl-devel
             elif command -v apt-get > /dev/null; then
-              apt-get update && apt-get install -y cmake libcurl4-openssl-dev
+              dpkg --add-architecture arm64 || true
+              apt-get update
+              apt-get install -y cmake libcurl4-openssl-dev libcurl4-openssl-dev:arm64 || \
+                apt-get install -y cmake libcurl4-openssl-dev
             fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
