@@ -61,10 +61,11 @@ jobs:
             elif command -v apt-get > /dev/null; then
               apt-get update
               apt-get install -y cmake libcurl4-openssl-dev
-              # manylinux_2_24-cross:aarch64 is an arm64-native Ubuntu image; headers
-              # land at /usr/include/aarch64-linux-gnu/curl/. Symlink them into the
-              # cross-compiler sysroot where GCC searches: the deep nested sysroot path.
-              ln -sf /usr/include/aarch64-linux-gnu/curl \
+              # Headers land under a multiarch dir (e.g. x86_64-linux-gnu or
+              # aarch64-linux-gnu depending on the runner). Symlink into the
+              # cross-compiler's sysroot where GCC actually searches.
+              curl_include=$(dirname "$(find /usr/include -name 'curl.h' | head -1)")
+              ln -sf "$curl_include" \
                 /usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include/curl
             fi
           docker-options: >-
@@ -109,11 +110,11 @@ jobs:
               yum install -y cmake libcurl-devel
             elif command -v apt-get > /dev/null; then
               apt-get update && apt-get install -y cmake libcurl4-openssl-dev
-              # rust-musl-cross is arm64-native Ubuntu; headers land at
-              # /usr/include/aarch64-linux-gnu/curl/. Symlink into each musl
-              # cross-compiler's include dir (already exists in the image).
-              for target_dir in /usr/local/musl/*/; do
-                ln -sf /usr/include/aarch64-linux-gnu/curl "${target_dir}include/curl"
+              # Headers land under a multiarch dir (arch-dependent). Symlink into
+              # each musl cross-compiler's include dir (already exists in the image).
+              curl_include=$(dirname "$(find /usr/include -name 'curl.h' | head -1)")
+              for target_dir in /usr/local/musl/*-unknown-linux-musl/; do
+                ln -sf "$curl_include" "${target_dir}include/curl"
               done
             fi
           docker-options: >-
