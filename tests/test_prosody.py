@@ -213,7 +213,6 @@ async def test_client_configuration(random_topic_and_group):
         group_id=group,
         subscribed_topics=[topic],
         max_uncommitted=1000,
-        max_enqueued_per_key=100,
         poll_interval=0.1,
         commit_interval=5.0,
         mode="low-latency",
