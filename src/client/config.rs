@@ -187,10 +187,6 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.max_uncommitted(max_uncommitted.extract::<usize>()?);
     }
 
-    if let Some(max_enqueued_per_key) = config.get_item("max_enqueued_per_key")? {
-        builder.max_enqueued_per_key(max_enqueued_per_key.extract::<usize>()?);
-    }
-
     if let Some(value) = config.get_item("stall_threshold")? {
         builder.stall_threshold(decode_duration(&value)?);
     }
