@@ -16,6 +16,7 @@ use ::prosody::tracing::initialize_tracing;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pymodule};
+#[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 
 mod admin;
