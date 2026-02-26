@@ -67,9 +67,9 @@ jobs:
               echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${VERSION_CODENAME}-security main restricted universe multiverse" >> /etc/apt/sources.list
               apt-get update
               apt-get install -y cmake libcurl4-openssl-dev:arm64
-              # Symlink arm64 curl headers into cross-compiler sysroot paths
+              # Symlink arm64 curl headers into cross-compiler sysroot include path
+              mkdir -p /usr/aarch64-linux-gnu/include
               ln -sf /usr/include/aarch64-linux-gnu/curl /usr/aarch64-linux-gnu/include/curl
-              ln -sf /usr/include/aarch64-linux-gnu/curl /usr/aarch64-unknown-linux-gnu/usr/include/curl || true
             fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
