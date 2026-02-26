@@ -33,14 +33,13 @@ jobs:
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - runner: ubuntu-latest
             target: x86_64
           - runner: ubuntu-latest
             target: aarch64
-          - runner: ubuntu-latest
-            target: armv7
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,6 +57,21 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: ${{ matrix.platform.target == 'aarch64' && '2_24' || 'auto' }}
+          before-script-linux: |
+            if command -v apk > /dev/null; then
+              apk add --no-cache cmake make curl-dev
+            elif command -v yum > /dev/null; then
+              yum install -y cmake libcurl-devel
+            elif command -v apt-get > /dev/null; then
+              apt-get update
+              apt-get install -y cmake libcurl4-openssl-dev
+              # Headers land under a multiarch dir (e.g. x86_64-linux-gnu or
+              # aarch64-linux-gnu depending on the runner). Symlink into the
+              # cross-compiler's sysroot where GCC actually searches.
+              curl_include=$(dirname "$(find /usr/include -name 'curl.h' | head -1)")
+              ln -sf "$curl_include" \
+                /usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include/curl
+            fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
       - name: Upload wheels
@@ -71,14 +85,13 @@ jobs:
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ${{ matrix.platform.runner }}
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - runner: ubuntu-latest
             target: x86_64
           - runner: ubuntu-latest
             target: aarch64
-          - runner: ubuntu-latest
-            target: armv7
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -96,6 +109,20 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: musllinux_1_2
+          before-script-linux: |
+            if command -v apk > /dev/null; then
+              apk add --no-cache cmake make curl-dev
+            elif command -v yum > /dev/null; then
+              yum install -y cmake libcurl-devel
+            elif command -v apt-get > /dev/null; then
+              apt-get update && apt-get install -y cmake libcurl4-openssl-dev
+              # Headers land under a multiarch dir (arch-dependent). Symlink into
+              # each musl cross-compiler's include dir (already exists in the image).
+              curl_include=$(dirname "$(find /usr/include -name 'curl.h' | head -1)")
+              for target_dir in /usr/local/musl/*-unknown-linux-musl/; do
+                ln -sf "$curl_include" "${target_dir}include/curl"
+              done
+            fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
       - name: Upload wheels
