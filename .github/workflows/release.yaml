@@ -59,19 +59,13 @@ jobs:
             elif command -v yum > /dev/null; then
               yum install -y cmake libcurl-devel
             elif command -v apt-get > /dev/null; then
-              dpkg --add-architecture arm64
-              sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
-              . /etc/os-release
-              echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${VERSION_CODENAME} main restricted universe multiverse" >> /etc/apt/sources.list
-              echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${VERSION_CODENAME}-updates main restricted universe multiverse" >> /etc/apt/sources.list
-              echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${VERSION_CODENAME}-security main restricted universe multiverse" >> /etc/apt/sources.list
               apt-get update
-              apt-get install -y cmake libcurl4-openssl-dev:arm64
-              # The cross-compiler lives at /usr/aarch64-unknown-linux-gnu/; symlink
-              # arm64 curl headers (installed to /usr/include/aarch64-linux-gnu/) into
-              # its include path so CMake can find them.
-              mkdir -p /usr/aarch64-unknown-linux-gnu/include
-              ln -sf /usr/include/aarch64-linux-gnu/curl /usr/aarch64-unknown-linux-gnu/include/curl
+              apt-get install -y cmake libcurl4-openssl-dev
+              # manylinux_2_24-cross:aarch64 is an arm64-native Ubuntu image; headers
+              # land at /usr/include/aarch64-linux-gnu/curl/. Symlink them into the
+              # cross-compiler sysroot where GCC searches: the deep nested sysroot path.
+              ln -sf /usr/include/aarch64-linux-gnu/curl \
+                /usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include/curl
             fi
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
@@ -115,11 +109,11 @@ jobs:
               yum install -y cmake libcurl-devel
             elif command -v apt-get > /dev/null; then
               apt-get update && apt-get install -y cmake libcurl4-openssl-dev
-              # The musl cross-compiler sysroots live at /usr/local/musl/<target>/;
-              # create their include dirs and symlink the x86_64 curl headers in.
+              # rust-musl-cross is arm64-native Ubuntu; headers land at
+              # /usr/include/aarch64-linux-gnu/curl/. Symlink into each musl
+              # cross-compiler's include dir (already exists in the image).
               for target_dir in /usr/local/musl/*/; do
-                mkdir -p "${target_dir}usr/include"
-                ln -sf /usr/include/curl "${target_dir}usr/include/curl"
+                ln -sf /usr/include/aarch64-linux-gnu/curl "${target_dir}include/curl"
               done
             fi
           docker-options: >-
