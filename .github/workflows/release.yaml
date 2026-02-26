@@ -35,8 +35,6 @@ jobs:
             target: x86_64
           - runner: ubuntu-latest
             target: aarch64
-          - runner: ubuntu-latest
-            target: armv7
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,6 +47,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+          CFLAGS: "-UWITH_OAUTHBEARER_OIDC"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -56,14 +55,6 @@ jobs:
           manylinux: ${{ matrix.platform.target == 'aarch64' && '2_24' || 'auto' }}
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
-          before-script-linux: |
-            if command -v apk > /dev/null; then
-              apk add --no-cache cmake make curl-dev
-            elif command -v yum > /dev/null; then
-              yum install -y cmake libcurl-devel
-            elif command -v apt-get > /dev/null; then
-              apt-get update && apt-get install -y cmake libcurl4-openssl-dev
-            fi
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -79,8 +70,6 @@ jobs:
             target: x86_64
           - runner: ubuntu-latest
             target: aarch64
-          - runner: ubuntu-latest
-            target: armv7
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -93,6 +82,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+          CFLAGS: "-UWITH_OAUTHBEARER_OIDC"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -100,14 +90,6 @@ jobs:
           manylinux: musllinux_1_2
           docker-options: >-
             -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
-          before-script-linux: |
-            if command -v apk > /dev/null; then
-              apk add --no-cache cmake make curl-dev
-            elif command -v yum > /dev/null; then
-              yum install -y cmake libcurl-devel
-            elif command -v apt-get > /dev/null; then
-              apt-get update && apt-get install -y cmake libcurl4-openssl-dev
-            fi
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -134,6 +116,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+          CFLAGS: "-UWITH_OAUTHBEARER_OIDC"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -164,6 +147,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+          CFLAGS: "-UWITH_OAUTHBEARER_OIDC"
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
