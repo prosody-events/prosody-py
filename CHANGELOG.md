@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2](https://github.com/cincpro/prosody-py/compare/v2.1.1...v2.1.2) (2026-03-05)
+
+
+### Bug Fixes
+
+* prevent false OffsetDeleted errors from concurrent loader requests ([#121](https://github.com/cincpro/prosody-py/issues/121)) ([88b0c17](https://github.com/cincpro/prosody-py/commit/88b0c17d8d87797c129b4867828be14ad32efeda))
+
 ## [2.1.1](https://github.com/cincpro/prosody-py/compare/v2.1.0...v2.1.1) (2026-02-26)
 
 
