@@ -243,6 +243,15 @@ When a handler fails, retry with exponential backoff:
 | `scheduler_wait_weight` / `PROSODY_SCHEDULER_WAIT_WEIGHT` | Priority boost for waiting messages (higher = more aggressive) | 200.0 |
 | `scheduler_cache_size` / `PROSODY_SCHEDULER_CACHE_SIZE` | Max distinct keys to track                             | 8192    |
 
+### Telemetry Emitter
+
+Prosody emits internal lifecycle events (message dispatched/succeeded/failed, timer scheduled/fired, producer sends) to a Kafka topic for observability:
+
+| Option / Environment Variable           | Description                                            | Default                    |
+|-----------------------------------------|--------------------------------------------------------|----------------------------|
+| `telemetry_topic` / `PROSODY_TELEMETRY_TOPIC` | Kafka topic to produce telemetry events to       | prosody.telemetry-events   |
+| `telemetry_enabled` / `PROSODY_TELEMETRY_ENABLED` | Enable or disable the telemetry emitter        | true                       |
+
 ### Cassandra
 
 Persistent storage for timers and deferred retries (not needed if `mock=True`):

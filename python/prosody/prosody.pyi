@@ -90,6 +90,9 @@ class ProsodyClient:
             defer_discard_threshold: Optional[int] = None,
             # Timeout configuration
             timeout: Optional[Duration] = None,
+            # Telemetry emitter configuration
+            telemetry_topic: Optional[str] = None,
+            telemetry_enabled: Optional[bool] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.
@@ -140,6 +143,8 @@ class ProsodyClient:
             defer_seek_timeout: Timeout for Kafka seek operations.
             defer_discard_threshold: Messages to read sequentially before seeking.
             timeout: Fixed timeout duration for handler execution. Defaults to 80% of stall threshold.
+            telemetry_topic: Kafka topic to produce internal telemetry events to. Defaults to 'prosody.telemetry-events'.
+            telemetry_enabled: Whether the telemetry emitter is enabled. Defaults to True.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.

@@ -17,9 +17,11 @@ use prosody::consumer::middleware::topic::FailureTopicConfigurationBuilder;
 use prosody::high_level::mode::{Mode, ModeError};
 use prosody::high_level::{ConsumerBuilders, HighLevelClient};
 use prosody::producer::ProducerConfigurationBuilder;
+use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
+use pyo3_async_runtimes::tokio::get_runtime;
 use std::sync::Arc;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
@@ -60,8 +62,12 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
             monopolization: MonopolizationConfigurationBuilder::default(),
             defer: DeferConfigurationBuilder::default(),
             timeout: TimeoutConfigurationBuilder::default(),
+            emitter: TelemetryEmitterConfiguration::builder()
+                .build()
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
         };
 
+        let _guard = get_runtime().handle().enter();
         let client = HighLevelClient::new(
             Mode::default(),
             &mut ProducerConfigurationBuilder::default(),
@@ -91,6 +97,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     let consumer_builders = build_consumer_builders(config)?;
     let cassandra_config = build_cassandra_config(config)?;
 
+    let _guard = get_runtime().handle().enter();
     let client = HighLevelClient::new(
         mode,
         &mut producer_config,
@@ -480,6 +487,38 @@ fn build_timeout_config(config: &Bound<PyDict>) -> PyResult<TimeoutConfiguration
     Ok(builder)
 }
 
+/// Builds a `TelemetryEmitterConfiguration` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `TelemetryEmitterConfiguration`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_telemetry_emitter_config(
+    config: &Bound<PyDict>,
+) -> PyResult<TelemetryEmitterConfiguration> {
+    let mut builder = TelemetryEmitterConfiguration::builder();
+
+    if let Some(topic) = config.get_item("telemetry_topic")? {
+        builder.topic(topic.extract::<String>()?);
+    }
+
+    if let Some(enabled) = config.get_item("telemetry_enabled")? {
+        builder.enabled(enabled.extract::<bool>()?);
+    }
+
+    builder
+        .build()
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 /// Builds `ConsumerBuilders` from the provided Python configuration.
 ///
 /// # Arguments
@@ -502,5 +541,6 @@ fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders>
         monopolization: build_monopolization_config(config)?,
         defer: build_defer_config(config)?,
         timeout: build_timeout_config(config)?,
+        emitter: build_telemetry_emitter_config(config)?,
     })
 }
