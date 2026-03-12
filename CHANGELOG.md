@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/cincpro/prosody-py/compare/v2.1.2...v2.2.0) (2026-03-12)
+
+
+### Features
+
+* add Kafka telemetry emitter ([#123](https://github.com/cincpro/prosody-py/issues/123)) ([d85ea39](https://github.com/cincpro/prosody-py/commit/d85ea3913f8f7b54920499aef1c3a53a0c920a17))
+
 ## [2.1.2](https://github.com/cincpro/prosody-py/compare/v2.1.1...v2.1.2) (2026-03-05)
 
 
