@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      release_as:
+        description: 'Force release version (e.g. 2.2.0-alpha.1)'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -27,6 +33,7 @@ jobs:
           release-type: rust
           package-name: prosody
           token: ${{ secrets.TEMP_GH_ALL_REPOS_RW }}
+          release-as: ${{ github.event.inputs.release_as }}
 
   linux:
     needs: release-please
