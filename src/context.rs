@@ -5,11 +5,9 @@
 //! information for Kafka messages.
 
 use chrono::{DateTime, Utc};
-use futures::TryStreamExt;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::TimerType;
-use prosody::timers::datetime::CompactDateTime;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::gc::{PyTraverseError, PyVisit};
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
@@ -187,10 +185,14 @@ impl Context {
         future_into_py(py, async move {
             context
                 .scheduled(TimerType::Application)
-                .map_ok(<DateTime<Utc> as From<CompactDateTime>>::from)
-                .try_collect::<Vec<_>>()
                 .instrument(span)
                 .await
+                .map(|times| {
+                    times
+                        .into_iter()
+                        .map(DateTime::<Utc>::from)
+                        .collect::<Vec<_>>()
+                })
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to get scheduled times: {e}")))
         })
     }
