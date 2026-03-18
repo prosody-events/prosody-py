@@ -114,6 +114,12 @@ impl ProsodyClient {
     ///
     /// A string representing the current state ('unconfigured', 'configured',
     /// or 'running').
+    ///
+    /// # Errors
+    ///
+    /// Raises `RuntimeError` if the consumer configuration failed during
+    /// build, with the full error message from the underlying
+    /// `ModeConfigurationError`.
     fn consumer_state<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let client = self.client.clone();
         future_into_py(py, async move {
@@ -211,7 +217,7 @@ impl ProsodyClient {
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
-            ConsumerState::ConfigurationFailed(err) => format!(", error='{err:#}'"),
+            ConsumerState::ConfigurationFailed(err) => format!(", error=\"{err}\""),
             ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
                 let consumer_config = config.consumer_config();
                 format!(
@@ -244,7 +250,7 @@ impl ProsodyClient {
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
-            ConsumerState::ConfigurationFailed(err) => format!(", error={err:#}"),
+            ConsumerState::ConfigurationFailed(err) => format!(", error={err}"),
             ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
                 let consumer_config = config.consumer_config();
                 format!(
