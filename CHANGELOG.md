@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/cincpro/prosody-py/compare/v2.2.1...v2.3.0) (2026-03-19)
+
+
+### Features
+
+* configuration error surfacing, per-type timer semaphores, timer read performance ([#128](https://github.com/cincpro/prosody-py/issues/128)) ([17097ef](https://github.com/cincpro/prosody-py/commit/17097ef8c103bdfde3a0c0e828dc957df9821d1c))
+
 ## [2.2.1](https://github.com/cincpro/prosody-py/compare/v2.2.0...v2.2.1) (2026-03-13)
 
 
