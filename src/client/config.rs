@@ -240,16 +240,16 @@ fn build_dedup_config(config: &Bound<PyDict>) -> PyResult<DeduplicationConfigura
         builder.cache_capacity(cache_capacity.extract::<usize>()?);
     }
 
-    if let Some(version) = config.get_item("idempotence_version")? {
-        if !version.is_none() {
-            builder.version(version.extract::<String>()?);
-        }
+    if let Some(version) = config.get_item("idempotence_version")?
+        && !version.is_none()
+    {
+        builder.version(version.extract::<String>()?);
     }
 
-    if let Some(ttl) = config.get_item("idempotence_ttl")? {
-        if let Some(duration) = decode_optional_duration(&ttl)? {
-            builder.ttl(duration);
-        }
+    if let Some(ttl) = config.get_item("idempotence_ttl")?
+        && let Some(duration) = decode_optional_duration(&ttl)?
+    {
+        builder.ttl(duration);
     }
 
     Ok(builder)
