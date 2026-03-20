@@ -228,6 +228,45 @@ async def test_client_configuration(random_topic_and_group):
     logger.debug("TEST test_client_configuration: PASSED")
 
 
+async def test_deduplication_configuration(random_topic_and_group):
+    topic, group = random_topic_and_group
+
+    # idempotence_version and idempotence_ttl as timedelta
+    client = ProsodyClient(
+        bootstrap_servers="localhost:9092",
+        source_system="test-dedup",
+        group_id=group,
+        subscribed_topics=[topic],
+        idempotence_version="2",
+        idempotence_ttl=timedelta(days=7),
+        mock=True,
+    )
+    assert isinstance(client, ProsodyClient)
+
+    # idempotence_ttl as float seconds
+    client = ProsodyClient(
+        bootstrap_servers="localhost:9092",
+        source_system="test-dedup",
+        group_id=group,
+        subscribed_topics=[topic],
+        idempotence_ttl=604800.0,
+        mock=True,
+    )
+    assert isinstance(client, ProsodyClient)
+
+    # None values must not raise a TypeError
+    client = ProsodyClient(
+        bootstrap_servers="localhost:9092",
+        source_system="test-dedup",
+        group_id=group,
+        subscribed_topics=[topic],
+        idempotence_version=None,
+        idempotence_ttl=None,
+        mock=True,
+    )
+    assert isinstance(client, ProsodyClient)
+
+
 async def test_multiple_messages(client, random_topic_and_group):
     logger.debug("=" * 40)
     logger.debug("TEST test_multiple_messages: STARTING")

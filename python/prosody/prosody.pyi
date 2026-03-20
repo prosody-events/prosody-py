@@ -47,6 +47,8 @@ class ProsodyClient:
             send_timeout: Optional[Duration] = None,
             group_id: Optional[str] = None,
             idempotence_cache_size: Optional[int] = None,
+            idempotence_version: Optional[str] = None,
+            idempotence_ttl: Optional[Duration] = None,
             subscribed_topics: Optional[StringOrList] = None,
             allowed_events: Optional[StringOrList] = None,
             max_concurrency: Optional[int] = None,
@@ -103,7 +105,9 @@ class ProsodyClient:
             source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
             send_timeout: Timeout for message send operations.
             group_id: Consumer group name.
-            idempotence_cache_size: Size of LRU caches for deduplicating messages. Set to 0 to disable.
+            idempotence_cache_size: Global shared cache capacity across all partitions. Set to 0 to disable deduplication entirely. Default: 8192.
+            idempotence_version: Version string for cache-busting deduplication hashes. Changing this invalidates all previously recorded entries. Default: "1".
+            idempotence_ttl: TTL for deduplication records in Cassandra. Default: 7 days.
             subscribed_topics: Topics to subscribe to.
             allowed_events: Allowed event type prefixes. All are allowed if unset.
             max_concurrency: Maximum global concurrency limit.
