@@ -19,7 +19,7 @@ name = "prosody"
 chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.31"
-prosody = { git = "https://github.com/cincpro/prosody.git", rev = "ed0528ffec1285270ffac04ea6320648dd9c2c1f", features = [
+prosody = { git = "https://github.com/cincpro/prosody.git", rev = "6c0cbfedc389a97f74a1d7353373d46a9e7b3232", features = [
     "libz-static",
 ] } # replace once we have a package manager
 pyo3 = { version = "0.28", features = ["chrono"] }

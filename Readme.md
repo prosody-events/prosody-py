@@ -193,7 +193,9 @@ Configure via constructor options or environment variables. Options fall back to
 | `stall_threshold` / `PROSODY_STALL_THRESHOLD` | Report unhealthy if no progress for this long  | 5m                     |
 | `probe_port` / `PROSODY_PROBE_PORT`     | HTTP port for health checks (None to disable)        | 8000                   |
 | `failure_topic` / `PROSODY_FAILURE_TOPIC` | Send unprocessable messages here (dead letter queue) | -                    |
-| `idempotence_cache_size` / `PROSODY_IDEMPOTENCE_CACHE_SIZE` | Track this many message IDs to skip duplicates | 4096          |
+| `idempotence_cache_size` / `PROSODY_IDEMPOTENCE_CACHE_SIZE` | Global shared cache capacity across all partitions. Set to `0` to disable the entire deduplication middleware (both in-memory and Cassandra tiers). | 8192 |
+| `idempotence_version` / `PROSODY_IDEMPOTENCE_VERSION` | Version string for cache-busting dedup hashes | `"1"` |
+| `idempotence_ttl` / `PROSODY_IDEMPOTENCE_TTL` | TTL for dedup records in Cassandra | 7d (604800 seconds) |
 | `slab_size` / `PROSODY_SLAB_SIZE`       | Timer storage granularity (rarely needs changing)    | 1h                     |
 
 ### Producer
@@ -410,8 +412,15 @@ This prevents endless loops where a service consumes its own produced messages.
 
 ## Message Deduplication
 
-Prosody automatically deduplicates messages using the `id` field in their JSON payload. Consecutive messages with the
-same ID and key are processed only once.
+Prosody automatically deduplicates messages using the `id` field in their JSON payload. Messages with the same ID and
+key are processed only once.
+
+Deduplication uses a two-tier architecture:
+
+- **Global in-memory cache**: A single LRU cache shared across all partitions in the process. Because it is shared, it
+  survives partition reassignments within the same process, reducing duplicate work during rebalances.
+- **Cassandra-backed persistent store**: Deduplication records written to Cassandra survive process restarts and
+  cross-instance rebalances, providing durable protection against duplicates.
 
 ```python
 # Messages with IDs are deduplicated per key
@@ -431,13 +440,13 @@ await client.send("my-topic", "key2", {
 })
 ```
 
-Deduplication can be disabled by setting:
+The entire deduplication middleware (both the in-memory cache and the Cassandra-backed persistent store) can be disabled by setting `idempotence_cache_size=0`:
 
 ```python
 client = ProsodyClient(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
-    idempotence_cache_size=0  # Disable deduplication
+    idempotence_cache_size=0  # Disable deduplication entirely
 )
 ```
 
@@ -447,8 +456,28 @@ Or via environment variable:
 PROSODY_IDEMPOTENCE_CACHE_SIZE=0
 ```
 
-Note that this deduplication is best-effort and not guaranteed. Because identifiers are cached ephemerally in memory,
-duplicates can still occur when instances rebalance or restart.
+To invalidate all previously recorded deduplication entries (e.g. after a data migration), change `idempotence_version`:
+
+```python
+client = ProsodyClient(
+    group_id="my-consumer-group",
+    subscribed_topics="my-topic",
+    idempotence_version="2"  # All entries recorded under version "1" are ignored
+)
+```
+
+The `idempotence_ttl` option controls how long deduplication records are retained in Cassandra (default: 7 days). Set
+this to match your expected message redelivery window:
+
+```python
+from datetime import timedelta
+
+client = ProsodyClient(
+    group_id="my-consumer-group",
+    subscribed_topics="my-topic",
+    idempotence_ttl=timedelta(days=7)  # also accepts seconds as a float (e.g. 604800.0)
+)
+```
 
 ## Timer Functionality
 
