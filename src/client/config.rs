@@ -236,7 +236,9 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
 fn build_dedup_config(config: &Bound<PyDict>) -> PyResult<DeduplicationConfigurationBuilder> {
     let mut builder = DeduplicationConfigurationBuilder::default();
 
-    if let Some(cache_capacity) = config.get_item("idempotence_cache_size")? {
+    if let Some(cache_capacity) = config.get_item("idempotence_cache_size")?
+        && !cache_capacity.is_none()
+    {
         builder.cache_capacity(cache_capacity.extract::<usize>()?);
     }
 
