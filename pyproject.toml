@@ -30,6 +30,7 @@ name = "prosody"
 requires-python = ">=3.8"
 
 [project.optional-dependencies]
+sentry = ["sentry-sdk>=2.0.0,<3.0.0"]
 dev = [
     "opentelemetry-exporter-otlp>=1.39.1,<2.0.0",
     "opentelemetry-sdk>=1.39.1,<2.0.0",
