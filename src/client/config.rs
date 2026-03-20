@@ -8,8 +8,8 @@ use crate::client::ProsodyClient;
 use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
-use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
 use prosody::consumer::middleware::deduplication::DeduplicationConfigurationBuilder;
+use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
 use prosody::consumer::middleware::monopolization::MonopolizationConfigurationBuilder;
 use prosody::consumer::middleware::retry::RetryConfigurationBuilder;
 use prosody::consumer::middleware::scheduler::SchedulerConfigurationBuilder;
@@ -241,11 +241,15 @@ fn build_dedup_config(config: &Bound<PyDict>) -> PyResult<DeduplicationConfigura
     }
 
     if let Some(version) = config.get_item("idempotence_version")? {
-        builder.version(version.extract::<String>()?);
+        if !version.is_none() {
+            builder.version(version.extract::<String>()?);
+        }
     }
 
     if let Some(ttl) = config.get_item("idempotence_ttl")? {
-        builder.ttl(decode_duration(&ttl)?);
+        if let Some(duration) = decode_optional_duration(&ttl)? {
+            builder.ttl(duration);
+        }
     }
 
     Ok(builder)
