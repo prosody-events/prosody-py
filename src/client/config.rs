@@ -9,6 +9,7 @@ use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
 use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
+use prosody::consumer::middleware::deduplication::DeduplicationConfigurationBuilder;
 use prosody::consumer::middleware::monopolization::MonopolizationConfigurationBuilder;
 use prosody::consumer::middleware::retry::RetryConfigurationBuilder;
 use prosody::consumer::middleware::scheduler::SchedulerConfigurationBuilder;
@@ -56,6 +57,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     let Some(config) = config else {
         let consumer_builders = ConsumerBuilders {
             consumer: ConsumerConfigurationBuilder::default(),
+            dedup: DeduplicationConfigurationBuilder::default(),
             retry: RetryConfigurationBuilder::default(),
             failure_topic: FailureTopicConfigurationBuilder::default(),
             scheduler: SchedulerConfigurationBuilder::default(),
@@ -186,10 +188,6 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.allowed_events(string_or_vec(&allowed_event_types)?);
     }
 
-    if let Some(idempotence_cache_size) = config.get_item("idempotence_cache_size")? {
-        builder.idempotence_cache_size(idempotence_cache_size.extract::<usize>()?);
-    }
-
     if let Some(max_uncommitted) = config.get_item("max_uncommitted")? {
         builder.max_uncommitted(max_uncommitted.extract::<usize>()?);
     }
@@ -216,6 +214,38 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
 
     if let Some(slab_size) = config.get_item("slab_size")? {
         builder.slab_size(decode_duration(&slab_size)?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `DeduplicationConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `DeduplicationConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_dedup_config(config: &Bound<PyDict>) -> PyResult<DeduplicationConfigurationBuilder> {
+    let mut builder = DeduplicationConfigurationBuilder::default();
+
+    if let Some(cache_capacity) = config.get_item("idempotence_cache_size")? {
+        builder.cache_capacity(cache_capacity.extract::<usize>()?);
+    }
+
+    if let Some(version) = config.get_item("idempotence_version")? {
+        builder.version(version.extract::<String>()?);
+    }
+
+    if let Some(ttl) = config.get_item("idempotence_ttl")? {
+        builder.ttl(decode_duration(&ttl)?);
     }
 
     Ok(builder)
@@ -535,6 +565,7 @@ fn build_telemetry_emitter_config(
 fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders> {
     Ok(ConsumerBuilders {
         consumer: build_consumer_config(config)?,
+        dedup: build_dedup_config(config)?,
         retry: build_retry_config(config)?,
         failure_topic: build_failure_topic_config(config)?,
         scheduler: build_scheduler_config(config)?,
