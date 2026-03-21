@@ -10,19 +10,36 @@ from prosody.message import Message
 from prosody.timer import Timer
 
 
+_sentry_resolved = False
+_sentry = None
+
+
 def _get_sentry():
-    if not hasattr(_get_sentry, "_cached"):
-        dsn = os.environ.get("SENTRY_DSN")
-        if not dsn:
-            _get_sentry._cached = None
-        else:
-            try:
-                import sentry_sdk
-                sentry_sdk.init(dsn=dsn, traces_sample_rate=0)
-                _get_sentry._cached = sentry_sdk
-            except ImportError:
-                _get_sentry._cached = None
-    return _get_sentry._cached
+    global _sentry_resolved, _sentry
+    if _sentry_resolved:
+        return _sentry
+    dsn = os.environ.get("SENTRY_DSN")
+    if not dsn:
+        _sentry = None
+    else:
+        try:
+            import sentry_sdk
+            sentry_sdk.init(dsn=dsn, traces_sample_rate=0)
+            _sentry = sentry_sdk
+        except ImportError:
+            _sentry = None
+    _sentry_resolved = True
+    return _sentry
+
+
+def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -> None:
+    sentry = _get_sentry()
+    if sentry is None:
+        return
+    with sentry.new_scope() as scope:
+        scope.set_tag("prosody.event_type", event_type)
+        scope.set_context("prosody", context)
+        sentry.capture_exception(exc)
 
 
 class EventHandler(ABC):
@@ -98,18 +115,13 @@ class ProsodyHandler:
                     await handler_task
                 except asyncio.CancelledError:
                     raise
-                except BaseException as exc:
-                    sentry = _get_sentry()
-                    if sentry is not None:
-                        with sentry.new_scope() as scope:
-                            scope.set_tag("prosody.event_type", "message")
-                            scope.set_context("prosody", {
-                                "topic": getattr(message, "topic", None),
-                                "partition": getattr(message, "partition", None),
-                                "key": getattr(message, "key", None),
-                                "offset": getattr(message, "offset", None),
-                            })
-                            sentry.capture_exception(exc)
+                except Exception as exc:
+                    _capture_handler_exception("message", {
+                        "topic": getattr(message, "topic", None),
+                        "partition": getattr(message, "partition", None),
+                        "key": getattr(message, "key", None),
+                        "offset": getattr(message, "offset", None),
+                    }, exc)
                     raise
 
             finally:
@@ -137,16 +149,11 @@ class ProsodyHandler:
                     await handler_task
                 except asyncio.CancelledError:
                     raise
-                except BaseException as exc:
-                    sentry = _get_sentry()
-                    if sentry is not None:
-                        with sentry.new_scope() as scope:
-                            scope.set_tag("prosody.event_type", "timer")
-                            scope.set_context("prosody", {
-                                "key": getattr(timer, "key", None),
-                                "time": getattr(timer, "time", None),
-                            })
-                            sentry.capture_exception(exc)
+                except Exception as exc:
+                    _capture_handler_exception("timer", {
+                        "key": getattr(timer, "key", None),
+                        "time": getattr(timer, "time", None),
+                    }, exc)
                     raise
 
             finally:
