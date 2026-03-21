@@ -1,5 +1,4 @@
 import asyncio
-import os
 from abc import ABC, abstractmethod
 
 from opentelemetry import trace
@@ -10,36 +9,17 @@ from prosody.message import Message
 from prosody.timer import Timer
 
 
-_sentry_resolved = False
-_sentry = None
-
-
-def _get_sentry():
-    global _sentry_resolved, _sentry
-    if _sentry_resolved:
-        return _sentry
-    dsn = os.environ.get("SENTRY_DSN")
-    if not dsn:
-        _sentry = None
-    else:
-        try:
-            import sentry_sdk
-            sentry_sdk.init(dsn=dsn, traces_sample_rate=0)
-            _sentry = sentry_sdk
-        except ImportError:
-            _sentry = None
-    _sentry_resolved = True
-    return _sentry
-
-
 def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -> None:
-    sentry = _get_sentry()
-    if sentry is None:
+    try:
+        import sentry_sdk
+    except ImportError:
         return
-    with sentry.new_scope() as scope:
+    if not sentry_sdk.is_initialized():
+        return
+    with sentry_sdk.new_scope() as scope:
         scope.set_tag("prosody.event_type", event_type)
         scope.set_context("prosody", context)
-        sentry.capture_exception(exc)
+        sentry_sdk.capture_exception(exc)
 
 
 class EventHandler(ABC):
