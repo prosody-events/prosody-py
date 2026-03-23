@@ -16,7 +16,7 @@ def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -
         return
     if not sentry_sdk.is_initialized():
         return
-    with sentry_sdk.new_scope() as scope:
+    with sentry_sdk.isolation_scope() as scope:
         scope.set_tag("prosody.event_type", event_type)
         scope.set_context("prosody", context)
         sentry_sdk.capture_exception(exc)
