@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 from abc import ABC, abstractmethod
 
 from opentelemetry import trace
@@ -8,18 +10,40 @@ from prosody.context import Context
 from prosody.message import Message
 from prosody.timer import Timer
 
+_log = logging.getLogger(__name__)
 
-def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -> None:
+_sentry = ...  # uninitialized sentinel; None means "DSN absent or package missing"
+
+
+def _get_sentry():
+    global _sentry
+    if _sentry is not ...:
+        return _sentry
+    _sentry = None
+    if not os.environ.get("SENTRY_DSN"):
+        return None
     try:
         import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        if not sentry_sdk.is_initialized():
+            sentry_sdk.init(
+                dsn=os.environ["SENTRY_DSN"],
+                integrations=[LoggingIntegration(event_level=None)],
+            )
+        _sentry = sentry_sdk
     except ImportError:
+        _log.error("SENTRY_DSN is set but sentry-sdk is not installed. Run: pip install 'prosody[sentry]'")
+    return _sentry
+
+
+def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -> None:
+    sentry = _get_sentry()
+    if sentry is None:
         return
-    if not sentry_sdk.is_initialized():
-        return
-    with sentry_sdk.isolation_scope() as scope:
+    with sentry.isolation_scope() as scope:
         scope.set_tag("prosody.event_type", event_type)
         scope.set_context("prosody", context)
-        sentry_sdk.capture_exception(exc)
+        sentry.capture_exception(exc.__cause__ or exc)
 
 
 class EventHandler(ABC):
