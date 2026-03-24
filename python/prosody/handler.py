@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 from abc import ABC, abstractmethod
 
 from opentelemetry import trace
@@ -7,6 +9,41 @@ from opentelemetry.propagate import extract
 from prosody.context import Context
 from prosody.message import Message
 from prosody.timer import Timer
+
+_log = logging.getLogger(__name__)
+
+_sentry = ...  # uninitialized sentinel; None means "DSN absent or package missing"
+
+
+def _get_sentry():
+    global _sentry
+    if _sentry is not ...:
+        return _sentry
+    _sentry = None
+    if not os.environ.get("SENTRY_DSN"):
+        return None
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        if not sentry_sdk.is_initialized():
+            sentry_sdk.init(
+                dsn=os.environ["SENTRY_DSN"],
+                integrations=[LoggingIntegration(event_level=None)],
+            )
+        _sentry = sentry_sdk
+    except ImportError:
+        _log.error("SENTRY_DSN is set but sentry-sdk is not installed. Run: pip install 'prosody[sentry]'")
+    return _sentry
+
+
+def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -> None:
+    sentry = _get_sentry()
+    if sentry is None:
+        return
+    with sentry.isolation_scope() as scope:
+        scope.set_tag("prosody.event_type", event_type)
+        scope.set_context("prosody", context)
+        sentry.capture_exception(exc.__cause__ or exc)
 
 
 class EventHandler(ABC):
@@ -78,7 +115,18 @@ class ProsodyHandler:
                 if shutdown_task in done:
                     handler_task.cancel("partition has been revoked")
 
-                await handler_task
+                try:
+                    await handler_task
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    _capture_handler_exception("message", {
+                        "topic": getattr(message, "topic", None),
+                        "partition": getattr(message, "partition", None),
+                        "key": getattr(message, "key", None),
+                        "offset": getattr(message, "offset", None),
+                    }, exc)
+                    raise
 
             finally:
                 for task in {handler_task, shutdown_task}:
@@ -101,7 +149,16 @@ class ProsodyHandler:
                 if shutdown_task in done:
                     handler_task.cancel("partition has been revoked")
 
-                await handler_task
+                try:
+                    await handler_task
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    _capture_handler_exception("timer", {
+                        "key": getattr(timer, "key", None),
+                        "time": getattr(timer, "time", None),
+                    }, exc)
+                    raise
 
             finally:
                 for task in {handler_task, shutdown_task}:
