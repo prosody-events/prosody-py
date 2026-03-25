@@ -15,6 +15,7 @@ use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::process;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
@@ -38,6 +39,7 @@ pub struct ProsodyClient {
     client: Arc<HighLevelClient<PythonHandler>>,
     get_context: Py<PyAny>,
     inject: Py<PyAny>,
+    pid: u32,
 }
 
 #[pymethods]
@@ -62,6 +64,16 @@ impl ProsodyClient {
         try_build_config(py, config)
     }
 
+    fn check_fork(&self) -> PyResult<()> {
+        if process::id() != self.pid {
+            return Err(PyRuntimeError::new_err(
+                "ProsodyClient cannot be used after fork. Create a new client in the child \
+                 process.",
+            ));
+        }
+        Ok(())
+    }
+
     /// Sends a message to a specified topic.
     ///
     /// # Arguments
@@ -80,6 +92,7 @@ impl ProsodyClient {
         key: String,
         payload: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         // Extract trace headers and convert payload to JSON-serializable value
         let context = self.get_context.bind(py).call0()?;
         let data = PyDict::new(py);
@@ -121,6 +134,7 @@ impl ProsodyClient {
     /// build, with the full error message from the underlying
     /// `ModeConfigurationError`.
     fn consumer_state<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let state = client.consumer_state().await;
@@ -148,6 +162,7 @@ impl ProsodyClient {
         py: Python<'p>,
         handler: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let handler = PythonHandler::new(handler)?;
         let client = self.client.clone();
 
@@ -163,6 +178,7 @@ impl ProsodyClient {
     ///
     /// Returns 0 if the consumer is not in the Running state.
     fn assigned_partition_count<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(
             py,
@@ -174,6 +190,7 @@ impl ProsodyClient {
     ///
     /// Returns `false` if the consumer is not in the Running state.
     fn is_stalled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(py, async move { Ok(client.is_stalled().await) })
     }
@@ -196,6 +213,7 @@ impl ProsodyClient {
     /// Returns a `PyRuntimeError` if the consumer is not configured or not
     /// subscribed.
     fn unsubscribe<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(py, async move {
             client
@@ -213,6 +231,7 @@ impl ProsodyClient {
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
+        slf.check_fork()?;
         let consumer_state_ref: &ConsumerState<_> = &slf.consumer_state_sync();
 
         let consumer_properties = match consumer_state_ref {
@@ -246,6 +265,7 @@ impl ProsodyClient {
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
+        slf.check_fork()?;
         let consumer_state_ref: &ConsumerState<_> = &slf.consumer_state_sync();
 
         let consumer_properties = match consumer_state_ref {

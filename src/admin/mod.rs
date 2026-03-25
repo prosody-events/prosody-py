@@ -6,6 +6,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
+use std::process;
 use std::sync::Arc;
 
 mod config;
@@ -17,6 +18,7 @@ mod config;
 #[pyclass]
 pub struct AdminClient {
     client: Arc<ProsodyAdminClient>,
+    pid: u32,
 }
 
 #[pymethods]
@@ -37,6 +39,15 @@ impl AdminClient {
     #[pyo3(signature = (**config))]
     fn new(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Self> {
         try_build_admin_config(py, config)
+    }
+
+    fn check_fork(&self) -> PyResult<()> {
+        if process::id() != self.pid {
+            return Err(PyRuntimeError::new_err(
+                "AdminClient cannot be used after fork. Create a new client in the child process.",
+            ));
+        }
+        Ok(())
     }
 
     /// Creates a new Kafka topic.
@@ -68,6 +79,7 @@ impl AdminClient {
         name: String,
         config: Option<&Bound<PyDict>>,
     ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         let topic_config = build_topic_config(config, name)?;
 
@@ -89,6 +101,7 @@ impl AdminClient {
     ///
     /// Returns a `PyRuntimeError` if the topic deletion fails.
     fn delete_topic<'p>(&self, py: Python<'p>, name: String) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(py, async move {
             client

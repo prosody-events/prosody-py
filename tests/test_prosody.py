@@ -138,6 +138,45 @@ async def test_client_source_system(client):
     logger.debug("TEST test_client_source_system: PASSED")
 
 
+def test_client_raises_after_fork():
+    import os
+
+    client = ProsodyClient(
+        bootstrap_servers="localhost:9092",
+        source_system="fork-test",
+        mock=True,
+    )
+
+    rd, wr = os.pipe()
+    pid = os.fork()
+
+    if pid == 0:
+        # Child process
+        os.close(rd)
+        try:
+            asyncio.run(client.consumer_state())
+            os.write(wr, b"ok")
+        except RuntimeError as e:
+            os.write(wr, f"error:{e}".encode())
+        except Exception as e:
+            os.write(wr, f"unexpected:{e}".encode())
+        finally:
+            os.close(wr)
+            os._exit(0)
+
+    # Parent process
+    os.close(wr)
+    chunks = []
+    while chunk := os.read(rd, 4096):
+        chunks.append(chunk)
+    os.close(rd)
+    os.waitpid(pid, 0)
+
+    result = b"".join(chunks).decode()
+    assert result.startswith("error:"), f"expected RuntimeError in child, got: {result!r}"
+    assert "after fork" in result, f"unexpected error message: {result!r}"
+
+
 async def test_client_subscribe_unsubscribe(client):
     logger.debug("=" * 40)
     logger.debug("TEST test_client_subscribe_unsubscribe: STARTING")

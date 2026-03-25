@@ -13,6 +13,7 @@ use prosody::admin::{
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
 use pyo3::{Bound, PyResult, Python};
+use std::process;
 use std::sync::Arc;
 
 /// Builds an `AdminClient` configuration based on the provided Python
@@ -51,6 +52,7 @@ pub fn try_build_admin_config(
 
     Ok(AdminClient {
         client: Arc::new(client),
+        pid: process::id(),
     })
 }
 
