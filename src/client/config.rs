@@ -23,6 +23,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
+use std::process;
 use std::sync::Arc;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
@@ -82,6 +83,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
             client: Arc::new(client),
             get_context,
             inject,
+            pid: process::id(),
         });
     };
 
@@ -112,6 +114,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         client: Arc::new(client),
         get_context,
         inject,
+        pid: process::id(),
     })
 }
 
