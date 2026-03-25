@@ -41,15 +41,6 @@ impl AdminClient {
         try_build_admin_config(py, config)
     }
 
-    fn check_fork(&self) -> PyResult<()> {
-        if process::id() != self.pid {
-            return Err(PyRuntimeError::new_err(
-                "AdminClient cannot be used after fork. Create a new client in the child process.",
-            ));
-        }
-        Ok(())
-    }
-
     /// Creates a new Kafka topic.
     ///
     /// # Arguments
@@ -129,5 +120,17 @@ impl AdminClient {
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         Ok(format!("{class_name}: Kafka administration client"))
+    }
+}
+
+#[allow(clippy::multiple_inherent_impl)]
+impl AdminClient {
+    fn check_fork(&self) -> PyResult<()> {
+        if process::id() != self.pid {
+            return Err(PyRuntimeError::new_err(
+                "AdminClient cannot be used after fork. Create a new client in the child process.",
+            ));
+        }
+        Ok(())
     }
 }

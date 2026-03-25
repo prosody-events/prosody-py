@@ -64,16 +64,6 @@ impl ProsodyClient {
         try_build_config(py, config)
     }
 
-    fn check_fork(&self) -> PyResult<()> {
-        if process::id() != self.pid {
-            return Err(PyRuntimeError::new_err(
-                "ProsodyClient cannot be used after fork. Create a new client in the child \
-                 process.",
-            ));
-        }
-        Ok(())
-    }
-
     /// Sends a message to a specified topic.
     ///
     /// # Arguments
@@ -304,10 +294,13 @@ impl ProsodyClient {
     /// such as when the `PyVisit::call` method fails.
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        // If the consumer is in the Running state, visit the handler's method
-        let consumer_state_ref: &ConsumerState<_> = &self.consumer_state_sync();
-
-        if let ConsumerState::Running { handler, .. } = consumer_state_ref {
+        // Skip consumer_state_sync() in a forked child: the tokio runtime is
+        // dead after fork and block_on would deadlock the interpreter while
+        // holding the GIL. The handler's Python objects are released when the
+        // child exits, so skipping their traversal is safe.
+        if process::id() == self.pid
+            && let ConsumerState::Running { handler, .. } = &*self.consumer_state_sync()
+        {
             visit.call(handler.handle_method().as_any())?;
             visit.call(handler.timer_method().as_any())?;
             visit.call(handler.message_class().as_any())?;
@@ -325,6 +318,16 @@ impl ProsodyClient {
 
 #[allow(clippy::multiple_inherent_impl)]
 impl ProsodyClient {
+    fn check_fork(&self) -> PyResult<()> {
+        if process::id() != self.pid {
+            return Err(PyRuntimeError::new_err(
+                "ProsodyClient cannot be used after fork. Create a new client in the child \
+                 process.",
+            ));
+        }
+        Ok(())
+    }
+
     fn consumer_state_sync(&self) -> ConsumerStateView<'_, PythonHandler> {
         let handle = Handle::try_current().unwrap_or_else(|_| get_runtime().handle().clone());
         block_in_place(|| handle.block_on(self.client.consumer_state()))
