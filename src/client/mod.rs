@@ -15,6 +15,7 @@ use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::process;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
@@ -38,6 +39,7 @@ pub struct ProsodyClient {
     client: Arc<HighLevelClient<PythonHandler>>,
     get_context: Py<PyAny>,
     inject: Py<PyAny>,
+    pid: u32,
 }
 
 #[pymethods]
@@ -80,6 +82,7 @@ impl ProsodyClient {
         key: String,
         payload: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         // Extract trace headers and convert payload to JSON-serializable value
         let context = self.get_context.bind(py).call0()?;
         let data = PyDict::new(py);
@@ -121,6 +124,7 @@ impl ProsodyClient {
     /// build, with the full error message from the underlying
     /// `ModeConfigurationError`.
     fn consumer_state<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let state = client.consumer_state().await;
@@ -148,6 +152,7 @@ impl ProsodyClient {
         py: Python<'p>,
         handler: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let handler = PythonHandler::new(handler)?;
         let client = self.client.clone();
 
@@ -163,6 +168,7 @@ impl ProsodyClient {
     ///
     /// Returns 0 if the consumer is not in the Running state.
     fn assigned_partition_count<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(
             py,
@@ -174,6 +180,7 @@ impl ProsodyClient {
     ///
     /// Returns `false` if the consumer is not in the Running state.
     fn is_stalled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(py, async move { Ok(client.is_stalled().await) })
     }
@@ -196,6 +203,7 @@ impl ProsodyClient {
     /// Returns a `PyRuntimeError` if the consumer is not configured or not
     /// subscribed.
     fn unsubscribe<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
         let client = self.client.clone();
         future_into_py(py, async move {
             client
@@ -213,6 +221,7 @@ impl ProsodyClient {
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
+        slf.check_fork()?;
         let consumer_state_ref: &ConsumerState<_> = &slf.consumer_state_sync();
 
         let consumer_properties = match consumer_state_ref {
@@ -246,6 +255,7 @@ impl ProsodyClient {
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
+        slf.check_fork()?;
         let consumer_state_ref: &ConsumerState<_> = &slf.consumer_state_sync();
 
         let consumer_properties = match consumer_state_ref {
@@ -284,10 +294,13 @@ impl ProsodyClient {
     /// such as when the `PyVisit::call` method fails.
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        // If the consumer is in the Running state, visit the handler's method
-        let consumer_state_ref: &ConsumerState<_> = &self.consumer_state_sync();
-
-        if let ConsumerState::Running { handler, .. } = consumer_state_ref {
+        // Skip consumer_state_sync() in a forked child: the tokio runtime is
+        // dead after fork and block_on would deadlock the interpreter while
+        // holding the GIL. The handler's Python objects are released when the
+        // child exits, so skipping their traversal is safe.
+        if process::id() == self.pid
+            && let ConsumerState::Running { handler, .. } = &*self.consumer_state_sync()
+        {
             visit.call(handler.handle_method().as_any())?;
             visit.call(handler.timer_method().as_any())?;
             visit.call(handler.message_class().as_any())?;
@@ -305,6 +318,16 @@ impl ProsodyClient {
 
 #[allow(clippy::multiple_inherent_impl)]
 impl ProsodyClient {
+    fn check_fork(&self) -> PyResult<()> {
+        if process::id() != self.pid {
+            return Err(PyRuntimeError::new_err(
+                "ProsodyClient cannot be used after fork. Create a new client in the child \
+                 process.",
+            ));
+        }
+        Ok(())
+    }
+
     fn consumer_state_sync(&self) -> ConsumerStateView<'_, PythonHandler> {
         let handle = Handle::try_current().unwrap_or_else(|_| get_runtime().handle().clone());
         block_in_place(|| handle.block_on(self.client.consumer_state()))
