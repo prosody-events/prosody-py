@@ -113,7 +113,7 @@ class ProsodyClient:
             max_concurrency: Maximum global concurrency limit.
             max_uncommitted: Max number of uncommitted messages.
             stall_threshold: Threshold determining when message processing has stalled.
-            shutdown_timeout: Timeout to wait for in-flight tasks to complete during partition shutdown.
+            shutdown_timeout: Shutdown budget; handlers complete freely before cancellation fires near the deadline.
             poll_interval: Time between message polls.
             commit_interval: Time between offset commits.
             mode: Operating mode ('pipeline', 'low-latency', or 'best-effort').
