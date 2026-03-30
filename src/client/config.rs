@@ -219,6 +219,22 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.slab_size(decode_duration(&slab_size)?);
     }
 
+    if let Some(message_spans) = config.get_item("message_spans")? {
+        let s: String = message_spans.extract()?;
+        let relation = s.parse::<prosody::consumer::SpanRelation>().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(e.to_string())
+        })?;
+        builder.message_spans(relation);
+    }
+
+    if let Some(timer_spans) = config.get_item("timer_spans")? {
+        let s: String = timer_spans.extract()?;
+        let relation = s.parse::<prosody::consumer::SpanRelation>().map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(e.to_string())
+        })?;
+        builder.timer_spans(relation);
+    }
+
     Ok(builder)
 }
 
