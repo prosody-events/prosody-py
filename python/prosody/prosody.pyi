@@ -95,6 +95,9 @@ class ProsodyClient:
             # Telemetry emitter configuration
             telemetry_topic: Optional[str] = None,
             telemetry_enabled: Optional[bool] = None,
+            # OTel span linking
+            message_spans: Optional[Literal['child', 'follows_from']] = None,
+            timer_spans: Optional[Literal['child', 'follows_from']] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.
@@ -113,7 +116,7 @@ class ProsodyClient:
             max_concurrency: Maximum global concurrency limit.
             max_uncommitted: Max number of uncommitted messages.
             stall_threshold: Threshold determining when message processing has stalled.
-            shutdown_timeout: Timeout to wait for in-flight tasks to complete during partition shutdown.
+            shutdown_timeout: Shutdown budget; handlers complete freely before cancellation fires near the deadline.
             poll_interval: Time between message polls.
             commit_interval: Time between offset commits.
             mode: Operating mode ('pipeline', 'low-latency', or 'best-effort').
@@ -149,6 +152,8 @@ class ProsodyClient:
             timeout: Fixed timeout duration for handler execution. Defaults to 80% of stall threshold.
             telemetry_topic: Kafka topic to produce internal telemetry events to. Defaults to 'prosody.telemetry-events'.
             telemetry_enabled: Whether the telemetry emitter is enabled. Defaults to True.
+            message_spans: Span linking for message execution ('child' or 'follows_from'). Defaults to 'child'.
+            timer_spans: Span linking for timer execution ('child' or 'follows_from'). Defaults to 'follows_from'.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.

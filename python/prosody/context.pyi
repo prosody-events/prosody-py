@@ -55,8 +55,9 @@ class Context:
         """
         Check if cancellation has been requested.
 
-        Cancellation includes both message-level cancellation (e.g., timeout)
-        and partition shutdown.
+        Cancellation includes message-level cancellation (e.g., timeout) and
+        partition shutdown. During shutdown, cancellation is delayed until near
+        the end of the shutdown timeout to allow in-flight work to complete.
 
         Returns:
             True if cancellation has been requested, False otherwise
@@ -67,8 +68,9 @@ class Context:
         """
         Waits for a cancellation signal.
 
-        Cancellation includes both message-level cancellation (e.g., timeout)
-        and partition shutdown.
+        Cancellation includes message-level cancellation (e.g., timeout) and
+        partition shutdown. During shutdown, cancellation is delayed until near
+        the end of the shutdown timeout to allow in-flight work to complete.
 
         Returns:
             A coroutine that completes when cancellation is signaled.

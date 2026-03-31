@@ -8,6 +8,7 @@ use crate::client::ProsodyClient;
 use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
+use prosody::consumer::SpanRelation;
 use prosody::consumer::middleware::deduplication::DeduplicationConfigurationBuilder;
 use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
 use prosody::consumer::middleware::monopolization::MonopolizationConfigurationBuilder;
@@ -217,6 +218,26 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
 
     if let Some(slab_size) = config.get_item("slab_size")? {
         builder.slab_size(decode_duration(&slab_size)?);
+    }
+
+    if let Some(message_spans) = config.get_item("message_spans")?
+        && !message_spans.is_none()
+    {
+        let s: String = message_spans.extract()?;
+        let relation = s
+            .parse::<SpanRelation>()
+            .map_err(|e| PyValueError::new_err(format!("message_spans: {e}")))?;
+        builder.message_spans(relation);
+    }
+
+    if let Some(timer_spans) = config.get_item("timer_spans")?
+        && !timer_spans.is_none()
+    {
+        let s: String = timer_spans.extract()?;
+        let relation = s
+            .parse::<SpanRelation>()
+            .map_err(|e| PyValueError::new_err(format!("timer_spans: {e}")))?;
+        builder.timer_spans(relation);
     }
 
     Ok(builder)

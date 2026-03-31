@@ -306,6 +306,56 @@ async def test_deduplication_configuration(random_topic_and_group):
     assert isinstance(client, ProsodyClient)
 
 
+async def test_span_configuration(random_topic_and_group):
+    topic, group = random_topic_and_group
+
+    # valid message_spans and timer_spans
+    client = ProsodyClient(
+        bootstrap_servers="localhost:9092",
+        source_system="test-spans",
+        group_id=group,
+        subscribed_topics=[topic],
+        message_spans="child",
+        timer_spans="follows_from",
+        mock=True,
+    )
+    assert isinstance(client, ProsodyClient)
+
+    # None values must not raise
+    client = ProsodyClient(
+        bootstrap_servers="localhost:9092",
+        source_system="test-spans",
+        group_id=group,
+        subscribed_topics=[topic],
+        message_spans=None,
+        timer_spans=None,
+        mock=True,
+    )
+    assert isinstance(client, ProsodyClient)
+
+    # invalid message_spans raises ValueError with field name
+    with pytest.raises(ValueError, match="message_spans"):
+        ProsodyClient(
+            bootstrap_servers="localhost:9092",
+            source_system="test-spans",
+            group_id=group,
+            subscribed_topics=[topic],
+            message_spans="invalid",
+            mock=True,
+        )
+
+    # invalid timer_spans raises ValueError with field name
+    with pytest.raises(ValueError, match="timer_spans"):
+        ProsodyClient(
+            bootstrap_servers="localhost:9092",
+            source_system="test-spans",
+            group_id=group,
+            subscribed_topics=[topic],
+            timer_spans="invalid",
+            mock=True,
+        )
+
+
 async def test_multiple_messages(client, random_topic_and_group):
     logger.debug("=" * 40)
     logger.debug("TEST test_multiple_messages: STARTING")
