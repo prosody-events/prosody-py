@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.4.0](https://github.com/cincpro/prosody-py/compare/v2.3.0...v2.4.0) (2026-03-31)
+
+
+### Features
+
+* persistent deduplication with global cache and Cassandra backend ([#130](https://github.com/cincpro/prosody-py/issues/130)) ([b16db20](https://github.com/cincpro/prosody-py/commit/b16db2078fcd39c387fc25066446124fe5aab953))
+* protect client methods against post-fork usage ([#133](https://github.com/cincpro/prosody-py/issues/133)) ([5f2c142](https://github.com/cincpro/prosody-py/commit/5f2c142ceebc37f26c1c40cfba8ca76b38c159d7))
+* Sentry error monitoring for handler dispatch ([#132](https://github.com/cincpro/prosody-py/issues/132)) ([5126222](https://github.com/cincpro/prosody-py/commit/51262220be692dac45ea35e35e4e07ff383dc347))
+* shutdown grace period and configurable span relation ([#134](https://github.com/cincpro/prosody-py/issues/134)) ([7fa0381](https://github.com/cincpro/prosody-py/commit/7fa0381704fe7f4e4356833886bd65d82a00f7ef))
+
 ## [2.3.0](https://github.com/cincpro/prosody-py/compare/v2.2.1...v2.3.0) (2026-03-19)
 
 
