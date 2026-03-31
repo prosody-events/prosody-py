@@ -220,19 +220,23 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.slab_size(decode_duration(&slab_size)?);
     }
 
-    if let Some(message_spans) = config.get_item("message_spans")? {
+    if let Some(message_spans) = config.get_item("message_spans")?
+        && !message_spans.is_none()
+    {
         let s: String = message_spans.extract()?;
         let relation = s
             .parse::<SpanRelation>()
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| PyValueError::new_err(format!("message_spans: {e}")))?;
         builder.message_spans(relation);
     }
 
-    if let Some(timer_spans) = config.get_item("timer_spans")? {
+    if let Some(timer_spans) = config.get_item("timer_spans")?
+        && !timer_spans.is_none()
+    {
         let s: String = timer_spans.extract()?;
         let relation = s
             .parse::<SpanRelation>()
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| PyValueError::new_err(format!("timer_spans: {e}")))?;
         builder.timer_spans(relation);
     }
 
