@@ -7,7 +7,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
-    "License :: Other/Proprietary License",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -26,6 +26,7 @@ dependencies = [
 description = "High-performance Python bindings for a Rust-based Kafka client"
 dynamic = ["version"]
 keywords = ["async", "client", "distributed", "kafka", "messaging"]
+license = "MIT"
 name = "prosody"
 requires-python = ">=3.8"
 

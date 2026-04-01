@@ -949,3 +949,7 @@ Represents a timer that has fired, provided to the `on_timer` method:
 
 - `key: str`: The entity key identifying what this timer belongs to
 - `time: datetime`: The time when this timer was scheduled to fire
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
