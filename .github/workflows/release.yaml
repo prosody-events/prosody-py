@@ -33,7 +33,7 @@ jobs:
         id: release
         uses: googleapis/release-please-action@v4
         with:
-          token: ${{ secrets.TEMP_GH_ALL_REPOS_RW }}
+          token: ${{ secrets.GH_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           release-as: ${{ github.event.inputs.release_as }}
@@ -59,13 +59,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: 3.x
-      - uses: de-vri-es/setup-git-credentials@v2
-        with:
-          credentials: https://Joshua-Griffith_fnf:${{ secrets.TEMP_GH_ALL_REPOS_RW }}@github.com/
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -86,8 +82,7 @@ jobs:
               ln -sf "$curl_include" \
                 /usr/aarch64-unknown-linux-gnu/aarch64-unknown-linux-gnu/sysroot/usr/include/curl
             fi
-          docker-options: >-
-            -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
+
       - name: Attest wheels
         uses: actions/attest-build-provenance@v4
         with:
@@ -119,13 +114,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: 3.x
-      - uses: de-vri-es/setup-git-credentials@v2
-        with:
-          credentials: https://Joshua-Griffith_fnf:${{ secrets.TEMP_GH_ALL_REPOS_RW }}@github.com/
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -145,8 +136,7 @@ jobs:
                 ln -sf "$curl_include" "${target_dir}include/curl"
               done
             fi
-          docker-options: >-
-            -v /home/runner/.config/git/credentials:/root/.config/git/credentials:ro
+
       - name: Attest wheels
         uses: actions/attest-build-provenance@v4
         with:
@@ -176,13 +166,9 @@ jobs:
         with:
           python-version: 3.x
           architecture: ${{ matrix.platform.target }}
-      - uses: de-vri-es/setup-git-credentials@v2
-        with:
-          credentials: https://Joshua-Griffith_fnf:${{ secrets.TEMP_GH_ALL_REPOS_RW }}@github.com/
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -216,13 +202,9 @@ jobs:
         with:
           python-version: 3.x
       - uses: dtolnay/rust-toolchain@stable
-      - uses: de-vri-es/setup-git-credentials@v2
-        with:
-          credentials: https://Joshua-Griffith_fnf:${{ secrets.TEMP_GH_ALL_REPOS_RW }}@github.com/
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
@@ -247,13 +229,9 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v6
-      - uses: de-vri-es/setup-git-credentials@v2
-        with:
-          credentials: https://Joshua-Griffith_fnf:${{ secrets.TEMP_GH_ALL_REPOS_RW }}@github.com/
+
       - name: Build sdist
         uses: PyO3/maturin-action@v1
-        env:
-          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
         with:
           command: sdist
           args: --out dist
