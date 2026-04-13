@@ -17,18 +17,10 @@ strategies, and integrated OpenTelemetry support for distributed tracing.
 
 ## Installation
 
-Installation is straightforward using pip, but you will need to have pip point at the Gemfury repository with either 
-an argument or an environment variable. Prosody currently supports Python 3.11 to 3.13
+Prosody supports Python 3.8 and above. Install from PyPI:
 
 ```bash
-pip install prosody --extra-index-url https://pypi.fury.io/<OUR GEMFURY SECRET>/realgeeks/
-```
-
-Or
-
-```bash
-export PIP_EXTRA_INDEX_URL=https://pypi.fury.io/<OUR GEMFURY SECRET>/realgeeks/
-pip install prosody
+pip install prosody-events
 ```
 
 ## Quick Start
@@ -794,16 +786,15 @@ Prosody uses an automated release process managed by GitHub Actions. Here's an o
     - When the PR is merged, it creates a GitHub release and a git tag.
 
 3. **Build Process**: If a new release is created, the following build jobs are triggered:
-    - Linux builds for x86_64, aarch64, and armv7 architectures.
+    - Linux builds for x86_64 and aarch64 architectures.
     - MuslLinux builds for the same architectures.
     - Windows build for x64 architecture.
-    - macOS builds for x86_64 and aarch64 architectures.
+    - macOS build for aarch64 architecture.
     - Source distribution (sdist) build.
 
 4. **Artifact Upload**: Each build job uploads its artifacts (wheels or sdist) to GitHub Actions.
 
-5. **Publication**: If all builds are successful, the final step publishes the built artifacts to Gemfury, our private
-   Python package index.
+5. **Publication**: If all builds are successful, the final step publishes the built artifacts to PyPI.
 
 ### Contributing to Releases
 
@@ -822,7 +813,7 @@ While the process is automated, manual intervention may sometimes be necessary:
 - You can manually trigger the release workflow from the GitHub Actions tab if needed.
 - If you need to make changes to the release PR created by Release Please, you can do so before merging it.
 
-Remember, all releases are automatically published to Gemfury. Ensure you have thoroughly tested your changes before
+Remember, all releases are automatically published to PyPI. Ensure you have thoroughly tested your changes before
 merging to `main`.
 
 ## Administrative Operations
