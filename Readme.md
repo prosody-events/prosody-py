@@ -17,7 +17,7 @@ strategies, and integrated OpenTelemetry support for distributed tracing.
 
 ## Installation
 
-Prosody supports Python 3.8 and above. Install from PyPI:
+Prosody supports Python 3.8 and above, including free-threaded builds (3.13t, 3.14t). Install from PyPI:
 
 ```bash
 pip install prosody-events
