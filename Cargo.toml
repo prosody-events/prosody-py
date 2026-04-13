@@ -3,12 +3,12 @@ authors = ["Josh Griffith <joshua.griffith@realgeeks.com>"]
 categories = ["api-bindings", "asynchronous", "database"]
 description = "Python bindings for the Prosody Kafka client library"
 edition = "2024"
-homepage = "https://github.com/cincpro/prosody-py"
+homepage = "https://github.com/prosody-events/prosody-py"
 keywords = ["bindings", "client", "kafka", "prosody", "python"]
 license = "MIT"
 name = "prosody-py"
 readme = "Readme.md"
-repository = "https://github.com/cincpro/prosody-py"
+repository = "https://github.com/prosody-events/prosody-py"
 version = "2.4.0"
 
 [lib]

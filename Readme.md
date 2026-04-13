@@ -1,6 +1,6 @@
 # Prosody: Python Bindings for Kafka
 
-Prosody offers Python bindings to the [Prosody Kafka client](https://github.com/cincpro/prosody), providing
+Prosody offers Python bindings to the [Prosody Kafka client](https://github.com/prosody-events/prosody), providing
 features for message production and consumption, including configurable retry mechanisms, failure handling
 strategies, and integrated OpenTelemetry support for distributed tracing.
 
