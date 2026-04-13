@@ -11,6 +11,9 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -25,9 +28,10 @@ dependencies = [
 ]
 description = "High-performance Python bindings for a Rust-based Kafka client"
 dynamic = ["version"]
+readme = "Readme.md"
 keywords = ["async", "client", "distributed", "kafka", "messaging"]
 license = "MIT"
-name = "prosody"
+name = "prosody-events"
 requires-python = ">=3.8"
 
 [project.optional-dependencies]
@@ -40,6 +44,10 @@ dev = [
     "sentry-sdk>=2.0.0,<3.0.0",
 ]
 sentry = ["sentry-sdk>=2.0.0,<3.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/prosody-events/prosody-py"
+Repository = "https://github.com/prosody-events/prosody-py"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
