@@ -512,6 +512,11 @@ fn build_defer_config(config: &Bound<PyDict>) -> PyResult<DeferConfigurationBuil
         builder.cache_size(cache_size.extract::<usize>()?);
     }
 
+    if let Some(store_cache_size) = config.get_item("defer_store_cache_size")? {
+        let store_cache_size: usize = store_cache_size.extract()?;
+        builder.store_cache_size(store_cache_size);
+    }
+
     if let Some(seek_timeout) = config.get_item("defer_seek_timeout")? {
         builder.seek_timeout(decode_duration(&seek_timeout)?);
     }
