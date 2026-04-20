@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.1.0...prosody-py-v0.1.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* **deps:** upgrade prosody to 0.1.2 ([#9](https://github.com/prosody-events/prosody-py/issues/9)) ([1d27696](https://github.com/prosody-events/prosody-py/commit/1d276967dae4b12b615396fe9a250a04d9e02c14))
+
 ## 0.1.0 (2026-04-13)
 
 
