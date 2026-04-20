@@ -88,6 +88,7 @@ class ProsodyClient:
             defer_failure_threshold: Optional[float] = None,
             defer_failure_window: Optional[Duration] = None,
             defer_cache_size: Optional[int] = None,
+            defer_store_cache_size: Optional[int] = None,
             defer_seek_timeout: Optional[Duration] = None,
             defer_discard_threshold: Optional[int] = None,
             # Timeout configuration
@@ -147,6 +148,7 @@ class ProsodyClient:
             defer_failure_threshold: Failure rate threshold for enabling deferral (0.0 to 1.0).
             defer_failure_window: Sliding window duration for failure rate tracking.
             defer_cache_size: Cache size for defer middleware.
+            defer_store_cache_size: Maximum deferred store cache entries (default: 8192). Env: PROSODY_DEFER_STORE_CACHE_SIZE.
             defer_seek_timeout: Timeout for Kafka seek operations.
             defer_discard_threshold: Messages to read sequentially before seeking.
             timeout: Fixed timeout duration for handler execution. Defaults to 80% of stall threshold.
