@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 
 from opentelemetry import trace
 from opentelemetry.propagate import extract
+from opentelemetry.trace import StatusCode
 
 from prosody.context import Context
 from prosody.message import Message
@@ -120,6 +121,9 @@ class ProsodyHandler:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    current_span = trace.get_current_span()
+                    current_span.record_exception(exc)
+                    current_span.set_status(StatusCode.ERROR, str(exc))
                     _capture_handler_exception("message", {
                         "topic": getattr(message, "topic", None),
                         "partition": getattr(message, "partition", None),
@@ -154,6 +158,9 @@ class ProsodyHandler:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    current_span = trace.get_current_span()
+                    current_span.record_exception(exc)
+                    current_span.set_status(StatusCode.ERROR, str(exc))
                     _capture_handler_exception("timer", {
                         "key": getattr(timer, "key", None),
                         "time": getattr(timer, "time", None),
