@@ -28,10 +28,10 @@ dependencies = [
 ]
 description = "High-performance Python bindings for a Rust-based Kafka client"
 dynamic = ["version"]
-readme = "Readme.md"
 keywords = ["async", "client", "distributed", "kafka", "messaging"]
 license = "MIT"
 name = "prosody-events"
+readme = "Readme.md"
 requires-python = ">=3.8"
 
 [project.optional-dependencies]
