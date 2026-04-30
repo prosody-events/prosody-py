@@ -191,7 +191,9 @@ impl PythonHandler {
 }
 
 impl FallibleHandler for PythonHandler {
+    type Payload = serde_json::Value;
     type Error = WrappedPythonError;
+    type Output = ();
 
     /// Processes a Kafka message by invoking the Python handler.
     ///
@@ -209,7 +211,7 @@ impl FallibleHandler for PythonHandler {
     async fn on_message<C>(
         &self,
         context: C,
-        message: ConsumerMessage,
+        message: ConsumerMessage<Self::Payload>,
         demand_type: DemandType,
     ) -> Result<(), Self::Error>
     where
@@ -413,7 +415,7 @@ fn cancel_task(event_set_method: &Py<PyAny>, shutdown_event: Py<PyAny>) -> PyRes
 /// Returns `PyErr` on Python object creation/method call failures
 fn execute<C>(
     context: C,
-    message: ConsumerMessage,
+    message: ConsumerMessage<serde_json::Value>,
     serialized_context: HashMap<String, String>,
     execution_context: MessageExecutionContext<'_>,
 ) -> PyResult<(
