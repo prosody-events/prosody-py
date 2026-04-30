@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.1.1...prosody-py-v0.1.2) (2026-04-30)
+
+
+### Bug Fixes
+
+* **deps:** upgrade prosody to 0.2.1 ([#12](https://github.com/prosody-events/prosody-py/issues/12)) ([f650f0c](https://github.com/prosody-events/prosody-py/commit/f650f0c0f31f554aadf3bd70c71d5e4d23e69692))
+
+
+### Performance Improvements
+
+* **deps:** migrate from jemalloc to mimalloc v3 ([#14](https://github.com/prosody-events/prosody-py/issues/14)) ([0d157d1](https://github.com/prosody-events/prosody-py/commit/0d157d137379aea482a4597817971c1118bdc9b3))
+
 ## [0.1.1](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.1.0...prosody-py-v0.1.1) (2026-04-20)
 
 

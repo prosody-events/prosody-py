@@ -8,7 +8,7 @@ license = "MIT"
 name = "prosody-py"
 readme = "Readme.md"
 repository = "https://github.com/prosody-events/prosody-py"
-version = "0.1.1"
+version = "0.1.2"
 
 [lib]
 crate-type = ["cdylib"]
