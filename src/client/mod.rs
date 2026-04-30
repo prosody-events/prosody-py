@@ -6,6 +6,7 @@
 //! operational modes, retry mechanisms, and failure handling strategies.
 
 use opentelemetry::propagation::TextMapPropagator;
+use prosody::JsonCodec;
 use prosody::high_level::HighLevelClient;
 use prosody::high_level::state::{ConsumerState, ConsumerStateView};
 use pyo3::exceptions::PyRuntimeError;
@@ -102,7 +103,7 @@ impl ProsodyClient {
         let client = self.client.clone();
         future_into_py(py, async move {
             client
-                .send(topic.as_str().into(), &key, &payload)
+                .send(topic.as_str().into(), &key, payload)
                 .instrument(span)
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
@@ -222,7 +223,7 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         slf.check_fork()?;
-        let consumer_state_ref: &ConsumerState<_> = &slf.consumer_state_sync();
+        let consumer_state_ref = &*slf.consumer_state_sync();
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -256,7 +257,7 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         slf.check_fork()?;
-        let consumer_state_ref: &ConsumerState<_> = &slf.consumer_state_sync();
+        let consumer_state_ref = &*slf.consumer_state_sync();
 
         let consumer_properties = match consumer_state_ref {
             ConsumerState::Unconfigured => String::new(),
@@ -328,7 +329,7 @@ impl ProsodyClient {
         Ok(())
     }
 
-    fn consumer_state_sync(&self) -> ConsumerStateView<'_, PythonHandler> {
+    fn consumer_state_sync(&self) -> ConsumerStateView<'_, PythonHandler, JsonCodec> {
         let handle = Handle::try_current().unwrap_or_else(|_| get_runtime().handle().clone());
         block_in_place(|| handle.block_on(self.client.consumer_state()))
     }
