@@ -13,11 +13,10 @@ use crate::client::ProsodyClient;
 use crate::context::Context;
 use crate::logging::PythonLoggingLayer;
 use ::prosody::tracing::initialize_tracing;
+use mimalloc::MiMalloc;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pymodule};
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
 
 mod admin;
 mod client;
@@ -26,9 +25,8 @@ mod handler;
 mod logging;
 mod util;
 
-#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+static GLOBAL: MiMalloc = MiMalloc;
 
 /// Initializes the Python module and adds the necessary classes.
 ///

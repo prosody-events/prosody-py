@@ -191,9 +191,9 @@ impl PythonHandler {
 }
 
 impl FallibleHandler for PythonHandler {
-    type Payload = serde_json::Value;
     type Error = WrappedPythonError;
     type Output = ();
+    type Payload = serde_json::Value;
 
     /// Processes a Kafka message by invoking the Python handler.
     ///
