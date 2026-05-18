@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.2.0...prosody-py-v0.3.0) (2026-05-18)
+
+
+### Features
+
+* **deps:** upgrade prosody to 0.4.0 ([#16](https://github.com/prosody-events/prosody-py/issues/16)) ([37611bf](https://github.com/prosody-events/prosody-py/commit/37611bf5bcb0051b882361bd4c085509b7fbe7ee))
+
 ## [0.2.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.1.1...prosody-py-v0.2.0) (2026-05-08)
 
 
