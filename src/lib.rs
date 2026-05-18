@@ -7,6 +7,7 @@
 
 #![allow(clippy::multiple_crate_versions)]
 #![warn(missing_docs)]
+#![recursion_limit = "256"]
 
 use crate::admin::AdminClient;
 use crate::client::ProsodyClient;
