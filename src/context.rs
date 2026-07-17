@@ -14,12 +14,12 @@ use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::TimerType;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::gc::{PyTraverseError, PyVisit};
-use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
-use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyModule, PyTypeMethods};
+use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{Instrument, debug, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -34,6 +34,23 @@ pub struct Context {
     pub inject: Py<PyAny>,
     pub propagator: Arc<TextMapCompositePropagator>,
     pub message_class: Py<PyAny>,
+    /// Identity cache of typed wrappers vended this event, keyed
+    /// `"{kind}:{payload}:{name}"`, so repeated `state(def)` calls return the
+    /// same wrapper object.
+    pub state_handles: Mutex<HashMap<String, Py<PyAny>>>,
+}
+
+/// Builds a `TransientStateError` for a malformed or hostile state definition —
+/// a caller mistake, so transient rather than a message-discarding permanent.
+fn transient_state_error(prosody: &Bound<PyModule>, message: &str) -> PyErr {
+    match prosody
+        .getattr("TransientStateError")
+        .and_then(|class| class.call1((message,)))
+    {
+        Ok(instance) => PyErr::from_value(instance),
+        // Constructing the exception itself failed — surface that error.
+        Err(error) => error,
+    }
 }
 
 impl Context {
@@ -394,6 +411,99 @@ impl Context {
         })
     }
 
+    /// Binds a registered keyed-state collection for this event and returns the
+    /// typed Python wrapper (`ValueState`/`MapState`/`DequeState`).
+    ///
+    /// Reads the definition's `to_config()` for name/kind/payload, dispatches
+    /// to the matching internal vend, wraps the native handle in the Python
+    /// class, and caches the wrapper by `(kind, payload, name)` so repeated
+    /// calls in one event return the same object.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TransientStateError` if the definition is malformed or hostile
+    /// (a caller mistake). The permanent unregistered/identity-mismatch
+    /// error is raised by the internal vend.
+    fn state(&self, py: Python, definition: &Bound<PyAny>) -> PyResult<Py<PyAny>> {
+        let prosody = py.import("prosody")?;
+
+        let cfg = definition.call_method0("to_config").map_err(|_| {
+            transient_state_error(
+                &prosody,
+                "state: definition.to_config() is missing or raised",
+            )
+        })?;
+        let cfg = cfg.cast::<PyDict>().map_err(|_| {
+            transient_state_error(&prosody, "state: to_config() must return a dict")
+        })?;
+
+        let read = |field: &str| -> PyResult<String> {
+            match cfg.get_item(field)? {
+                Some(value) if !value.is_none() => value.extract::<String>().map_err(|_| {
+                    transient_state_error(
+                        &prosody,
+                        &format!("state: definition {field} must be a string"),
+                    )
+                }),
+                _ => Err(transient_state_error(
+                    &prosody,
+                    &format!("state: definition {field} is missing"),
+                )),
+            }
+        };
+        let name = read("name")?;
+        if name.is_empty() {
+            return Err(transient_state_error(
+                &prosody,
+                "state: definition name must be non-empty",
+            ));
+        }
+        let kind = read("kind")?;
+        let payload = read("payload")?;
+
+        let cache_key = format!("{kind}:{payload}:{name}");
+        {
+            let cache = self
+                .state_handles
+                .lock()
+                .map_err(|_| PyRuntimeError::new_err("state cache mutex poisoned"))?;
+            if let Some(existing) = cache.get(&cache_key) {
+                return Ok(existing.clone_ref(py));
+            }
+        }
+
+        let native: Py<PyAny> = match (kind.as_str(), payload.as_str()) {
+            ("value", "json") => Py::new(py, self.value_state(py, &name)?)?.into_any(),
+            ("map", "json") => Py::new(py, self.map_state(py, &name)?)?.into_any(),
+            ("deque", "json") => Py::new(py, self.deque_state(py, &name)?)?.into_any(),
+            ("value", "message") => Py::new(py, self.message_value_state(py, &name)?)?.into_any(),
+            ("map", "message") => Py::new(py, self.message_map_state(py, &name)?)?.into_any(),
+            ("deque", "message") => Py::new(py, self.message_deque_state(py, &name)?)?.into_any(),
+            (other_kind, other_payload) => {
+                return Err(transient_state_error(
+                    &prosody,
+                    &format!(
+                        "state: unknown collection kind/payload {other_kind:?}/{other_payload:?}"
+                    ),
+                ));
+            }
+        };
+        let wrapper_name = match kind.as_str() {
+            "value" => "ValueState",
+            "map" => "MapState",
+            _ => "DequeState",
+        };
+        let wrapper = prosody.getattr(wrapper_name)?.call1((native,))?.unbind();
+        {
+            let mut cache = self
+                .state_handles
+                .lock()
+                .map_err(|_| PyRuntimeError::new_err("state cache mutex poisoned"))?;
+            cache.insert(cache_key, wrapper.clone_ref(py))
+        };
+        Ok(wrapper)
+    }
+
     /// Traverses Python objects contained in this Context for garbage
     /// collection.
     ///
@@ -409,6 +519,19 @@ impl Context {
         visit.call(self.get_current.as_any())?;
         visit.call(self.inject.as_any())?;
         visit.call(self.message_class.as_any())?;
+        if let Ok(cache) = self.state_handles.lock() {
+            for handle in cache.values() {
+                visit.call(handle.as_any())?;
+            }
+        }
         Ok(())
+    }
+
+    /// Drops cached state wrappers so the cyclic GC can reclaim any reference
+    /// cycle through this Context.
+    fn __clear__(&self) {
+        if let Ok(mut cache) = self.state_handles.lock() {
+            cache.clear();
+        }
     }
 }

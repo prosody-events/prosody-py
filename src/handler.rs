@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use futures::pin_mut;
@@ -435,6 +435,7 @@ where
             inject: execution_context.otel_inject.clone_ref(py),
             propagator: execution_context.propagator,
             message_class: execution_context.message_class.clone_ref(py),
+            state_handles: Mutex::new(HashMap::new()),
         };
         let payload = pythonize(py, message.payload())?;
 
@@ -505,6 +506,7 @@ where
             inject: timer_context.otel_inject.clone_ref(py),
             propagator: timer_context.propagator,
             message_class: timer_context.message_class.clone_ref(py),
+            state_handles: Mutex::new(HashMap::new()),
         };
 
         let timer = timer_context.timer_class.call1(

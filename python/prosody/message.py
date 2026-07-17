@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Union, TypeAlias, Dict
+from typing import List, Union, TypeAlias, Dict, Generic
+
+from typing_extensions import TypeVar
 
 JSONValue: TypeAlias = Union[
     None,
@@ -12,14 +14,20 @@ JSONValue: TypeAlias = Union[
     Dict[str, 'JSONValue']
 ]
 
+# PEP 696 default: `Message` (unparameterized) is `Message[JSONValue]`.
+P = TypeVar("P", default=JSONValue)
+
 
 @dataclass(frozen=True)
-class Message:
+class Message(Generic[P]):
     """
     Represents a Kafka message with associated metadata.
 
     This class encapsulates the core components of a Kafka message, including
     its topic, partition, offset, timestamp, key, and payload.
+
+    The payload type is generic: ``Message[Cart]`` narrows ``payload`` to
+    ``Cart`` while a bare ``Message`` keeps the JSON-serializable default.
     """
 
     topic: str
@@ -37,5 +45,5 @@ class Message:
     key: str
     """The message key."""
 
-    payload: JSONValue
-    """The message payload as a JSON-serializable value."""
+    payload: P
+    """The message payload (JSON-serializable by default)."""

@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "opentelemetry-api>=1.44.0,<2.0.0",
     "threadsafe-async>=0.2.1,<1.0.0",
+    "typing_extensions>=4.12.0",
 ]
 description = "High-performance Python bindings for a Rust-based Kafka client"
 dynamic = ["version"]
