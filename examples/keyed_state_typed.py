@@ -8,6 +8,7 @@ example casts the incoming payload to reflect that boundary honestly.
 """
 
 from contextlib import aclosing
+from datetime import timedelta
 from typing import List, cast
 
 from typing_extensions import TypedDict
@@ -38,7 +39,7 @@ class OrderEvent(TypedDict):
 # JSON value collection, JSON map collection, and a message deque collection.
 # The type argument is bound through the annotation on the target — the
 # constructors are generic, so a bare call would default to ``JSONValue``.
-CART: ValueDefinition[Cart] = value("cart", ttl=30 * 86400)
+CART: ValueDefinition[Cart] = value("cart", ttl=timedelta(days=30))
 TOTALS: MapDefinition[int] = map("totals")  # keys are always str
 BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog")
 

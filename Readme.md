@@ -581,6 +581,7 @@ Prosody supports keyed state: per-key data that a handler reads and writes and t
 
 ```python
 from contextlib import aclosing
+from datetime import timedelta
 from typing import List, cast
 
 from typing_extensions import TypedDict
@@ -611,7 +612,7 @@ class OrderEvent(TypedDict):
 
 # The type argument is bound through the annotation on the target — the
 # constructors are generic, so a bare call defaults to the JSON value type.
-CART: ValueDefinition[Cart] = value("cart", ttl=30 * 86400)
+CART: ValueDefinition[Cart] = value("cart", ttl=timedelta(days=30))
 TOTALS: MapDefinition[int] = map("totals")  # keys are always str
 BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog")
 
@@ -621,7 +622,7 @@ class OrderHandler(EventHandler):
         payload = cast(OrderEvent, message.payload)
 
         cart = context.state(CART)  # ValueState[Cart]
-        current = await cart.get() or {"items": []}  # Cart | None
+        current: Cart = await cart.get() or {"items": []}
         await cart.set({"items": [*current["items"], payload["order_id"]]})
 
         totals = context.state(TOTALS)  # MapState[int]
