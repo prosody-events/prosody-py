@@ -499,7 +499,7 @@ impl Context {
                 .state_handles
                 .lock()
                 .map_err(|_| PyRuntimeError::new_err("state cache mutex poisoned"))?;
-            cache.insert(cache_key, wrapper.clone_ref(py))
+            cache.insert(cache_key, wrapper.clone_ref(py));
         };
         Ok(wrapper)
     }

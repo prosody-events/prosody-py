@@ -18,7 +18,7 @@ native layer owns all of it.
 import enum
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, ClassVar, Dict, Generic, Optional, Union
+from typing import Any, ClassVar, Dict, Generic, List, Optional, Union
 
 from typing_extensions import TypeVar
 
@@ -278,11 +278,11 @@ class ValueState(Generic[T]):
 
     async def set(self, value: T) -> None:
         """Buffer a write of ``value`` (``None`` raises ``NullValueError``)."""
-        return await self._native.set(value)
+        await self._native.set(value)
 
     async def clear(self) -> None:
         """Buffer a delete of the value."""
-        return await self._native.clear()
+        await self._native.clear()
 
     async def commit(self) -> None:
         """Durably commit the buffered operations mid-handler."""
@@ -307,21 +307,21 @@ class MapState(Generic[V]):
         """Read the value for ``key``, or ``None`` when absent."""
         return await self._native.get(key)
 
-    async def get_many(self, keys):
+    async def get_many(self, keys: List[str]) -> List[Optional[V]]:
         """Read several keys in one isolated batch, one result per key in order."""
         return await self._native.get_many(keys)
 
     async def set(self, key: str, value: V) -> None:
         """Insert or overwrite ``key`` (``None`` raises ``NullValueError``)."""
-        return await self._native.set(key, value)
+        await self._native.set(key, value)
 
     async def remove(self, key: str) -> None:
         """Remove ``key`` (named ``remove`` because ``del`` cannot be async)."""
-        return await self._native.remove(key)
+        await self._native.remove(key)
 
     async def clear(self) -> None:
         """Remove every entry."""
-        return await self._native.clear()
+        await self._native.clear()
 
     def items(self, direction: Direction = Direction.FORWARD) -> _StateScan:
         """Async iterator over ``(key, value)`` entries in key order."""
@@ -360,11 +360,11 @@ class DequeState(Generic[T]):
 
     async def append(self, item: T) -> None:
         """Append ``item`` at the back (``None`` raises ``NullValueError``)."""
-        return await self._native.push_back(item)
+        await self._native.push_back(item)
 
     async def appendleft(self, item: T) -> None:
         """Prepend ``item`` at the front (``None`` raises ``NullValueError``)."""
-        return await self._native.push_front(item)
+        await self._native.push_front(item)
 
     async def pop(self) -> Optional[T]:
         """Remove and return the back element, or ``None`` when empty."""

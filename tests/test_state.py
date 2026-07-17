@@ -228,6 +228,7 @@ async def test_map_delegation():
         "rollback",
     ]
     assert n.calls[0][1] == ("k",)
+    assert n.calls[1][1] == (["a", "b"],)
     assert n.calls[2][1] == ("k", 1)
 
 
