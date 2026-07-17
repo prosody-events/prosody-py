@@ -114,8 +114,7 @@ class Context:
     @overload
     def state(self, definition: MapDefinition[V]) -> MapState[V]: ...
     @overload
-    def state(self, definition: DequeDefinition[T]) -> DequeState[T]: ...
-    def state(self, definition: object) -> object:
+    def state(self, definition: DequeDefinition[T]) -> DequeState[T]:
         """Bind a registered collection for the current event attempt.
 
         Returns a typed handle over the collection: JSON definitions vend
