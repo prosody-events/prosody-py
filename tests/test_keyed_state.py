@@ -212,7 +212,9 @@ async def test_map_set_remove_scan_order_getmany(state_client):
                     "k2": await _wait(m.get("k2")),
                     "cafe": await _wait(m.get("café")),
                     "emoji": await _wait(m.get("😀")),
-                    "many": await _wait(m.get_many(["k1", "absent", absent, "café"])),
+                    "many": await _wait(
+                        m.get_many(["k1", "absent", absent, "café", "k1"])
+                    ),
                     "empty": await _wait(m.get_many([])),
                 }
             )
@@ -235,8 +237,9 @@ async def test_map_set_remove_scan_order_getmany(state_client):
     assert fwd_keys == sorted(fwd_keys)
     assert bwd_keys == list(reversed(fwd_keys))
     assert "k2" not in fwd_keys
-    # get_many is positional: one result per key, in order, absent -> None.
-    assert obs["many"] == [1, None, None, 9]
+    # get_many is positional: one result per key, in order, absent -> None, and
+    # a repeated key is NOT deduped (same value at each of its positions).
+    assert obs["many"] == [1, None, None, 9, 1]
     assert obs["empty"] == []
 
 

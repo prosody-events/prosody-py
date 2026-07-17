@@ -895,7 +895,9 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
     if let Some(delay) = config.get_item("state_recovery_delay")?
         && !delay.is_none()
     {
-        let duration = decode_duration(&delay)?;
+        let duration = decode_duration(&delay).map_err(|error| {
+            PyValueError::new_err(format!("state_recovery_delay: {}", error.value(delay.py())))
+        })?;
         if duration.subsec_nanos() != 0 {
             return Err(PyValueError::new_err(
                 "state_recovery_delay: must be a whole number of seconds",

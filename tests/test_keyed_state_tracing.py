@@ -237,6 +237,18 @@ async def test_state_op_trace_graph(random_topic_and_group):
         counts[sp["name"]] = counts.get(sp["name"], 0) + 1
     assert counts == EXPECTED_COUNTS, f"op-span counts {counts} != {EXPECTED_COUNTS}"
 
+    # Instrumentation-scope check (02-lgtm-trace-audit.md step 4): the handler
+    # span is produced by the Python SDK tracer; every core op span must
+    # originate from a different (native/core) scope. A same-named Python-side
+    # impostor span would share the Python scope and be caught here.
+    assert scopes.get(handler_id) == "prosody-py-state-trace-audit"
+    op_scopes = {scopes.get(sp.get("spanId")) for sp in op_spans}
+    assert len(op_scopes) == 1, f"core op spans span multiple scopes: {op_scopes}"
+    (core_scope,) = op_scopes
+    assert core_scope and core_scope != scopes[handler_id], (
+        f"op spans share the Python handler scope: {core_scope!r}"
+    )
+
     # Each op span is parented directly by the handler span (no same-named
     # binding wrapper span interposed) and carries its collection attribute.
     for sp in op_spans:
