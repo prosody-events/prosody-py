@@ -10,9 +10,8 @@
 //! held, then activates it while polling the erased future off the GIL, letting
 //! core's semantic collection span join the event trace without an extra
 //! `PyO3` binding span. Scans activate the carrier while core constructs its
-//! stream
-//! span; pulls transport vectors of up to 256 immediately-ready items without
-//! creating per-chunk binding spans.
+//! stream span; pulls transport vectors of up to 256 immediately-ready items
+//! without creating per-chunk binding spans.
 //!
 //! Errors carry their category structurally: an [`ErasedStateError`] is raised
 //! as `PermanentStateError` or `TransientStateError` by reading its
@@ -169,7 +168,8 @@ fn transient_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
 }
 
 /// Builds a `NullValueError` for a JSON-`null` write (a transient caller
-/// mistake). `null` is not a storable value; `advice` names the deletion verb.
+/// mistake). `null` is not a storable value; `message` is the fully-formed
+/// rejection text (the caller appends the collection's deletion verb).
 fn null_value_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
     raise(py, &env.0.null_value_error, message)
 }
