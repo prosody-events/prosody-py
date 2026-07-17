@@ -693,7 +693,7 @@ Put the definitions in `state_collections` when constructing the client, before 
 - `popleft() -> Optional[T]`: removes and returns the front element, or `None` when empty.
 - `size() -> int`: number of live elements (named `size` because `len` cannot be async).
 - `is_empty() -> bool`: whether the deque holds no live elements (a method for the same reason).
-- `get(index: int) -> Optional[T]`: reads the element at front-relative `index`, or `None` past the end. `index` must be a non-negative integer; a fractional, negative, or out-of-range value is a caller mistake, rejected with a `TransientStateError` (it retries and stays visible rather than discarding the message).
+- `get(index: int) -> Optional[T]`: reads the element at front-relative `index`, or `None` past the end. `index` must be a non-negative integer that fits a native `u32`; a fractional value raises `TypeError` and a negative or oversized one raises `OverflowError` at the native boundary, both of which classify transient at the handler bridge, so the caller mistake retries and stays visible rather than discarding the message.
 - `values(direction=Direction.FORWARD)` / `__aiter__`: see [Scan Iteration](#scan-iteration).
 - `commit() -> None` / `rollback() -> None`.
 
@@ -733,7 +733,7 @@ Both return `None`. The erased core seam deliberately drops the store outcome, s
 
 Keyed-state failures surface as structured errors that flow through the same handler-error bridge as everything else (the transient/permanent category is carried as data, never parsed from the message). Every state error also inherits from the `StateError` brand, so you can catch all of them with `except StateError`:
 
-- `TransientStateError` (subclasses `TransientError`): the default. A temporary store read/write failure (for example a timeout), **and every caller mistake** — a rejected `None`/unrepresentable write (use `clear()` / `remove(key)` instead), an item-shape mismatch, an out-of-range deque index, an invalid scan direction, or a malformed definition. Caller mistakes are transient on purpose: a permanent error discards the in-flight message and can silently lose data, so a code error retries and stays visible (logs / metrics / lag) until you fix it.
+- `TransientStateError` (subclasses `TransientError`): the default. A temporary store read/write failure (for example a timeout), **and every caller mistake** — a rejected `None`/unrepresentable write (use `clear()` / `remove(key)` instead), an item-shape mismatch, an invalid scan direction, or a malformed definition. Caller mistakes are transient on purpose: a permanent error discards the in-flight message and can silently lose data, so a code error retries and stays visible (logs / metrics / lag) until you fix it.
 - `NullValueError` (subclasses `TransientStateError` and `ValueError`): a `None` / JSON-`null` write, which is not a storable value. It reads as a `ValueError` to callers who care about the argument and classifies transient if it propagates.
 - `PermanentStateError` (subclasses `PermanentError`): reserved for failures a retry genuinely cannot resolve within the running process — an unregistered or identity-mismatched collection, or a duplicate registration. (A handler may also raise one explicitly to declare its own failure permanent.)
 
@@ -1180,7 +1180,7 @@ Definition constructors (each returns a frozen definition object used both in `s
 Errors:
 
 - `StateError`: brand mixin on every keyed-state error; catch all of them with `except StateError`.
-- `TransientStateError` (subclasses `TransientError`): the default — a temporary store read/write failure, or any caller mistake (a `None`/unrepresentable write, item-shape mismatch, out-of-range index, invalid scan direction, malformed definition), rejected transient so it retries rather than discarding the message.
+- `TransientStateError` (subclasses `TransientError`): the default — a temporary store read/write failure, or any caller mistake (a `None`/unrepresentable write, item-shape mismatch, invalid scan direction, malformed definition), rejected transient so it retries rather than discarding the message.
 - `NullValueError` (subclasses `TransientStateError` and `ValueError`): a `None` / JSON-`null` write; use `clear()` / `remove(key)` to delete instead.
 - `PermanentStateError` (subclasses `PermanentError`): reserved for failures a retry cannot resolve in-process (unregistered / identity-mismatched collection, duplicate registration), or one a handler raises explicitly.
 

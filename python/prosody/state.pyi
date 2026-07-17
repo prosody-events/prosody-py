@@ -418,10 +418,11 @@ class DequeState(Generic[T]):
     async def get(self, index: int) -> Optional[T]:
         """Read the element at front-relative ``index``, or ``None`` past the end.
 
-        ``index`` must be a non-negative integer; a fractional, negative, or
-        oversized value is a caller mistake, rejected with a
-        :class:`TransientStateError` so it retries rather than discarding the
-        message.
+        ``index`` must be a non-negative integer that fits a native ``u32``. A
+        fractional value raises :class:`TypeError` and a negative or oversized
+        value raises :class:`OverflowError` at the native boundary; both
+        classify transient at the handler bridge, so the caller mistake retries
+        rather than discarding the message.
         """
         ...
     async def size(self) -> int:

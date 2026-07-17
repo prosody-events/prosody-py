@@ -6,7 +6,6 @@ which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
 from typing import Any, List, Optional, Sequence, Union, TypeAlias, Dict, Literal
-from typing import TypeVar
 
 from prosody import EventHandler
 from prosody.state import (
@@ -17,8 +16,6 @@ from prosody.state import (
     MessageValueDefinition,
     ValueDefinition,
 )
-
-T = TypeVar('T')
 
 # Any keyed-state collection definition accepted by ``state_collections``.
 StateDefinition: TypeAlias = Union[

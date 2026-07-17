@@ -42,7 +42,6 @@ dev = [
     "pytest-watch>=4.2.0",
     "pytest>=9.1.1",
     "sentry-sdk>=2.66.0,<3.0.0",
-    "typing_extensions>=4.12.0",
 ]
 sentry = ["sentry-sdk>=2.66.0,<3.0.0"]
 

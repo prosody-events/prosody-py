@@ -96,7 +96,7 @@ class Context:
         """
         ...
 
-    # Message-payload definitions listed first for overload resolution.
+    # Message-payload definitions listed first, mirroring the vend dispatch order.
     @overload
     def state(
         self, definition: MessageValueDefinition[P]
