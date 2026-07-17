@@ -45,14 +45,15 @@ class PermanentError(EventHandlerError):
     is_permanent = True
 
 
-class StateError:
+class StateError(Exception):
     """
     Brand mixin marking a keyed-state error, independent of its category.
 
     Every state error raised by the native layer inherits from this alongside
     a concrete category (`PermanentError`/`TransientError`), so callers can
     catch all keyed-state failures with `except StateError` regardless of
-    whether they retry.
+    whether they retry. Subclassing `Exception` (rather than being a bare
+    `object` mixin) is what makes it usable in an `except` clause.
     """
     __slots__ = ()
 

@@ -113,6 +113,22 @@ def test_null_value_error_mro():
     assert isinstance(e, StateError)
 
 
+def test_state_error_is_catchable_brand():
+    # The documented `except StateError` form requires StateError to derive
+    # from BaseException; a bare mixin raises TypeError at the except clause.
+    for exc in (
+        PermanentStateError("p"),
+        TransientStateError("t"),
+        NullValueError("n"),
+    ):
+        with pytest.raises(StateError):
+            raise exc
+        try:
+            raise exc
+        except StateError as caught:
+            assert caught is exc
+
+
 # --- generic Message ---
 
 
