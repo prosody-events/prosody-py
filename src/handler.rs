@@ -215,7 +215,7 @@ impl FallibleHandler for PythonHandler {
         demand_type: DemandType,
     ) -> Result<(), Self::Error>
     where
-        C: EventContext,
+        C: EventContext<Payload = Self::Payload>,
     {
         let _ = demand_type; // Not used in Python handler
         // Propagate tracing context to Python
@@ -282,7 +282,7 @@ impl FallibleHandler for PythonHandler {
         demand_type: DemandType,
     ) -> Result<(), Self::Error>
     where
-        C: EventContext,
+        C: EventContext<Payload = Self::Payload>,
     {
         let _ = demand_type; // Not used in Python handler
 
@@ -423,7 +423,7 @@ fn execute<C>(
     impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
 )>
 where
-    C: EventContext,
+    C: EventContext<Payload = serde_json::Value>,
 {
     Python::attach(move |py| {
         // Create Python message objects using cached OpenTelemetry functions
@@ -492,7 +492,7 @@ fn execute_timer<C>(
     impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
 )>
 where
-    C: EventContext,
+    C: EventContext<Payload = serde_json::Value>,
 {
     Python::attach(move |py| {
         // Create Python timer object using cached OpenTelemetry functions

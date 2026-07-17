@@ -8,6 +8,7 @@ use crate::client::ProsodyClient;
 use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
+use prosody::consumer::KeyedStateConfiguration;
 use prosody::consumer::SpanRelation;
 use prosody::consumer::middleware::deduplication::DeduplicationConfigurationBuilder;
 use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
@@ -18,12 +19,14 @@ use prosody::consumer::middleware::timeout::TimeoutConfigurationBuilder;
 use prosody::consumer::middleware::topic::FailureTopicConfigurationBuilder;
 use prosody::high_level::mode::{Mode, ModeError};
 use prosody::high_level::{ConsumerBuilders, HighLevelClient};
+use prosody::loader::KafkaLoaderConfiguration;
 use prosody::producer::ProducerConfigurationBuilder;
 use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
+use std::num::NonZeroUsize;
 use std::process;
 use std::sync::Arc;
 
@@ -66,6 +69,7 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
             monopolization: MonopolizationConfigurationBuilder::default(),
             defer: DeferConfigurationBuilder::default(),
             timeout: TimeoutConfigurationBuilder::default(),
+            keyed_state: KeyedStateConfiguration::default(),
             emitter: TelemetryEmitterConfiguration::builder()
                 .build()
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
@@ -240,6 +244,36 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.timer_spans(relation);
     }
 
+    // Kafka message loader tuning (deferred-retry reload and keyed-state
+    // message resolution). Only build a loader configuration if at least one
+    // knob is provided, otherwise the consumer keeps its own defaults.
+    let defer_cache_size = config.get_item("defer_cache_size")?;
+    let defer_seek_timeout = config.get_item("defer_seek_timeout")?;
+    let defer_discard_threshold = config.get_item("defer_discard_threshold")?;
+    if defer_cache_size.is_some()
+        || defer_seek_timeout.is_some()
+        || defer_discard_threshold.is_some()
+    {
+        let mut loader = KafkaLoaderConfiguration::builder();
+
+        if let Some(cache_size) = defer_cache_size {
+            loader.cache_size(cache_size.extract::<usize>()?);
+        }
+
+        if let Some(seek_timeout) = defer_seek_timeout {
+            loader.seek_timeout(decode_duration(&seek_timeout)?);
+        }
+
+        if let Some(discard_threshold) = defer_discard_threshold {
+            loader.discard_threshold(discard_threshold.extract::<i64>()?);
+        }
+
+        let loader = loader
+            .build()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        builder.loader(loader);
+    }
+
     Ok(builder)
 }
 
@@ -263,7 +297,10 @@ fn build_dedup_config(config: &Bound<PyDict>) -> PyResult<DeduplicationConfigura
     if let Some(cache_capacity) = config.get_item("idempotence_cache_size")?
         && !cache_capacity.is_none()
     {
-        builder.cache_capacity(cache_capacity.extract::<usize>()?);
+        let capacity = NonZeroUsize::new(cache_capacity.extract::<usize>()?).ok_or_else(|| {
+            PyValueError::new_err("idempotence_cache_size must be greater than 0")
+        })?;
+        builder.cache_capacity(capacity);
     }
 
     if let Some(version) = config.get_item("idempotence_version")?
@@ -508,21 +545,9 @@ fn build_defer_config(config: &Bound<PyDict>) -> PyResult<DeferConfigurationBuil
         builder.failure_window(decode_duration(&failure_window)?);
     }
 
-    if let Some(cache_size) = config.get_item("defer_cache_size")? {
-        builder.cache_size(cache_size.extract::<usize>()?);
-    }
-
     if let Some(store_cache_size) = config.get_item("defer_store_cache_size")? {
         let store_cache_size: usize = store_cache_size.extract()?;
         builder.store_cache_size(store_cache_size);
-    }
-
-    if let Some(seek_timeout) = config.get_item("defer_seek_timeout")? {
-        builder.seek_timeout(decode_duration(&seek_timeout)?);
-    }
-
-    if let Some(discard_threshold) = config.get_item("defer_discard_threshold")? {
-        builder.discard_threshold(discard_threshold.extract::<i64>()?);
     }
 
     Ok(builder)
@@ -607,6 +632,7 @@ fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders>
         monopolization: build_monopolization_config(config)?,
         defer: build_defer_config(config)?,
         timeout: build_timeout_config(config)?,
+        keyed_state: KeyedStateConfiguration::default(),
         emitter: build_telemetry_emitter_config(config)?,
     })
 }

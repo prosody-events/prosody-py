@@ -13,6 +13,7 @@ use pyo3::gc::{PyTraverseError, PyVisit};
 use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{Instrument, debug, info_span};
@@ -24,7 +25,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 /// making it accessible in a Python environment.
 #[pyclass]
 pub struct Context {
-    pub inner: BoxEventContext,
+    pub inner: BoxEventContext<Value>,
     pub get_current: Py<PyAny>,
     pub inject: Py<PyAny>,
     pub propagator: Arc<TextMapCompositePropagator>,
