@@ -344,6 +344,8 @@ class MapState(Generic[V]):
         """Read several keys in one isolated batch, one result per key in order.
 
         ``result[i]`` is the value for ``keys[i]`` (``None`` for a missing key).
+        The batched, cache-populating way to read a known set of keys — prefer
+        it over iterating :meth:`keys` and calling :meth:`get` per key.
         """
         ...
     async def set(self, key: str, value: V) -> None:
@@ -369,10 +371,20 @@ class MapState(Generic[V]):
         """
         ...
     def keys(self) -> _StateScan[str]:
-        """Async iterator over the keys in forward key order (forward-only)."""
+        """Async iterator over the keys in forward key order (forward-only).
+
+        Runs the same full ``(key, value)`` scan as :meth:`items` and resolves
+        every value before discarding it — not a cheaper key-only enumeration
+        (core has no keys-only scan). If you will also read the values, iterate
+        :meth:`items`; to read a known set of keys, call :meth:`get_many`.
+        """
         ...
     def values(self) -> _StateScan[V]:
-        """Async iterator over the values in forward key order (forward-only)."""
+        """Async iterator over the values in forward key order (forward-only).
+
+        Runs the same full ``(key, value)`` scan as :meth:`items` and discards
+        the keys; it is not cheaper than :meth:`items`.
+        """
         ...
     def __aiter__(self) -> _StateScan[Tuple[str, V]]:
         """Forward iteration over ``(key, value)`` entries."""

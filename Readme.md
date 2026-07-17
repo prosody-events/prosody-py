@@ -678,7 +678,7 @@ Put the definitions in `state_collections` when constructing the client, before 
 `MapState[V]` (keys are always `str`):
 
 - `get(key: str) -> Optional[V]`: reads the value for `key`, or `None` when absent.
-- `get_many(keys: List[str]) -> List[Optional[V]]`: reads several keys in one isolated batch, returning one entry per key in the same order (`result[i]` is the value for `keys[i]`); a missing key is `None`, and a repeated key is answered at each spot. The whole read happens as one step, so no other change to this event's state slips in partway through.
+- `get_many(keys: List[str]) -> List[Optional[V]]`: reads several keys in one isolated batch, returning one entry per key in the same order (`result[i]` is the value for `keys[i]`); a missing key is `None`, and a repeated key is answered at each spot. The whole read happens as one step, so no other change to this event's state slips in partway through. This is the batched, cache-populating way to read a **known set of keys** — prefer it over iterating `keys()` and calling `get(key)` per key (see [Scan Iteration](#scan-iteration)).
 - `set(key: str, value: V) -> None`: inserts or overwrites. Writing `None` (JSON `null`) is rejected with `NullValueError` (transient) — call `remove(key)`.
 - `remove(key: str) -> None`: removes `key` (named `remove` because `del` cannot be async). Deliberately returns `None`, not a boolean "was present" flag (surfacing that would force a hidden read on every remove).
 - `clear() -> None`: removes every entry.
@@ -700,6 +700,11 @@ Put the definitions in `state_collections` when constructing the client, before 
 ### Scan Iteration
 
 Maps expose `items(direction=...)`, `keys()`, and `values()`; deques expose `values(direction=...)`. Each returns an async iterator, so you can drive it with `async for`. `direction` is `Direction.FORWARD` (default) or `Direction.BACKWARD`. On a map, `keys()` and `values()` are always forward-only; only `items()` accepts a direction. Both `MapState` and `DequeState` are themselves async-iterable (`__aiter__` is forward iteration — map: `(key, value)` entries; deque: elements), so the handle itself works in an `async for`.
+
+A map scan always resolves and yields whole `(key, value)` entries — there is no key-only scan underneath, so `keys()` and `values()` run the **same full scan** as `items()` and simply drop one half; neither is cheaper than `items()`. Two consequences worth internalizing:
+
+- When you iterate a map, iterate `items()` and use the value it hands you. Iterating `keys()` and then calling `get(key)` inside the loop re-reads every value you already paid to resolve — the wasteful path masquerading as the cheap one.
+- When you already know which keys you want, use `get_many(keys)` — one batched, cache-populating read — rather than a scan. `get_many` is the only read that batches and warms the cache regardless of the map's keyset-tracking regime.
 
 Iterators are valid only within the attempt that opened them. Exiting an `async for` loop early with a bare `break` does **not** close the underlying cursor — that is harmless by construction (no store permit is held between pulls, the cursor is attempt-epoch fenced, and the native drop closes it on GC). For a deterministic early close, wrap the scan in `contextlib.aclosing(...)`:
 
