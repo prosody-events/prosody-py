@@ -1,6 +1,6 @@
-"""Collector-backed keyed-state trace-graph audit (Appendix 1 item 12).
+"""Collector-backed keyed-state trace-graph audit.
 
-Follows ``../prosody/docs/keyed-state/clients/02-lgtm-trace-audit.md``: a fixed op
+A fixed op
 set runs inside one handler span, spans are exported through the live LGTM OTLP
 collector, and the complete trace graph is queried back from Tempo and audited
 for exact per-op semantic-span counts, parentage to the handler span, and the
@@ -148,7 +148,7 @@ async def test_state_op_trace_graph(random_topic_and_group):
     if not os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
         pytest.skip(
             "set OTEL_EXPORTER_OTLP_ENDPOINT (and a unique OTEL_SERVICE_NAME) so "
-            "the native exporter emits core spans; see 02-lgtm-trace-audit.md"
+            "the native exporter emits core spans"
         )
     service = os.environ.get(
         "OTEL_SERVICE_NAME", f"prosody-py-state-trace-audit-{uuid.uuid4().hex}"
@@ -237,7 +237,7 @@ async def test_state_op_trace_graph(random_topic_and_group):
         counts[sp["name"]] = counts.get(sp["name"], 0) + 1
     assert counts == EXPECTED_COUNTS, f"op-span counts {counts} != {EXPECTED_COUNTS}"
 
-    # Instrumentation-scope check (02-lgtm-trace-audit.md step 4): the handler
+    # Instrumentation-scope check: the handler
     # span is produced by the Python SDK tracer; every core op span must
     # originate from a different (native/core) scope. A same-named Python-side
     # impostor span would share the Python scope and be caught here.

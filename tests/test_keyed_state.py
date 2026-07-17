@@ -1,4 +1,6 @@
-"""Infra-backed keyed-state FFI scenarios (Appendix 1 items 1-9 + 13).
+"""Infra-backed keyed-state FFI scenarios: value/map/deque and their message
+variants exercised end-to-end against a live consumer (round-trips, absence,
+clear, scan chunk-boundary flattening, direction, attempt fencing, exhaustion).
 
 Mirrors the completed prosody-js ``__test__/index.spec.js`` C1..C12 checklist in
 the established prosody-py idiom: the ``random_topic_and_group`` fixture, a client
@@ -90,6 +92,7 @@ def _msg_fields(m):
         "partition": m.partition,
         "offset": m.offset,
         "key": m.key,
+        "timestamp": m.timestamp,
         "payload": m.payload,
     }
 
@@ -428,7 +431,10 @@ async def test_message_map_roundtrip(state_client):
     assert "error" not in obs
     orig = {k: v for k, v in obs["orig"].items() if k != "tag"}
     got = obs["got"]
-    got_fields = {k: got[k] for k in ("topic", "partition", "offset", "key", "payload")}
+    got_fields = {
+        k: got[k]
+        for k in ("topic", "partition", "offset", "key", "timestamp", "payload")
+    }
     assert got_fields == orig
     assert orig["payload"] == {"step": 1}
     assert got["cafe_payload"] == {"step": 1}

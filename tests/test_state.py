@@ -2,8 +2,8 @@
 
 No FFI / no Kafka: the wrappers are exercised against recording stubs so the
 delegation, transforms, and definition/config shaping are locked without a live
-consumer. The native ``Context.state`` dispatcher (Rust) is exercised by the P5
-FFI checklist.
+consumer. The native ``Context.state`` dispatcher (Rust) is exercised by the
+infra-backed FFI scenarios in ``test_keyed_state.py``.
 """
 
 import contextlib

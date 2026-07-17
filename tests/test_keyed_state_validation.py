@@ -1,7 +1,8 @@
-"""Infra-free keyed-state configuration-validation tests (Appendix 1 item 11).
+"""Infra-free keyed-state configuration-validation tests.
 
-The state-collection validation table (Appendix 2) is enforced synchronously in
-Rust at ``ProsodyClient(...)`` construction (``build_keyed_state_config`` ->
+The state-collection validation rules (unregistered/duplicate/identity-mismatch
+names, bad ttl, bad keyset_limit) are enforced synchronously in Rust at
+``ProsodyClient(...)`` construction (``build_keyed_state_config`` ->
 ``register_state_collection`` -> ``whole_number_field``). ``mock=True`` needs the
 built extension but no Kafka/Cassandra, so every rule below is exercised at
 construction and the offending field is named in the ``ValueError``.
