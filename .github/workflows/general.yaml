@@ -97,6 +97,20 @@ jobs:
       - name: Enforce TOML formatting
         run: taplo validate
 
+  mypy:
+    name: Types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install type-check dependencies
+        run: pip install "mypy>=1.11" "opentelemetry-api>=1.44.0,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.12.0"
+      - name: Type-check the keyed-state typed example
+        run: mypy examples/keyed_state_typed.py
+
   dependencies:
     name: Dependencies
     runs-on: ubuntu-latest

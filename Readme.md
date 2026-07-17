@@ -263,6 +263,27 @@ Persistent storage for timers and deferred retries (not needed if `mock=True`):
 | `cassandra_rack` / `PROSODY_CASSANDRA_RACK` | Prefer this rack for queries     | -       |
 | `cassandra_retention` / `PROSODY_CASSANDRA_RETENTION` | Delete data older than this | 1y     |
 
+### Keyed State
+
+Register keyed-state collections before you subscribe. Persistence is backed by Cassandra and is not needed when `mock=True`. See the [Keyed State](#keyed-state-1) feature section for handler usage; the client-level knobs and per-collection fields are below. Where an option and an environment variable are paired, an explicitly set option wins; otherwise the environment variable applies, then the default.
+
+| Option / Environment Variable                                | Description                                                                                                                                                             | Default             |
+|--------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
+| `state_collections` / -                                      | Keyed-state collections to register before subscribe (list of definition objects; duplicate names are rejected)                                                        | (none)              |
+| `state_cache_dir` / `PROSODY_FJALL_CACHE_DIR`                | Root directory for the local committed-value cache; each live client needs its own directory (it is locked exclusively)                                                | per-client temp dir |
+| `state_recovery_delay` / `PROSODY_KEYED_STATE_RECOVERY_DELAY` | Delay before the recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (`timedelta` or float seconds; the env var accepts a duration string like `30s`) | 30s                 |
+
+Each `state_collections` entry has these fields. Prefer the definition constructors (`value` / `map` / `deque` and their `message_*` variants, documented below): they serialize into `state_collections` so you declare each collection once and reuse the same object with `context.state()`.
+
+| Field              | Description                                                                          | Default    |
+|--------------------|-------------------------------------------------------------------------------------|------------|
+| `name`             | Collection name; non-empty and unique within the client                             | (required) |
+| `kind`             | `"value"`, `"map"`, or `"deque"`                                                     | (required) |
+| `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received) | (required) |
+| `ttl`              | Per-write TTL, whole seconds >= 1 (must exceed the recovery delay); `timedelta` or int seconds | (none)     |
+| `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
+| `keyset_limit`     | Map-only; ordered-scan bound in `0..=4096` (`0` disables ordered-scan tracking)      | 128        |
+
 ## Liveness and Readiness Probes
 
 Prosody includes a built-in probe server for consumer-based applications that provides health check endpoints. The probe
@@ -553,6 +574,170 @@ client = ProsodyClient(
     mock=True  # No Cassandra required in mock mode
 )
 ```
+
+## Keyed State
+
+Prosody supports keyed state: per-key data that a handler reads and writes and that survives across events. State is partitioned by the message key, so each key has a single writer at a time, and by default writes settle atomically with the event — a handler that throws leaves no partial state. Values are either JSON payloads or the full Kafka `Message` the handler received. Register collections on the client before subscribing, then bind them inside the handler with `context.state(definition)`:
+
+```python
+from contextlib import aclosing
+from typing import List, cast
+
+from typing_extensions import TypedDict
+
+from prosody import (
+    Context,
+    EventHandler,
+    Message,
+    MapDefinition,
+    MessageDequeDefinition,
+    ProsodyClient,
+    Timer,
+    ValueDefinition,
+    map,
+    message_deque,
+    value,
+)
+
+
+class Cart(TypedDict):
+    items: List[str]
+
+
+class OrderEvent(TypedDict):
+    order_id: str
+    total: int
+
+
+# The type argument is bound through the annotation on the target — the
+# constructors are generic, so a bare call defaults to the JSON value type.
+CART: ValueDefinition[Cart] = value("cart", ttl=30 * 86400)
+TOTALS: MapDefinition[int] = map("totals")  # keys are always str
+BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog")
+
+
+class OrderHandler(EventHandler):
+    async def on_message(self, context: Context, message: Message) -> None:
+        payload = cast(OrderEvent, message.payload)
+
+        cart = context.state(CART)  # ValueState[Cart]
+        current = await cart.get() or {"items": []}  # Cart | None
+        await cart.set({"items": [*current["items"], payload["order_id"]]})
+
+        totals = context.state(TOTALS)  # MapState[int]
+        await totals.set(message.key, payload["total"])
+        async with aclosing(totals.items()) as scan:
+            async for key, total in scan:  # key: str, total: int
+                ...
+
+        backlog = context.state(BACKLOG)  # DequeState[Message[OrderEvent]]
+        await backlog.append(cast("Message[OrderEvent]", message))
+        oldest = await backlog.get(0)  # Message[OrderEvent] | None
+
+        await cart.commit()
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        ...
+
+
+client = ProsodyClient(
+    group_id="orders",
+    subscribed_topics="orders",
+    state_collections=[CART, TOTALS, BACKLOG],
+)
+```
+
+### Definitions
+
+A definition constructor declares one collection and returns a frozen definition object carrying its `name`, `kind`, and `payload`. Reference that definition both in `state_collections` (registration) and in `context.state()` (binding) — declare each collection once and reuse it. (Reuse is a convenience, not a requirement: binding matches a definition to a registered collection by its `name` / `kind` / `payload` fields, not by object identity, so a structurally-equal definition also works.) Three kinds, each with a JSON variant (values are your JSON payload) and a message variant (values are the full Kafka `Message[P]`):
+
+- `value(name, ...)`: single value. Vends `ValueState[T]`.
+- `map(name, ...)`: ordered map with **string** keys. Vends `MapState[V]`.
+- `deque(name, ...)`: double-ended queue. Vends `DequeState[T]`.
+- `message_value(name, ...)`: single value holding a `Message[P]`. Vends `ValueState[Message[P]]`.
+- `message_map(name, ...)`: ordered map of `Message[P]` (string keys). Vends `MapState[Message[P]]`.
+- `message_deque(name, ...)`: deque of `Message[P]`. Vends `DequeState[Message[P]]`.
+
+Every constructor accepts `ttl` (whole seconds >= 1, `timedelta` or int) and `read_uncommitted`, plus `keyset_limit` on maps only. The type parameter is annotation-level only: it is a **structural JSON annotation** (TypedDict-oriented). Payloads cross the boundary as plain JSON with no model construction or validation in v1, so `dataclass` / Pydantic types are **not** valid type arguments — the parameter guides your type checker but does not enforce a shape at runtime (an adapter hook is future work). Bind the type argument through the annotation on the assignment target (`CART: ValueDefinition[Cart] = value("cart")`); a bare call defaults to the JSON value type.
+
+### Registration
+
+Put the definitions in `state_collections` when constructing the client, before calling `subscribe`. Each definition serializes into a collection config entry, so passing the definition object is all that is required. Collection names must be unique within a client — duplicate names are rejected. Keyed state needs Cassandra unless the client runs with `mock=True`. See the [Keyed State configuration](#keyed-state) subsection above for the client-level knobs and per-collection fields.
+
+### State Handles
+
+`context.state(definition)` vends a typed handle bound to the collection for the current event attempt. The handle — and any iterator it opens — is valid only within the handler invocation that created it; there is no post-handler read window. Binding an unregistered name raises a `PermanentStateError`; so does a definition whose `kind` or `payload` disagrees with what was durably registered under that name in the consumer group (the collection's stored schema identity, which core validates at first use — this is a schema conflict across deploys, not a Python object-identity check). All handle methods are async.
+
+`ValueState[T]`:
+
+- `get() -> Optional[T]`: reads the current value, or `None` when absent.
+- `set(value: T) -> None`: buffers a write. Writing `None` (JSON `null`) is rejected with `NullValueError` (transient) — call `clear()`.
+- `clear() -> None`: deletes the stored value.
+- `commit() -> None` / `rollback() -> None`: see [Commit and Rollback](#commit-and-rollback).
+
+`MapState[V]` (keys are always `str`):
+
+- `get(key: str) -> Optional[V]`: reads the value for `key`, or `None` when absent.
+- `get_many(keys: List[str]) -> List[Optional[V]]`: reads several keys in one isolated batch, returning one entry per key in the same order (`result[i]` is the value for `keys[i]`); a missing key is `None`, and a repeated key is answered at each spot. The whole read happens as one step, so no other change to this event's state slips in partway through.
+- `set(key: str, value: V) -> None`: inserts or overwrites. Writing `None` (JSON `null`) is rejected with `NullValueError` (transient) — call `remove(key)`.
+- `remove(key: str) -> None`: removes `key` (named `remove` because `del` cannot be async). Deliberately returns `None`, not a boolean "was present" flag (surfacing that would force a hidden read on every remove).
+- `clear() -> None`: removes every entry.
+- `items(direction=Direction.FORWARD)` / `keys()` / `values()` / `__aiter__`: see [Scan Iteration](#scan-iteration).
+- `commit() -> None` / `rollback() -> None`.
+
+`DequeState[T]`:
+
+- `append(item: T) -> None`: appends at the back. Writing `None` (JSON `null`) is rejected.
+- `appendleft(item: T) -> None`: prepends at the front. Writing `None` (JSON `null`) is rejected.
+- `pop() -> Optional[T]`: removes and returns the back element, or `None` when empty.
+- `popleft() -> Optional[T]`: removes and returns the front element, or `None` when empty.
+- `size() -> int`: number of live elements (named `size` because `len` cannot be async).
+- `is_empty() -> bool`: whether the deque holds no live elements (a method for the same reason).
+- `get(index: int) -> Optional[T]`: reads the element at front-relative `index`, or `None` past the end. `index` must be a non-negative integer; a fractional, negative, or out-of-range value is a caller mistake, rejected with a `TransientStateError` (it retries and stays visible rather than discarding the message).
+- `values(direction=Direction.FORWARD)` / `__aiter__`: see [Scan Iteration](#scan-iteration).
+- `commit() -> None` / `rollback() -> None`.
+
+### Scan Iteration
+
+Maps expose `items(direction=...)`, `keys()`, and `values()`; deques expose `values(direction=...)`. Each returns an async iterator, so you can drive it with `async for`. `direction` is `Direction.FORWARD` (default) or `Direction.BACKWARD`. On a map, `keys()` and `values()` are always forward-only; only `items()` accepts a direction. Both `MapState` and `DequeState` are themselves async-iterable (`__aiter__` is forward iteration — map: `(key, value)` entries; deque: elements), so the handle itself works in an `async for`.
+
+Iterators are valid only within the attempt that opened them. Exiting an `async for` loop early with a bare `break` does **not** close the underlying cursor — that is harmless by construction (no store permit is held between pulls, the cursor is attempt-epoch fenced, and the native drop closes it on GC). For a deterministic early close, wrap the scan in `contextlib.aclosing(...)`:
+
+```python
+from contextlib import aclosing
+
+async with aclosing(context.state(totals).items(Direction.BACKWARD)) as scan:
+    async for key, total in scan:
+        if total > 1000:
+            break  # aclosing closes the cursor on exit
+```
+
+### Commit and Rollback
+
+Every handle exposes `commit()` and `rollback()` (both `-> None`). By default a handler's writes are buffered and settle atomically when the event completes; commit and rollback are the explicit mid-handler escape hatch.
+
+- `commit()` durably flushes this collection's buffered operations mid-handler. It is at-least-once: the flush becomes visible even if the event later fails and is redelivered, and it establishes a floor that a later `rollback()` cannot cross.
+- `rollback()` discards this collection's buffered uncommitted operations back to the last commit floor. It is infallible.
+
+Both return `None`. The erased core seam deliberately drops the store outcome, so there is **no** applied/noop return value — do not expect one.
+
+### Semantics
+
+- **Per-key single writer.** State is keyed by the message key; only one handler invocation writes a given key at a time.
+- **Transactional by default.** A handler's writes settle atomically with the event. A handler that throws leaves no partial state (unless you opted a collection into `read_uncommitted`, or flushed explicitly with `commit()`).
+- **At-least-once.** Redelivery re-runs the handler; reads reflect committed prior attempts. Keep handlers idempotent.
+- **Attempt-scoped.** The context, the handles it vends, and any iterators those handles open are valid only within the handler invocation that created them. Do not retain them past the handler.
+- **Cancellation honesty.** An `asyncio` cancellation may drop the in-flight native future; core's attempt-epoch fence keeps that safe, so a follow-up operation on a fresh attempt still succeeds.
+
+### Error Handling
+
+Keyed-state failures surface as structured errors that flow through the same handler-error bridge as everything else (the transient/permanent category is carried as data, never parsed from the message). Every state error also inherits from the `StateError` brand, so you can catch all of them with `except StateError`:
+
+- `TransientStateError` (subclasses `TransientError`): the default. A temporary store read/write failure (for example a timeout), **and every caller mistake** — a rejected `None`/unrepresentable write (use `clear()` / `remove(key)` instead), an item-shape mismatch, an out-of-range deque index, an invalid scan direction, or a malformed definition. Caller mistakes are transient on purpose: a permanent error discards the in-flight message and can silently lose data, so a code error retries and stays visible (logs / metrics / lag) until you fix it.
+- `NullValueError` (subclasses `TransientStateError` and `ValueError`): a `None` / JSON-`null` write, which is not a storable value. It reads as a `ValueError` to callers who care about the argument and classifies transient if it propagates.
+- `PermanentStateError` (subclasses `PermanentError`): reserved for failures a retry genuinely cannot resolve within the running process — an unregistered or identity-mismatched collection, or a duplicate registration. (A handler may also raise one explicitly to declare its own failure permanent.)
+
+Because they subclass the existing error hierarchy, rethrowing them from a handler classifies the event exactly like a plain `PermanentError` / `TransientError` through the same `is_permanent` bridge.
 
 ## OpenTelemetry Tracing
 
@@ -934,6 +1119,7 @@ Represents the context of a Kafka message, providing timer scheduling methods:
 - `scheduled() -> List[datetime]`: Returns a list of all scheduled timer times
 - `should_cancel() -> bool`: Check if cancellation has been requested (includes timeout and shutdown)
 - `on_cancel() -> Coroutine`: Awaitable that completes when cancellation is signaled
+- `state(definition) -> ValueState[T] | MapState[V] | DequeState[T]`: Binds a registered collection for the current event attempt, returning a typed handle (message definitions vend `*State[Message[P]]`). Raises `PermanentStateError` when the name was never registered, or when the definition's `kind` / `payload` disagrees with the collection's durably-registered schema. See the [Keyed State](#keyed-state-2) API reference below.
 
 ### Timer
 
@@ -941,6 +1127,62 @@ Represents a timer that has fired, provided to the `on_timer` method:
 
 - `key: str`: The entity key identifying what this timer belongs to
 - `time: datetime`: The time when this timer was scheduled to fire
+
+### Keyed State
+
+Definition constructors (each returns a frozen definition object used both in `state_collections` and with `context.state()`). Each accepts `ttl` and `read_uncommitted`, plus `keyset_limit` on the map variants:
+
+- `value(name, *, ttl=None, read_uncommitted=None) -> ValueDefinition[T]`
+- `map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MapDefinition[V]`
+- `deque(name, *, ttl=None, read_uncommitted=None) -> DequeDefinition[T]`
+- `message_value(name, *, ttl=None, read_uncommitted=None) -> MessageValueDefinition[P]`
+- `message_map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MessageMapDefinition[P]`
+- `message_deque(name, *, ttl=None, read_uncommitted=None) -> MessageDequeDefinition[P]`
+
+`ValueState[T]`:
+
+- `get() -> Optional[T]`
+- `set(value: T) -> None`
+- `clear() -> None`
+- `commit() -> None`
+- `rollback() -> None`
+
+`MapState[V]` (keys are `str`):
+
+- `get(key: str) -> Optional[V]`
+- `get_many(keys: List[str]) -> List[Optional[V]]`
+- `set(key: str, value: V) -> None`
+- `remove(key: str) -> None`
+- `clear() -> None`
+- `items(direction=Direction.FORWARD)` — async iterator over `(str, V)` entries
+- `keys()` — async iterator over `str` keys (forward-only)
+- `values()` — async iterator over `V` values (forward-only)
+- `__aiter__()` — forward async iteration over `(str, V)` entries
+- `commit() -> None`
+- `rollback() -> None`
+
+`DequeState[T]`:
+
+- `append(item: T) -> None`
+- `appendleft(item: T) -> None`
+- `pop() -> Optional[T]`
+- `popleft() -> Optional[T]`
+- `size() -> int`
+- `is_empty() -> bool`
+- `get(index: int) -> Optional[T]`
+- `values(direction=Direction.FORWARD)` — async iterator over `T` elements
+- `__aiter__()` — forward async iteration over `T` elements
+- `commit() -> None`
+- `rollback() -> None`
+
+`Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
+
+Errors:
+
+- `StateError`: brand mixin on every keyed-state error; catch all of them with `except StateError`.
+- `TransientStateError` (subclasses `TransientError`): the default — a temporary store read/write failure, or any caller mistake (a `None`/unrepresentable write, item-shape mismatch, out-of-range index, invalid scan direction, malformed definition), rejected transient so it retries rather than discarding the message.
+- `NullValueError` (subclasses `TransientStateError` and `ValueError`): a `None` / JSON-`null` write; use `clear()` / `remove(key)` to delete instead.
+- `PermanentStateError` (subclasses `PermanentError`): reserved for failures a retry cannot resolve in-process (unregistered / identity-mismatched collection, duplicate registration), or one a handler raises explicitly.
 
 ## License
 
