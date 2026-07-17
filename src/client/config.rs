@@ -6,10 +6,12 @@
 
 use crate::client::ProsodyClient;
 use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
+use prosody::JsonCodec;
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
 use prosody::consumer::KeyedStateConfiguration;
 use prosody::consumer::SpanRelation;
+use prosody::consumer::kafka_state::{message_deque_state, message_map_state, message_state};
 use prosody::consumer::middleware::deduplication::DeduplicationConfigurationBuilder;
 use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
 use prosody::consumer::middleware::monopolization::MonopolizationConfigurationBuilder;
@@ -19,16 +21,32 @@ use prosody::consumer::middleware::timeout::TimeoutConfigurationBuilder;
 use prosody::consumer::middleware::topic::FailureTopicConfigurationBuilder;
 use prosody::high_level::mode::{Mode, ModeError};
 use prosody::high_level::{ConsumerBuilders, HighLevelClient};
+use prosody::loader::KafkaLoader;
 use prosody::loader::KafkaLoaderConfiguration;
 use prosody::producer::ProducerConfigurationBuilder;
+use prosody::state::descriptor::{
+    MapDescriptor, StateDescriptor, deque_state, map_state, value_state,
+};
+use prosody::state::order_codec::Utf8KeyCodec;
 use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
+use prosody::timers::duration::CompactDuration;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
+
+/// The Cassandra TTL ceiling in seconds (`630_720_000`, twenty years). Core
+/// also validates this at consumer build; enforcing it here yields an earlier,
+/// field-named error.
+const TTL_CEILING_SECONDS: u32 = 630_720_000;
+
+/// The inclusive upper bound for a map keyset limit.
+const KEYSET_LIMIT_MAX: u32 = 4096;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
 /// configuration.
@@ -609,6 +627,316 @@ fn build_telemetry_emitter_config(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
+/// The kind of a keyed-state collection.
+enum CollectionKind {
+    /// A single-value collection.
+    Value,
+    /// A `String`-keyed ordered map.
+    Map,
+    /// A deque.
+    Deque,
+}
+
+/// The item payload of a keyed-state collection.
+enum CollectionPayload {
+    /// JSON values.
+    Json,
+    /// The full Kafka message the handler received.
+    Message,
+}
+
+/// Parses a collection-kind token.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if the token is not `"value"`, `"map"`, or
+/// `"deque"`.
+fn parse_kind(index: usize, kind: &str) -> PyResult<CollectionKind> {
+    match kind {
+        "value" => Ok(CollectionKind::Value),
+        "map" => Ok(CollectionKind::Map),
+        "deque" => Ok(CollectionKind::Deque),
+        other => Err(PyValueError::new_err(format!(
+            "state_collections[{index}].kind: expected \"value\", \"map\", or \"deque\", got \
+             {other:?}"
+        ))),
+    }
+}
+
+/// Parses a collection-payload token.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if the token is not `"json"` or `"message"`.
+fn parse_payload(index: usize, payload: &str) -> PyResult<CollectionPayload> {
+    match payload {
+        "json" => Ok(CollectionPayload::Json),
+        "message" => Ok(CollectionPayload::Message),
+        other => Err(PyValueError::new_err(format!(
+            "state_collections[{index}].payload: expected \"json\" or \"message\", got {other:?}"
+        ))),
+    }
+}
+
+/// Validates a Python number field as a whole number within `min..=max`.
+///
+/// The field arrives as an `f64` (the raw Python number) so that fractional,
+/// negative, and non-finite values reach this guard instead of being silently
+/// truncated or wrapped by an earlier integer conversion.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if the value is not a whole number in range.
+fn whole_number_field(value: f64, field: &str, min: u32, max: u32) -> PyResult<u32> {
+    if value.is_finite()
+        && value.fract() == 0.0
+        && value >= f64::from(min)
+        && value <= f64::from(max)
+    {
+        Ok(value as u32)
+    } else {
+        Err(PyValueError::new_err(format!(
+            "{field}: must be a whole number in {min}..={max}"
+        )))
+    }
+}
+
+/// Applies the shared descriptor options (TTL, commit mode) fluently.
+fn with_def<D: StateDescriptor>(
+    descriptor: D,
+    ttl_seconds: Option<u32>,
+    read_uncommitted: Option<bool>,
+) -> D {
+    let mut descriptor = descriptor;
+    if let Some(ttl) = ttl_seconds {
+        descriptor = descriptor.ttl(CompactDuration::new(ttl));
+    }
+    if read_uncommitted == Some(true) {
+        descriptor = descriptor.read_uncommitted();
+    }
+    descriptor
+}
+
+/// Applies the map-only keyset bound when configured.
+fn with_keyset<KC, V>(
+    descriptor: MapDescriptor<KC, V>,
+    keyset_limit: Option<u32>,
+) -> MapDescriptor<KC, V> {
+    match keyset_limit {
+        Some(limit) => descriptor.keyset_limit(limit as usize),
+        None => descriptor,
+    }
+}
+
+/// Reads a required non-empty string field from a collection's config dict.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if the field is missing/None, or a `PyErr` if the
+/// value is not a string.
+fn required_str(cfg: &Bound<PyDict>, index: usize, field: &str) -> PyResult<String> {
+    match cfg.get_item(field)? {
+        Some(value) if !value.is_none() => value.extract::<String>(),
+        _ => Err(PyValueError::new_err(format!(
+            "state_collections[{index}].{field}: missing"
+        ))),
+    }
+}
+
+/// Reads an optional `f64` field from a collection's config dict (None when
+/// absent or `None`).
+fn optional_f64(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<f64>> {
+    match cfg.get_item(field)? {
+        Some(value) if !value.is_none() => Ok(Some(value.extract::<f64>()?)),
+        _ => Ok(None),
+    }
+}
+
+/// Reads an optional `bool` field from a collection's config dict.
+fn optional_bool(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<bool>> {
+    match cfg.get_item(field)? {
+        Some(value) if !value.is_none() => Ok(Some(value.extract::<bool>()?)),
+        _ => Ok(None),
+    }
+}
+
+/// Validates one collection's config dict and registers its descriptor.
+///
+/// The config dict is produced by the definition's `to_config()` method with
+/// keys `name`, `kind`, `payload`, `ttl_seconds`, `read_uncommitted`, and
+/// `keyset_limit`. Field-level validation names the offending field; core
+/// validates the remaining rules (TTL exceeding the recovery delay, identity
+/// conflicts) at consumer build.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if a field is invalid (the field name is named in
+/// the message).
+fn register_state_collection(
+    keyed: &mut KeyedStateConfiguration,
+    index: usize,
+    cfg: &Bound<PyDict>,
+) -> PyResult<()> {
+    let name = required_str(cfg, index, "name")?;
+    if name.is_empty() {
+        return Err(PyValueError::new_err(format!(
+            "state_collections[{index}].name: must not be empty"
+        )));
+    }
+
+    let kind = parse_kind(index, &required_str(cfg, index, "kind")?)?;
+    let payload = parse_payload(index, &required_str(cfg, index, "payload")?)?;
+
+    let ttl_seconds = match optional_f64(cfg, "ttl_seconds")? {
+        Some(value) => Some(whole_number_field(
+            value,
+            &format!("state_collections[{index}].ttl_seconds"),
+            1,
+            TTL_CEILING_SECONDS,
+        )?),
+        None => None,
+    };
+
+    let keyset_limit = match optional_f64(cfg, "keyset_limit")? {
+        Some(value) => {
+            if !matches!(kind, CollectionKind::Map) {
+                return Err(PyValueError::new_err(format!(
+                    "state_collections[{index}].keyset_limit: only valid for map collections"
+                )));
+            }
+            Some(whole_number_field(
+                value,
+                &format!("state_collections[{index}].keyset_limit"),
+                0,
+                KEYSET_LIMIT_MAX,
+            )?)
+        }
+        None => None,
+    };
+
+    let read_uncommitted = optional_bool(cfg, "read_uncommitted")?;
+    let name = name.as_str();
+    match (kind, payload) {
+        (CollectionKind::Value, CollectionPayload::Json) => {
+            let _ = keyed.register(with_def(
+                value_state::<JsonCodec>(name),
+                ttl_seconds,
+                read_uncommitted,
+            ));
+        }
+        (CollectionKind::Map, CollectionPayload::Json) => {
+            let descriptor = with_def(
+                map_state::<Utf8KeyCodec, JsonCodec>(name),
+                ttl_seconds,
+                read_uncommitted,
+            );
+            let _ = keyed.register(with_keyset(descriptor, keyset_limit));
+        }
+        (CollectionKind::Deque, CollectionPayload::Json) => {
+            let _ = keyed.register(with_def(
+                deque_state::<JsonCodec>(name),
+                ttl_seconds,
+                read_uncommitted,
+            ));
+        }
+        (CollectionKind::Value, CollectionPayload::Message) => {
+            let _ = keyed.register(with_def(
+                message_state::<KafkaLoader<JsonCodec>>(name),
+                ttl_seconds,
+                read_uncommitted,
+            ));
+        }
+        (CollectionKind::Map, CollectionPayload::Message) => {
+            let descriptor = with_def(
+                message_map_state::<Utf8KeyCodec, KafkaLoader<JsonCodec>>(name),
+                ttl_seconds,
+                read_uncommitted,
+            );
+            let _ = keyed.register(with_keyset(descriptor, keyset_limit));
+        }
+        (CollectionKind::Deque, CollectionPayload::Message) => {
+            let _ = keyed.register(with_def(
+                message_deque_state::<KafkaLoader<JsonCodec>>(name),
+                ttl_seconds,
+                read_uncommitted,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Builds the `KeyedStateConfiguration` from the provided Python configuration.
+///
+/// Reads `state_cache_dir` (str), `state_recovery_delay` (timedelta|float ->
+/// whole seconds >= 1), and `state_collections` (a list of definition objects,
+/// each yielding its config via `to_config()`), registering every declared
+/// collection synchronously and rejecting duplicate names.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if a keyed-state field is invalid or a collection
+/// name is duplicated.
+fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfiguration> {
+    let mut keyed = KeyedStateConfiguration::default();
+
+    if let Some(dir) = config.get_item("state_cache_dir")?
+        && !dir.is_none()
+    {
+        let dir: String = dir.extract()?;
+        if dir.is_empty() {
+            return Err(PyValueError::new_err(
+                "state_cache_dir: must not be an empty string",
+            ));
+        }
+        keyed.cache_dir = PathBuf::from(dir);
+    }
+
+    if let Some(delay) = config.get_item("state_recovery_delay")?
+        && !delay.is_none()
+    {
+        let duration = decode_duration(&delay)?;
+        if duration.subsec_nanos() != 0 {
+            return Err(PyValueError::new_err(
+                "state_recovery_delay: must be a whole number of seconds",
+            ));
+        }
+        let seconds = u32::try_from(duration.as_secs()).map_err(|_| {
+            PyValueError::new_err("state_recovery_delay: exceeds the u32 seconds range")
+        })?;
+        if seconds < 1 {
+            return Err(PyValueError::new_err(
+                "state_recovery_delay: must be >= 1 second",
+            ));
+        }
+        keyed.recovery_delay = CompactDuration::new(seconds);
+    }
+
+    if let Some(collections) = config.get_item("state_collections")?
+        && !collections.is_none()
+    {
+        let mut seen: HashSet<String> = HashSet::new();
+        for (index, entry) in collections.try_iter()?.enumerate() {
+            let entry = entry?;
+            let cfg = entry.call_method0("to_config")?;
+            let cfg = cfg.cast::<PyDict>().map_err(|_| {
+                PyValueError::new_err(format!(
+                    "state_collections[{index}]: to_config() must return a dict"
+                ))
+            })?;
+            let name = required_str(cfg, index, "name")?;
+            if !seen.insert(name.clone()) {
+                return Err(PyValueError::new_err(format!(
+                    "state_collections[{index}].name: duplicate collection name {name:?}"
+                )));
+            }
+            register_state_collection(&mut keyed, index, cfg)?;
+        }
+    }
+
+    Ok(keyed)
+}
+
 /// Builds `ConsumerBuilders` from the provided Python configuration.
 ///
 /// # Arguments
@@ -632,7 +960,7 @@ fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders>
         monopolization: build_monopolization_config(config)?,
         defer: build_defer_config(config)?,
         timeout: build_timeout_config(config)?,
-        keyed_state: KeyedStateConfiguration::default(),
+        keyed_state: build_keyed_state_config(config)?,
         emitter: build_telemetry_emitter_config(config)?,
     })
 }

@@ -4,6 +4,10 @@
 //! This module provides the `Context` struct to hold message context
 //! information for Kafka messages.
 
+use crate::state::{
+    DequeStateVariant, MapStateVariant, NativeDequeState, NativeMapState, NativeValueState,
+    StateEnv, ValueStateVariant, state_error,
+};
 use chrono::{DateTime, Utc};
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::event_context::BoxEventContext;
@@ -29,9 +33,21 @@ pub struct Context {
     pub get_current: Py<PyAny>,
     pub inject: Py<PyAny>,
     pub propagator: Arc<TextMapCompositePropagator>,
+    pub message_class: Py<PyAny>,
 }
 
 impl Context {
+    /// Builds the shared environment threaded into every vended state handle.
+    fn state_env(&self, py: Python) -> PyResult<StateEnv> {
+        StateEnv::resolve(
+            py,
+            &self.get_current,
+            &self.inject,
+            Arc::clone(&self.propagator),
+            &self.message_class,
+        )
+    }
+
     /// Helper method to extract tracing context and set it as parent for the
     /// given span
     fn setup_tracing_context(&self, py: Python, span: &tracing::Span) -> PyResult<()> {
@@ -257,6 +273,127 @@ impl Context {
         Ok(format!("{class_name}: {status}"))
     }
 
+    /// Vends the low-level handle for the named JSON value collection.
+    ///
+    /// Vending verifies the collection's registration (core-side); no span is
+    /// opened here — vended handles outlive the call, and every operation opens
+    /// its own span.
+    ///
+    /// # Errors
+    ///
+    /// Returns a permanent error if the name is unregistered or its registered
+    /// identity mismatches.
+    fn value_state(&self, py: Python, name: &str) -> PyResult<NativeValueState> {
+        let env = self.state_env(py)?;
+        let handle = self
+            .inner
+            .value_state(name)
+            .map_err(|e| state_error(py, &env, &e))?;
+        Ok(NativeValueState {
+            state: Arc::new(ValueStateVariant::Json(handle)),
+            env,
+        })
+    }
+
+    /// Vends the low-level handle for the named JSON map collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns a permanent error if the name is unregistered or its registered
+    /// identity mismatches.
+    fn map_state(&self, py: Python, name: &str) -> PyResult<NativeMapState> {
+        let env = self.state_env(py)?;
+        let handle = self
+            .inner
+            .map_state(name)
+            .map_err(|e| state_error(py, &env, &e))?;
+        Ok(NativeMapState {
+            state: Arc::new(MapStateVariant::Json(handle)),
+            env,
+        })
+    }
+
+    /// Vends the low-level handle for the named JSON deque collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns a permanent error if the name is unregistered or its registered
+    /// identity mismatches.
+    fn deque_state(&self, py: Python, name: &str) -> PyResult<NativeDequeState> {
+        let env = self.state_env(py)?;
+        let handle = self
+            .inner
+            .deque_state(name)
+            .map_err(|e| state_error(py, &env, &e))?;
+        Ok(NativeDequeState {
+            state: Arc::new(DequeStateVariant::Json(handle)),
+            env,
+        })
+    }
+
+    /// Vends the low-level handle for the named Kafka-message value collection.
+    ///
+    /// Items are the full `Message` the handler received, loader-resolved on
+    /// read.
+    ///
+    /// # Errors
+    ///
+    /// Returns a permanent error if the name is unregistered or its registered
+    /// identity mismatches.
+    fn message_value_state(&self, py: Python, name: &str) -> PyResult<NativeValueState> {
+        let env = self.state_env(py)?;
+        let handle = self
+            .inner
+            .message_value_state(name)
+            .map_err(|e| state_error(py, &env, &e))?;
+        Ok(NativeValueState {
+            state: Arc::new(ValueStateVariant::Message(handle)),
+            env,
+        })
+    }
+
+    /// Vends the low-level handle for the named Kafka-message map collection.
+    ///
+    /// Items are the full `Message` the handler received, loader-resolved on
+    /// read.
+    ///
+    /// # Errors
+    ///
+    /// Returns a permanent error if the name is unregistered or its registered
+    /// identity mismatches.
+    fn message_map_state(&self, py: Python, name: &str) -> PyResult<NativeMapState> {
+        let env = self.state_env(py)?;
+        let handle = self
+            .inner
+            .message_map_state(name)
+            .map_err(|e| state_error(py, &env, &e))?;
+        Ok(NativeMapState {
+            state: Arc::new(MapStateVariant::Message(handle)),
+            env,
+        })
+    }
+
+    /// Vends the low-level handle for the named Kafka-message deque collection.
+    ///
+    /// Items are the full `Message` the handler received, loader-resolved on
+    /// read.
+    ///
+    /// # Errors
+    ///
+    /// Returns a permanent error if the name is unregistered or its registered
+    /// identity mismatches.
+    fn message_deque_state(&self, py: Python, name: &str) -> PyResult<NativeDequeState> {
+        let env = self.state_env(py)?;
+        let handle = self
+            .inner
+            .message_deque_state(name)
+            .map_err(|e| state_error(py, &env, &e))?;
+        Ok(NativeDequeState {
+            state: Arc::new(DequeStateVariant::Message(handle)),
+            env,
+        })
+    }
+
     /// Traverses Python objects contained in this Context for garbage
     /// collection.
     ///
@@ -271,6 +408,7 @@ impl Context {
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(self.get_current.as_any())?;
         visit.call(self.inject.as_any())?;
+        visit.call(self.message_class.as_any())?;
         Ok(())
     }
 }

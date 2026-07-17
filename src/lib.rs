@@ -13,6 +13,7 @@ use crate::admin::AdminClient;
 use crate::client::ProsodyClient;
 use crate::context::Context;
 use crate::logging::PythonLoggingLayer;
+use crate::state::{NativeDequeState, NativeMapState, NativeStateScan, NativeValueState};
 use ::prosody::tracing::initialize_tracing;
 use mimalloc::MiMalloc;
 use pyo3::exceptions::PyRuntimeError;
@@ -24,6 +25,7 @@ mod client;
 mod context;
 mod handler;
 mod logging;
+mod state;
 mod util;
 
 #[global_allocator]
@@ -64,6 +66,14 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
         .set_item("prosody.context", context_module)?;
 
     prosody_module.add_class::<AdminClient>()?;
+
+    // Internal erased keyed-state handles (the typed Python surface wraps
+    // these); registered on the main module rather than a `prosody.state`
+    // submodule to leave that name free for the typed layer.
+    prosody_module.add_class::<NativeValueState>()?;
+    prosody_module.add_class::<NativeMapState>()?;
+    prosody_module.add_class::<NativeDequeState>()?;
+    prosody_module.add_class::<NativeStateScan>()?;
 
     Ok(())
 }

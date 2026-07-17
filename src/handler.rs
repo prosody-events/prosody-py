@@ -50,6 +50,7 @@ struct TimerExecutionContext<'a> {
     timer_class: &'a Py<PyAny>,
     event_class: &'a Py<PyAny>,
     timer_method: &'a Py<PyAny>,
+    message_class: &'a Py<PyAny>,
     locals: &'a TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
     otel_get_current: &'a Py<PyAny>,
@@ -301,6 +302,7 @@ impl FallibleHandler for PythonHandler {
             timer_class: &self.0.timer_class,
             event_class: &self.0.event_class,
             timer_method: &self.0.timer_method,
+            message_class: &self.0.message_class,
             locals: &self.0.locals,
             propagator: self.0.propagator.clone(),
             otel_get_current: &self.0.otel_get_current,
@@ -432,6 +434,7 @@ where
             get_current: execution_context.otel_get_current.clone_ref(py),
             inject: execution_context.otel_inject.clone_ref(py),
             propagator: execution_context.propagator,
+            message_class: execution_context.message_class.clone_ref(py),
         };
         let payload = pythonize(py, message.payload())?;
 
@@ -501,6 +504,7 @@ where
             get_current: timer_context.otel_get_current.clone_ref(py),
             inject: timer_context.otel_inject.clone_ref(py),
             propagator: timer_context.propagator,
+            message_class: timer_context.message_class.clone_ref(py),
         };
 
         let timer = timer_context.timer_class.call1(
