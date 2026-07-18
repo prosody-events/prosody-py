@@ -108,8 +108,8 @@ jobs:
           cache: 'pip'
       - name: Install type-check dependencies
         run: pip install "mypy>=1.11" "opentelemetry-api>=1.44.0,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.12.0"
-      - name: Type-check the keyed-state typed example
-        run: mypy examples/keyed_state_typed.py
+      - name: Type-check the keyed-state examples
+        run: mypy
 
   dependencies:
     name: Dependencies

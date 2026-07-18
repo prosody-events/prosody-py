@@ -61,6 +61,14 @@ files = ["examples/keyed_state_typed.py", "examples/keyed_state_windowing.py"]
 mypy_path = "python"
 python_version = "3.10"
 
+# ``sentry-sdk`` is an optional runtime dependency, imported lazily inside a
+# ``try/except ImportError`` in ``handler.py``. The examples pull it in only
+# transitively via ``from prosody import ...``; the type gate stays lightweight
+# and does not install it, so treat its absence as ``Any`` rather than an error.
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "sentry_sdk.*"
+
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
 asyncio_mode = "auto"
