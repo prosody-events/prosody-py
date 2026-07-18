@@ -14,6 +14,7 @@ strategies, and integrated OpenTelemetry support for distributed tracing.
 - **Backpressure**: Pauses partitions when handlers fall behind
 - **Mocking**: In-memory Kafka broker for tests (`mock=True`)
 - **Failure Handling**: Pipeline (retry forever), Low-Latency (dead letter), Best-Effort (log and skip)
+- **Type Checking**: PEP 561 type information for mypy and other Python type checkers
 
 ## Installation
 
@@ -22,6 +23,12 @@ Prosody supports Python 3.10 and above, including free-threaded builds (3.14t). 
 ```bash
 pip install prosody-events
 ```
+
+The wheel includes a `py.typed` marker and type information for the public API,
+so applications can type-check normal `prosody` imports without installing a
+separate stub package. For example, run `mypy your_application/` after installing
+Prosody and mypy. Keyed-state definitions carry their declared value type through
+`Context.state(...)`; see [Keyed State](#keyed-state-cassandra) for typed examples.
 
 ## Quick Start
 

@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Rust",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Distributed Computing",
+    "Typing :: Typed",
 ]
 dependencies = [
     "opentelemetry-api>=1.44.0,<2.0.0",
