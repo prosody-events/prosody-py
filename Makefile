@@ -38,7 +38,7 @@ check-watch:
 # Type-check the keyed-state typed example (config in [tool.mypy]).
 # mypy_path resolves prosody from source, so no maturin build is required.
 mypy:
-	mypy examples/keyed_state_typed.py
+	mypy examples/keyed_state_typed.py examples/keyed_state_windowing.py
 
 # Run Clippy for linting
 lint:
