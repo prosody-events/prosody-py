@@ -277,6 +277,7 @@ async def test_deque_method_mapping():
     await d.get(3)
     await d.size()
     await d.is_empty()
+    await d.clear()
     assert [c[0] for c in n.calls] == [
         "push_back",
         "push_front",
@@ -285,6 +286,7 @@ async def test_deque_method_mapping():
         "get",
         "len",
         "is_empty",
+        "clear",
     ]
     assert n.calls[0][1] == (1,)  # append forwards item to push_back
     assert n.calls[4][1] == (3,)  # get(index) forwards index

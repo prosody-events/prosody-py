@@ -485,6 +485,10 @@ class DequeState(Generic[T]):
         """Whether the deque holds no live elements."""
         return await self._native.is_empty()
 
+    async def clear(self) -> None:
+        """Remove every element."""
+        await self._native.clear()
+
     def values(self, direction: Direction = Direction.FORWARD) -> _StateScan:
         """Async iterator over the elements in index order."""
         return _StateScan(self._native.scan(direction.value), _identity)
