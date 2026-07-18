@@ -584,6 +584,28 @@ impl NativeMapState {
         })
     }
 
+    /// Reports whether a stored cell exists for `key`, read through the event's
+    /// dirty overlay (read-your-writes).
+    ///
+    /// Presence only: never runs the value codec or the resolver, so a
+    /// message-backed map answers `true` even for a key whose referenced Kafka
+    /// message can no longer be fetched. Not zero-I/O — a cache miss still
+    /// reads Cassandra and surfaces errors exactly like `get`.
+    fn contains_key<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+        let ctx = self.env.op_context(py)?;
+        let state = Arc::clone(&self.state);
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            let out = match &*state {
+                MapStateVariant::Json(handle) => handle.contains_key(key).with_context(ctx).await,
+                MapStateVariant::Message(handle) => {
+                    handle.contains_key(key).with_context(ctx).await
+                }
+            };
+            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+        })
+    }
+
     /// Inserts or overwrites `key`.
     ///
     /// A JSON `null` is rejected (transient), naming `remove(key)` to delete; a
@@ -670,6 +692,31 @@ impl NativeMapState {
         };
         Ok(NativeStateScan {
             inner: Arc::new(Mutex::new(scan)),
+            env: self.env.clone(),
+        })
+    }
+
+    /// Opens a demand-driven cursor over the live keys in key order.
+    ///
+    /// Synchronous — no I/O to start. The cursor yields bare `str` keys and is
+    /// presence-only: it never runs the value codec or the resolver, so a
+    /// message-backed map enumerates keys with zero Kafka fetches. Not zero-I/O
+    /// — pulling a chunk still does a presence read. The extracted carrier is
+    /// active while core builds its stream span.
+    fn keys(&self, py: Python, direction: &str) -> PyResult<NativeStateScan> {
+        let dir = parse_direction(py, &self.env, direction)?;
+        let _guard = self.env.op_context(py)?.attach();
+        // Both variants' `keys` yield `BoxStateCursor<String>` regardless of the
+        // value type — presence needs no value flavour.
+        let cursor = match &*self.state {
+            MapStateVariant::Json(handle) => handle.keys(dir),
+            MapStateVariant::Message(handle) => handle.keys(dir),
+        };
+        Ok(NativeStateScan {
+            inner: Arc::new(Mutex::new(ScanState::MapKeys {
+                cursor,
+                retained: VecDeque::new(),
+            })),
             env: self.env.clone(),
         })
     }
@@ -892,6 +939,66 @@ impl NativeDequeState {
         })
     }
 
+    /// Reads the front element without removing it, or `None` when empty.
+    ///
+    /// An endpoint-*slot* read — exactly `get(0)` minus the length round trip.
+    /// Under a TTL the window can hold holes, and an expired front slot yields
+    /// `None` even when `len() > 0` and live interior elements exist; a peek
+    /// never searches inward.
+    fn peek_front<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let ctx = self.env.op_context(py)?;
+        let state = Arc::clone(&self.state);
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            let out = match &*state {
+                DequeStateVariant::Json(handle) => handle
+                    .peek_front()
+                    .with_context(ctx)
+                    .await
+                    .map(|item| item.map(StateItem::Json)),
+                DequeStateVariant::Message(handle) => handle
+                    .peek_front()
+                    .with_context(ctx)
+                    .await
+                    .map(|item| item.map(StateItem::Message)),
+            };
+            Python::attach(|py| match out {
+                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
+                Err(error) => Err(state_error(py, &env, &error)),
+            })
+        })
+    }
+
+    /// Reads the back element without removing it, or `None` when empty.
+    ///
+    /// An endpoint-*slot* read — exactly `get(len - 1)` minus the length round
+    /// trip, and absence instead of the negative-index error the
+    /// length-then-get workaround hits on an empty deque. See
+    /// [`peek_front`](Self::peek_front) for the TTL-hole semantics.
+    fn peek_back<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        let ctx = self.env.op_context(py)?;
+        let state = Arc::clone(&self.state);
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            let out = match &*state {
+                DequeStateVariant::Json(handle) => handle
+                    .peek_back()
+                    .with_context(ctx)
+                    .await
+                    .map(|item| item.map(StateItem::Json)),
+                DequeStateVariant::Message(handle) => handle
+                    .peek_back()
+                    .with_context(ctx)
+                    .await
+                    .map(|item| item.map(StateItem::Message)),
+            };
+            Python::attach(|py| match out {
+                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
+                Err(error) => Err(state_error(py, &env, &error)),
+            })
+        })
+    }
+
     /// Removes every element.
     fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let ctx = self.env.op_context(py)?;
@@ -993,6 +1100,13 @@ enum ScanState {
         /// Pulled-but-unyielded items.
         retained: VecDeque<(String, ConsumerMessage<Value>)>,
     },
+    /// A map key-only scan yielding bare keys (no value decode / no resolver).
+    MapKeys {
+        /// The erased cursor.
+        cursor: BoxStateCursor<String>,
+        /// Pulled-but-unyielded keys.
+        retained: VecDeque<String>,
+    },
 }
 
 /// Builds the Python object for the FRONT retained item without removing it.
@@ -1030,6 +1144,10 @@ fn scan_build_front(scan: &ScanState, env: &StateEnv) -> PyResult<Option<Py<PyAn
                 Ok(Some(entry.into_any().unbind()))
             }),
         },
+        ScanState::MapKeys { retained, .. } => match retained.front() {
+            None => Ok(None),
+            Some(key) => Python::attach(|py| Ok(Some(PyString::new(py, key).into_any().unbind()))),
+        },
     }
 }
 
@@ -1048,6 +1166,9 @@ fn scan_pop_front(scan: &mut ScanState) {
         ScanState::MapMessage { retained, .. } => {
             retained.pop_front();
         }
+        ScanState::MapKeys { retained, .. } => {
+            retained.pop_front();
+        }
     }
 }
 
@@ -1058,6 +1179,7 @@ fn scan_clear_retained(scan: &mut ScanState) {
         ScanState::MapJson { retained, .. } => retained.clear(),
         ScanState::DequeMessage { retained, .. } => retained.clear(),
         ScanState::MapMessage { retained, .. } => retained.clear(),
+        ScanState::MapKeys { retained, .. } => retained.clear(),
     }
 }
 
@@ -1119,6 +1241,11 @@ impl NativeStateScan {
                     .with_context(ctx)
                     .await
                     .map(|chunk| chunk.map(|items| retained.extend(items))),
+                ScanState::MapKeys { cursor, retained } => cursor
+                    .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
+                    .with_context(ctx)
+                    .await
+                    .map(|chunk| chunk.map(|items| retained.extend(items))),
             };
             match pulled {
                 Err(error) => Python::attach(|py| Err(state_error(py, &env, &error))),
@@ -1150,6 +1277,7 @@ impl NativeStateScan {
                 ScanState::MapJson { cursor, .. } => cursor.close().await,
                 ScanState::DequeMessage { cursor, .. } => cursor.close().await,
                 ScanState::MapMessage { cursor, .. } => cursor.close().await,
+                ScanState::MapKeys { cursor, .. } => cursor.close().await,
             }
             Ok(())
         })

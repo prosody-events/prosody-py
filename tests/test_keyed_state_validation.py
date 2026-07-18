@@ -57,6 +57,7 @@ def raw(
     ttl_seconds=None,
     read_uncommitted=None,
     keyset_limit=None,
+    capacity=None,
 ):
     return RawDef(
         {
@@ -66,6 +67,7 @@ def raw(
             "ttl_seconds": ttl_seconds,
             "read_uncommitted": read_uncommitted,
             "keyset_limit": keyset_limit,
+            "capacity": capacity,
         }
     )
 
@@ -152,6 +154,33 @@ def test_rejects_keyset_on_non_map():
     # value collection to reach the map-only guard.
     with pytest.raises(ValueError, match=r"keyset_limit: only valid for map"):
         make_client(state_collections=[raw(kind="value", keyset_limit=5)])
+
+
+# --- capacity rules (deque-only) ------------------------------------------
+
+
+def test_accepts_deque_capacity():
+    make_client(state_collections=[deque("d", capacity=100)])
+
+
+def test_rejects_capacity_zero():
+    with pytest.raises(
+        ValueError, match=r"capacity: must be a whole number in 1..=4294967295"
+    ):
+        make_client(state_collections=[deque("d", capacity=0)])
+
+
+@pytest.mark.parametrize("capacity", [2.5, -1, float("nan"), float("inf")])
+def test_rejects_capacity_non_whole(capacity):
+    # The deque() helper passes capacity through unchanged, so it reaches the
+    # Rust whole-number guard directly.
+    with pytest.raises(ValueError, match=r"capacity: must be a whole number"):
+        make_client(state_collections=[deque("d", capacity=capacity)])
+
+
+def test_rejects_capacity_on_non_deque():
+    with pytest.raises(ValueError, match=r"capacity: only valid for deque"):
+        make_client(state_collections=[raw(kind="value", capacity=5)])
 
 
 # --- kind / payload tokens ------------------------------------------------

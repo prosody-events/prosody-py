@@ -59,6 +59,7 @@ def _config(defn: Any) -> Dict[str, Any]:
         "ttl_seconds": _ttl_seconds(defn.ttl),
         "read_uncommitted": defn.read_uncommitted,
         "keyset_limit": getattr(defn, "keyset_limit", None),
+        "capacity": getattr(defn, "capacity", None),
     }
 
 
@@ -100,6 +101,7 @@ class DequeDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    capacity: Optional[int] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "json"
 
@@ -146,6 +148,7 @@ class MessageDequeDefinition(Generic[P]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    capacity: Optional[int] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "message"
 
@@ -185,9 +188,17 @@ def deque(
     *,
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
+    capacity: Optional[int] = None,
 ) -> DequeDefinition[T]:
-    """Define a double-ended-queue JSON collection."""
-    return DequeDefinition(name, ttl=ttl, read_uncommitted=read_uncommitted)
+    """Define a double-ended-queue JSON collection.
+
+    ``capacity`` caps the deque at N slots, enforced lazily on push (see
+    :meth:`DequeState.append`). Runtime-only — never persisted and freely
+    changed across deploys.
+    """
+    return DequeDefinition(
+        name, ttl=ttl, read_uncommitted=read_uncommitted, capacity=capacity
+    )
 
 
 def message_value(
@@ -221,9 +232,17 @@ def message_deque(
     *,
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
+    capacity: Optional[int] = None,
 ) -> MessageDequeDefinition[P]:
-    """Define a double-ended-queue collection of whole Kafka messages."""
-    return MessageDequeDefinition(name, ttl=ttl, read_uncommitted=read_uncommitted)
+    """Define a double-ended-queue collection of whole Kafka messages.
+
+    ``capacity`` caps the deque at N slots, enforced lazily on push (see
+    :meth:`DequeState.append`). Runtime-only — never persisted and freely
+    changed across deploys.
+    """
+    return MessageDequeDefinition(
+        name, ttl=ttl, read_uncommitted=read_uncommitted, capacity=capacity
+    )
 
 
 def _identity(item: Any) -> Any:
@@ -303,9 +322,30 @@ class MapState(Generic[V]):
     def __init__(self, native: Any) -> None:
         self._native = native
 
-    async def get(self, key: str) -> Optional[V]:
-        """Read the value for ``key``, or ``None`` when absent."""
-        return await self._native.get(key)
+    async def get(self, key: str, default: Any = None) -> Any:
+        """Read the value for ``key``; return ``default`` only when the key is
+        absent.
+
+        A present-but-falsy value (``0``, ``False``, ``""``, ``[]``) returns that
+        value, never ``default`` — the branch tests core absence, not
+        truthiness. Unlike the cheap-path methods, ``get`` fully decodes and
+        resolves the value. The ``.pyi`` overload pair restores the precise
+        return type the runtime erases to ``Any``.
+        """
+        value = await self._native.get(key)
+        return default if value is None else value
+
+    async def contains(self, key: str) -> bool:
+        """Report whether a stored cell exists for ``key`` (read-your-writes).
+
+        The cheap presence check: it never decodes the value or runs the
+        resolver, so a message-backed map answers ``True`` even for a key whose
+        Kafka message can no longer be fetched — presence is about the cell, not
+        fetchability. The guarantee is "no value decode, no resolver," **not**
+        "no I/O": a cache miss still reads Cassandra and surfaces errors like
+        :meth:`get`. Not ``__contains__`` — Python's ``in`` cannot ``await``.
+        """
+        return await self._native.contains_key(key)
 
     async def get_many(self, keys: List[str]) -> List[Optional[V]]:
         """Read several keys in one isolated batch, one result per key in order.
@@ -331,27 +371,35 @@ class MapState(Generic[V]):
         """Async iterator over ``(key, value)`` entries in key order."""
         return _StateScan(self._native.scan(direction.value), _identity)
 
-    def keys(self) -> _StateScan:
-        """Async iterator over the keys in forward key order.
+    def keys(self, direction: Direction = Direction.FORWARD) -> _StateScan:
+        """Async iterator over the keys in key order — the cheap key-only scan.
 
-        Runs the same full ``(key, value)`` scan as :meth:`items` and resolves
-        every value before discarding it — not a cheaper key-only enumeration
-        (core has no keys-only scan). If you will also read the values, iterate
-        :meth:`items`; to read a known set of keys, call :meth:`get_many`.
+        Never decodes a value or runs the resolver, so a message-backed map
+        enumerates keys with **zero Kafka fetches**. It is not zero-I/O: pulling
+        a chunk still does a presence-only read. Accepts a :class:`Direction`
+        (``FORWARD`` default / ``BACKWARD``). When you also need the values,
+        iterate :meth:`items` (one batched, fully-resolving scan); for a known
+        set of keys, call :meth:`get_many`.
         """
-        return _StateScan(self._native.scan(Direction.FORWARD.value), lambda e: e[0])
+        return _StateScan(self._native.keys(direction.value), _identity)
 
     def values(self) -> _StateScan:
         """Async iterator over the values in forward key order.
 
-        Runs the same full ``(key, value)`` scan as :meth:`items` and discards
-        the keys; it is not cheaper than :meth:`items`.
+        A projection of the full ``(key, value)`` scan that drops the keys.
+        Value iteration inherently decodes and resolves, so this is not the
+        cheap path :meth:`keys` is; it costs the same as :meth:`items`.
         """
         return _StateScan(self._native.scan(Direction.FORWARD.value), lambda e: e[1])
 
     def __aiter__(self) -> _StateScan:
-        """Forward iteration over ``(key, value)`` entries."""
-        return self.items(Direction.FORWARD)
+        """Forward iteration over the **keys**, like ``dict``.
+
+        Use :meth:`items` when you need the values — one batched, fully-resolving
+        scan — rather than per-key :meth:`get` after key iteration (a round trip
+        per key).
+        """
+        return self.keys()
 
     async def commit(self) -> None:
         """Durably commit the buffered operations mid-handler."""
@@ -373,11 +421,23 @@ class DequeState(Generic[T]):
         self._native = native
 
     async def append(self, item: T) -> None:
-        """Append ``item`` at the back (``None`` raises ``NullValueError``)."""
+        """Append ``item`` at the back (``None`` raises ``NullValueError``).
+
+        On a capacity-bounded deque (``capacity=`` on the definition), a push is
+        the only operation that enforces the bound: it evicts from the opposite
+        (front) end toward capacity — decode-free, no Kafka fetch — before
+        appending. Enforcement is lazy and capped per push, so a deque just
+        reconfigured smaller reports its old length until pushes trim it, and a
+        shrunk bound converges over the next few pushes rather than at once.
+        """
         await self._native.push_back(item)
 
     async def appendleft(self, item: T) -> None:
-        """Prepend ``item`` at the front (``None`` raises ``NullValueError``)."""
+        """Prepend ``item`` at the front (``None`` raises ``NullValueError``).
+
+        The front-push counterpart of :meth:`append`; on a bounded deque it
+        evicts from the back toward capacity before prepending.
+        """
         await self._native.push_front(item)
 
     async def pop(self) -> Optional[T]:
@@ -387,6 +447,25 @@ class DequeState(Generic[T]):
     async def popleft(self) -> Optional[T]:
         """Remove and return the front element, or ``None`` when empty."""
         return await self._native.pop_front()
+
+    async def peek(self) -> Optional[T]:
+        """Read the back element without removing it, or ``None`` when empty.
+
+        Pairs with :meth:`pop`. An endpoint-*slot* read — exactly
+        ``get(size - 1)`` minus the length round trip. Under a TTL the window can
+        hold holes, so an expired back slot yields ``None`` even when live
+        interior elements exist; a peek never searches inward.
+        """
+        return await self._native.peek_back()
+
+    async def peekleft(self) -> Optional[T]:
+        """Read the front element without removing it, or ``None`` when empty.
+
+        Pairs with :meth:`popleft`; the front-endpoint counterpart of
+        :meth:`peek` (``get(0)`` minus the length round trip, same TTL-hole
+        semantics).
+        """
+        return await self._native.peek_front()
 
     async def get(self, index: int) -> Optional[T]:
         """Read the element at front-relative ``index``, or ``None`` past the end.

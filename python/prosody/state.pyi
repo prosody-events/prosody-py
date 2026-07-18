@@ -15,7 +15,7 @@ is future work. Map keys are always ``str``.
 
 import enum
 from datetime import timedelta
-from typing import Any, Dict, Generic, List, Optional, Tuple, Union
+from typing import Any, Dict, Generic, List, Optional, Tuple, Union, overload
 
 from typing_extensions import TypeVar
 
@@ -25,6 +25,7 @@ from prosody.message import JSONValue, Message
 T = TypeVar("T", default=JSONValue)  # value / deque item type
 V = TypeVar("V", default=JSONValue)  # map value type
 P = TypeVar("P", default=JSONValue)  # message payload type
+D = TypeVar("D")  # get() default's own type, preserved in the return
 _Y = TypeVar("_Y")  # yielded item type of a scan
 
 
@@ -119,11 +120,13 @@ class DequeDefinition(Generic[T]):
     """A double-ended-queue JSON collection definition.
 
     ``kind = "deque"``, ``payload = "json"``. Vends :class:`DequeState` ``[T]``.
+    ``capacity`` is deque-only.
     """
 
     name: str
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
+    capacity: Optional[int]
     kind: str
     payload: str
 
@@ -132,6 +135,7 @@ class DequeDefinition(Generic[T]):
         name: str,
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
+        capacity: Optional[int] = ...,
     ) -> None: ...
     def to_config(self) -> Dict[str, Any]:
         """Return the config dict passed to the client and to ``state()``."""
@@ -192,12 +196,13 @@ class MessageDequeDefinition(Generic[P]):
     """A double-ended-queue collection storing whole Kafka messages.
 
     ``kind = "deque"``, ``payload = "message"``. Vends
-    :class:`DequeState` ``[Message[P]]``.
+    :class:`DequeState` ``[Message[P]]``. ``capacity`` is deque-only.
     """
 
     name: str
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
+    capacity: Optional[int]
     kind: str
     payload: str
 
@@ -206,6 +211,7 @@ class MessageDequeDefinition(Generic[P]):
         name: str,
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
+        capacity: Optional[int] = ...,
     ) -> None: ...
     def to_config(self) -> Dict[str, Any]:
         """Return the config dict passed to the client and to ``state()``."""
@@ -247,10 +253,13 @@ def deque(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
+    capacity: Optional[int] = ...,
 ) -> DequeDefinition[T]:
     """Define a double-ended-queue JSON collection (vends :class:`DequeState` ``[T]``).
 
-    ``T`` is a structural JSON annotation only (no runtime validation).
+    ``capacity`` caps the deque at N slots, enforced lazily on push; runtime-only
+    and freely changed across deploys. ``T`` is a structural JSON annotation only
+    (no runtime validation).
     """
     ...
 
@@ -289,11 +298,14 @@ def message_deque(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
+    capacity: Optional[int] = ...,
 ) -> MessageDequeDefinition[P]:
     """Define a double-ended-queue collection of whole Kafka messages.
 
-    Vends :class:`DequeState` ``[Message[P]]``. ``P`` annotates the message
-    payload structurally only (no runtime validation).
+    Vends :class:`DequeState` ``[Message[P]]``. ``capacity`` caps the deque at N
+    slots, enforced lazily on push; runtime-only and freely changed across
+    deploys. ``P`` annotates the message payload structurally only (no runtime
+    validation).
     """
     ...
 
@@ -337,8 +349,28 @@ class MapState(Generic[V]):
     because ``del`` cannot be async; map keys are always ``str``.
     """
 
+    @overload
     async def get(self, key: str) -> Optional[V]:
         """Read the value for ``key``, or ``None`` when absent."""
+        ...
+    @overload
+    async def get(self, key: str, default: D) -> Union[V, D]:
+        """Read the value for ``key``; return ``default`` only when absent.
+
+        A present-but-falsy value (``0``, ``False``, ``""``, ``[]``) returns
+        that value, never ``default`` — the branch tests core absence, not
+        truthiness. Fully decodes and resolves the value (unlike
+        :meth:`contains` / :meth:`keys`).
+        """
+        ...
+    async def contains(self, key: str) -> bool:
+        """Report whether a stored cell exists for ``key`` (read-your-writes).
+
+        The cheap presence check — no value decode, no resolver — so a
+        message-backed map answers ``True`` even for a key whose Kafka message
+        can no longer be fetched. Not zero-I/O: a cache miss still reads
+        Cassandra. Not ``__contains__`` — Python's ``in`` cannot ``await``.
+        """
         ...
     async def get_many(self, keys: List[str]) -> List[Optional[V]]:
         """Read several keys in one isolated batch, one result per key in order.
@@ -370,24 +402,30 @@ class MapState(Generic[V]):
         Accepts a :class:`Direction` (``FORWARD`` default / ``BACKWARD``).
         """
         ...
-    def keys(self) -> _StateScan[str]:
-        """Async iterator over the keys in forward key order (forward-only).
+    def keys(self, direction: Direction = ...) -> _StateScan[str]:
+        """Async iterator over the keys in key order — the cheap key-only scan.
 
-        Runs the same full ``(key, value)`` scan as :meth:`items` and resolves
-        every value before discarding it — not a cheaper key-only enumeration
-        (core has no keys-only scan). If you will also read the values, iterate
-        :meth:`items`; to read a known set of keys, call :meth:`get_many`.
+        Never decodes a value or runs the resolver, so a message-backed map
+        enumerates keys with **zero Kafka fetches**. Not zero-I/O: pulling a
+        chunk still does a presence-only read. Accepts a :class:`Direction`
+        (``FORWARD`` default / ``BACKWARD``). When you also need the values,
+        iterate :meth:`items`; for a known set of keys, call :meth:`get_many`.
         """
         ...
     def values(self) -> _StateScan[V]:
         """Async iterator over the values in forward key order (forward-only).
 
-        Runs the same full ``(key, value)`` scan as :meth:`items` and discards
-        the keys; it is not cheaper than :meth:`items`.
+        A projection of the full ``(key, value)`` scan that drops the keys.
+        Value iteration inherently decodes and resolves, so it is not the cheap
+        path :meth:`keys` is; it costs the same as :meth:`items`.
         """
         ...
-    def __aiter__(self) -> _StateScan[Tuple[str, V]]:
-        """Forward iteration over ``(key, value)`` entries."""
+    def __aiter__(self) -> _StateScan[str]:
+        """Forward iteration over the **keys**, like ``dict``.
+
+        Use :meth:`items` when you need the values — one batched, fully-resolving
+        scan — rather than per-key :meth:`get` after key iteration.
+        """
         ...
     async def commit(self) -> None:
         """Durably flush the buffered operations mid-handler.
@@ -426,6 +464,21 @@ class DequeState(Generic[T]):
         ...
     async def popleft(self) -> Optional[T]:
         """Remove and return the front element, or ``None`` when empty."""
+        ...
+    async def peek(self) -> Optional[T]:
+        """Read the back element without removing it, or ``None`` when empty.
+
+        Pairs with :meth:`pop`. An endpoint-*slot* read — ``get(size - 1)`` minus
+        the length round trip. Under a TTL an expired back slot yields ``None``
+        even when live interior elements exist; a peek never searches inward.
+        """
+        ...
+    async def peekleft(self) -> Optional[T]:
+        """Read the front element without removing it, or ``None`` when empty.
+
+        Pairs with :meth:`popleft`; the front-endpoint counterpart of
+        :meth:`peek` (``get(0)`` minus the length round trip).
+        """
         ...
     async def get(self, index: int) -> Optional[T]:
         """Read the element at front-relative ``index``, or ``None`` past the end.

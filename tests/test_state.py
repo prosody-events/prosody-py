@@ -45,6 +45,7 @@ def test_value_to_config():
         "ttl_seconds": None,
         "read_uncommitted": None,
         "keyset_limit": None,
+        "capacity": None,
     }
 
 
@@ -56,6 +57,15 @@ def test_ttl_timedelta_and_int():
 def test_map_keyset_limit():
     assert map("s", keyset_limit=256).to_config()["keyset_limit"] == 256
     assert map("s").to_config()["keyset_limit"] is None
+
+
+def test_deque_capacity_to_config():
+    assert deque("d", capacity=100).to_config()["capacity"] == 100
+    assert message_deque("md", capacity=50).to_config()["capacity"] == 50
+    assert deque("d").to_config()["capacity"] is None
+    # capacity is deque-only: value/map definitions carry it as None.
+    assert value("v").to_config()["capacity"] is None
+    assert map("m").to_config()["capacity"] is None
 
 
 def test_read_uncommitted_passthrough():
@@ -203,6 +213,14 @@ class _StubNative:
         self.scans.append(s)
         return s
 
+    def keys(self, direction):
+        # The cheap key-only scan: yields bare keys, mirroring the native path
+        # that never decodes a value.
+        self.calls.append(("keys", direction))
+        s = _StubScan([k for k, _ in self._scan_items])
+        self.scans.append(s)
+        return s
+
     def __getattr__(self, name):
         async def coro(*args):
             self.calls.append((name, args))
@@ -279,7 +297,7 @@ async def test_map_scan_transforms():
     assert [e async for e in m.items()] == [("a", 1), ("b", 2)]
     assert [k async for k in m.keys()] == ["a", "b"]
     assert [v async for v in m.values()] == [1, 2]
-    assert [e async for e in m] == [("a", 1), ("b", 2)]  # __aiter__ = forward items
+    assert [k async for k in m] == ["a", "b"]  # __aiter__ = keys (dict-like)
 
 
 @pytest.mark.asyncio
@@ -291,11 +309,68 @@ async def test_map_items_direction_token():
 
 
 @pytest.mark.asyncio
-async def test_map_keys_values_forward_token():
+async def test_map_keys_direction_token():
+    # keys() drives the cheap native `keys` cursor (not the pair `scan`) and
+    # threads the direction through.
     n = _StubNative([("a", 1)])
     async for _ in MapState(n).keys():
         pass
+    assert n.calls[0] == ("keys", "forward")
+
+    n_back = _StubNative([("a", 1)])
+    async for _ in MapState(n_back).keys(Direction.BACKWARD):
+        pass
+    assert n_back.calls[0] == ("keys", "backward")
+
+
+@pytest.mark.asyncio
+async def test_map_values_forward_token():
+    # values() stays a forward pair-scan projection.
+    n = _StubNative([("a", 1)])
+    async for _ in MapState(n).values():
+        pass
     assert n.calls[0] == ("scan", "forward")
+
+
+@pytest.mark.asyncio
+async def test_map_contains_delegates():
+    n = _StubNative()
+    await MapState(n).contains("k")
+    assert n.calls == [("contains_key", ("k",))]
+
+
+class _GetStub:
+    """A map native whose ``get`` returns a fixed value regardless of key, to
+    exercise :meth:`MapState.get`'s absent-vs-present-falsy branch."""
+
+    def __init__(self, value):
+        self._value = value
+
+    async def get(self, key):
+        return self._value
+
+
+@pytest.mark.asyncio
+async def test_map_get_default():
+    # Absent (native None) returns the default...
+    assert await MapState(_GetStub(None)).get("k", "fallback") == "fallback"
+    # ...and None when no default is given.
+    assert await MapState(_GetStub(None)).get("k") is None
+    # A present-but-falsy value returns as-is, NEVER the default (this is the
+    # exact bug a `value or default` implementation would introduce).
+    for falsy in (0, False, "", []):
+        assert await MapState(_GetStub(falsy)).get("k", "fallback") == falsy
+    # A present truthy value returns as-is.
+    assert await MapState(_GetStub(7)).get("k", "fallback") == 7
+
+
+@pytest.mark.asyncio
+async def test_deque_peek_mapping():
+    n = _StubNative()
+    d = DequeState(n)
+    await d.peek()
+    await d.peekleft()
+    assert [c[0] for c in n.calls] == ["peek_back", "peek_front"]
 
 
 @pytest.mark.asyncio

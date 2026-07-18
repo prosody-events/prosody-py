@@ -25,7 +25,7 @@ use prosody::loader::KafkaLoader;
 use prosody::loader::KafkaLoaderConfiguration;
 use prosody::producer::ProducerConfigurationBuilder;
 use prosody::state::descriptor::{
-    MapDescriptor, StateDescriptor, deque_state, map_state, value_state,
+    DequeDescriptor, MapDescriptor, StateDescriptor, deque_state, map_state, value_state,
 };
 use prosody::state::order_codec::Utf8KeyCodec;
 use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
@@ -728,6 +728,22 @@ fn with_keyset<KC, V>(
     }
 }
 
+/// Applies the deque-only push capacity when configured.
+///
+/// No bound on `T`: core's `capacity` builder is an unconstrained inherent
+/// method on the deque descriptor. Capacity is runtime-only — never persisted,
+/// not part of identity — so it is applied at registration alongside the shared
+/// descriptor options and enforced lazily on push (see the deque docs).
+fn with_capacity<T>(
+    descriptor: DequeDescriptor<T>,
+    capacity: Option<NonZeroUsize>,
+) -> DequeDescriptor<T> {
+    match capacity {
+        Some(c) => descriptor.capacity(c),
+        None => descriptor,
+    }
+}
+
 /// Reads a required non-empty string field from a collection's config dict.
 ///
 /// # Errors
@@ -752,6 +768,47 @@ fn optional_f64(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<f64>> {
     }
 }
 
+/// Parses the deque-only `capacity` field into a `NonZeroUsize` push bound.
+///
+/// Rejects a capacity on a non-deque collection and validates the value as a
+/// whole number in `1..=u32::MAX`. That ceiling is a guardrail, not a real cap:
+/// at ~100 B/slot it is ~400 GiB, far past the per-instance memory budget.
+/// Every client validates a host int against this same core `NonZeroUsize`
+/// primitive — equal power, only host-int overhead differs.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` naming the offending field.
+fn parse_capacity(
+    cfg: &Bound<PyDict>,
+    index: usize,
+    kind: &CollectionKind,
+) -> PyResult<Option<NonZeroUsize>> {
+    let Some(value) = optional_f64(cfg, "capacity")? else {
+        return Ok(None);
+    };
+    if !matches!(kind, CollectionKind::Deque) {
+        return Err(PyValueError::new_err(format!(
+            "state_collections[{index}].capacity: only valid for deque collections"
+        )));
+    }
+    let n = whole_number_field(
+        value,
+        &format!("state_collections[{index}].capacity"),
+        1,
+        u32::MAX,
+    )?;
+    // `n >= 1`, so `NonZeroUsize::new` is always `Some`; the `None` arm is
+    // unreachable but keeps the conversion panic-free (`unwrap` is denied).
+    match NonZeroUsize::new(n as usize) {
+        Some(nz) => Ok(Some(nz)),
+        None => Err(PyValueError::new_err(format!(
+            "state_collections[{index}].capacity: must be a whole number in 1..={}",
+            u32::MAX
+        ))),
+    }
+}
+
 /// Reads an optional `bool` field from a collection's config dict.
 fn optional_bool(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<bool>> {
     match cfg.get_item(field)? {
@@ -763,10 +820,10 @@ fn optional_bool(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<bool>> {
 /// Validates one collection's config dict and registers its descriptor.
 ///
 /// The config dict is produced by the definition's `to_config()` method with
-/// keys `name`, `kind`, `payload`, `ttl_seconds`, `read_uncommitted`, and
-/// `keyset_limit`. Field-level validation names the offending field; core
-/// validates the remaining rules (TTL exceeding the recovery delay, identity
-/// conflicts) at consumer build.
+/// keys `name`, `kind`, `payload`, `ttl_seconds`, `read_uncommitted`,
+/// `keyset_limit` (map-only), and `capacity` (deque-only). Field-level
+/// validation names the offending field; core validates the remaining rules
+/// (TTL exceeding the recovery delay, identity conflicts) at consumer build.
 ///
 /// # Errors
 ///
@@ -814,6 +871,8 @@ fn register_state_collection(
         None => None,
     };
 
+    let capacity = parse_capacity(cfg, index, &kind)?;
+
     let read_uncommitted = optional_bool(cfg, "read_uncommitted")?;
     let name = name.as_str();
     match (kind, payload) {
@@ -833,11 +892,12 @@ fn register_state_collection(
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
         }
         (CollectionKind::Deque, CollectionPayload::Json) => {
-            let _ = keyed.register(with_def(
+            let descriptor = with_def(
                 deque_state::<JsonCodec>(name),
                 ttl_seconds,
                 read_uncommitted,
-            ));
+            );
+            let _ = keyed.register(with_capacity(descriptor, capacity));
         }
         (CollectionKind::Value, CollectionPayload::Message) => {
             let _ = keyed.register(with_def(
@@ -855,11 +915,12 @@ fn register_state_collection(
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
         }
         (CollectionKind::Deque, CollectionPayload::Message) => {
-            let _ = keyed.register(with_def(
+            let descriptor = with_def(
                 message_deque_state::<KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
                 read_uncommitted,
-            ));
+            );
+            let _ = keyed.register(with_capacity(descriptor, capacity));
         }
     }
 

@@ -55,6 +55,7 @@ STATE_DEFS = {
     "cart": value("cart"),
     "totals": map("totals", keyset_limit=256),
     "backlog": deque("backlog"),
+    "bounded": deque("bounded", capacity=3),
     "last_msg": message_value("last-msg"),
     "msg_index": message_map("msg-index"),
     "msg_log": message_deque("msg-log"),
@@ -313,6 +314,114 @@ async def test_deque_push_len_get_pop_scan_and_empty(state_client):
     assert empty["empty"] is True
     assert empty["pf"] is None
     assert empty["pb"] is None
+
+
+# ===========================================================================
+# Cheap presence/key paths and the capacity-bounded deque (parity operators)
+# ===========================================================================
+
+
+async def test_map_contains_and_keys_cheap_paths(state_client):
+    client, topic, _ = state_client
+    absent = nonce()
+
+    async def cb(ctx, msg, results):
+        m = ctx.state(STATE_DEFS["totals"])
+        try:
+            for k, v in {"k1": 1, "café": 9, "k2": 5}.items():
+                await _wait(m.set(k, v))
+            await _wait(m.remove("k2"))
+            await _wait(m.set("k3", 0))  # a falsy value is still present
+            await results.send(
+                {
+                    # read-your-writes presence: set -> True, removed -> False,
+                    # never-written -> False, falsy-but-present -> True.
+                    "present": await _wait(m.contains("k1")),
+                    "removed": await _wait(m.contains("k2")),
+                    "never": await _wait(m.contains(absent)),
+                    "falsy": await _wait(m.contains("k3")),
+                    # the cheap key-only scan, both directions.
+                    "fwd_keys": await _wait(_collect(m.keys())),
+                    "bwd_keys": await _wait(_collect(m.keys(Direction.BACKWARD))),
+                }
+            )
+        except Exception as e:  # pragma: no cover
+            await results.send({"error": str(e)})
+
+    handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, nonce(), {"go": True}))
+    obs = await _wait(handler.results.receive())
+
+    assert obs.get("error") is None
+    assert obs["present"] is True
+    assert obs["removed"] is False
+    assert obs["never"] is False
+    assert obs["falsy"] is True
+    # keys() yields bare strings (not pairs), the live set, ascending, and
+    # backward is its exact reverse.
+    assert obs["fwd_keys"] == sorted(obs["fwd_keys"])
+    assert obs["bwd_keys"] == list(reversed(obs["fwd_keys"]))
+    assert set(obs["fwd_keys"]) == {"k1", "café", "k3"}
+    assert "k2" not in obs["fwd_keys"]
+
+
+async def test_deque_peek_and_capacity(state_client):
+    client, topic, _ = state_client
+    populated = nonce()
+    empty = nonce()
+
+    async def cb(ctx, msg, results):
+        try:
+            if msg.key == populated:
+                # A capacity-3 deque: appending five items lazily evicts from the
+                # front on each over-capacity push, leaving the last three.
+                d = ctx.state(STATE_DEFS["bounded"])
+                for item in ("a", "b", "c", "d", "e"):
+                    await _wait(d.append(item))
+                await results.send(
+                    {
+                        "tag": "full",
+                        "size": await _wait(d.size()),
+                        "head": await _wait(d.get(0)),
+                        # peeks read the endpoints without removing them.
+                        "peek": await _wait(d.peek()),
+                        "peekleft": await _wait(d.peekleft()),
+                        "size_after_peek": await _wait(d.size()),
+                    }
+                )
+            else:
+                d = ctx.state(STATE_DEFS["backlog"])
+                await results.send(
+                    {
+                        "tag": "empty",
+                        "peek": await _wait(d.peek()),
+                        "peekleft": await _wait(d.peekleft()),
+                    }
+                )
+        except Exception as e:  # pragma: no cover
+            await results.send({"tag": "error", "error": str(e)})
+
+    handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, populated, {"go": True}))
+    await _wait(client.send(topic, empty, {"go": True}))
+    obs = {}
+    for _ in range(2):
+        o = await _wait(handler.results.receive())
+        obs[o["tag"]] = o
+
+    assert "error" not in obs
+    full = obs["full"]
+    # capacity 3: only the last three appends survive; the front is "c".
+    assert full["size"] == 3
+    assert full["head"] == "c"
+    assert full["peekleft"] == "c"  # front endpoint
+    assert full["peek"] == "e"  # back endpoint
+    assert full["size_after_peek"] == 3  # a peek does not remove
+    empty_obs = obs["empty"]
+    assert empty_obs["peek"] is None
+    assert empty_obs["peekleft"] is None
 
 
 # ===========================================================================
