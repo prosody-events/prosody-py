@@ -28,7 +28,9 @@ The wheel includes a `py.typed` marker and type information for the public API,
 so applications can type-check normal `prosody` imports without installing a
 separate stub package. For example, run `mypy your_application/` after installing
 Prosody and mypy. Keyed-state definitions carry their declared value type through
-`Context.state(...)`; see [Keyed State](#keyed-state-cassandra) for typed examples.
+`Context.state(...)`. `EventHandler[Payload]` carries a declared structural JSON
+payload type through `on_message`; an unsubscripted handler defaults to
+`JSONValue`. See [Keyed State](#keyed-state-cassandra) for typed examples.
 
 ## Quick Start
 
@@ -621,7 +623,7 @@ By hand this is surprisingly involved — you need a durable place to stash pend
 
 ```python
 from datetime import datetime, timedelta, timezone
-from typing import List, cast
+from typing import List
 
 from typing_extensions import TypedDict
 
@@ -655,14 +657,16 @@ PENDING: MessageDequeDefinition[Activity] = message_deque(
 )  # keep the latest 100 messages
 
 
-class BatchHandler(EventHandler):
-    async def on_message(self, context: Context, message: Message) -> None:
+class BatchHandler(EventHandler[Activity]):
+    async def on_message(
+        self, context: Context, message: Message[Activity]
+    ) -> None:
         # message.key = userId; message.payload = {actor, action}
         window = context.state(WINDOW)  # bind THIS user's handles for THIS event
         pending = context.state(PENDING)
         if not await window.get():
             # no batch open → this is the first event: send it right away
-            await notify(message.key, [cast("Message[Activity]", message)])
+            await notify(message.key, [message])
             await window.set(True)
             # clear_and_schedule (not schedule): timers are NOT rolled back with
             # state, so a retried event must not stack a second timer — this
@@ -1134,7 +1138,7 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: Any) -> None`: Send a message to a specified topic.
 - `consumer_state() -> str`: Get the current state of the consumer.
-- `subscribe(handler: EventHandler) -> None`: Subscribe to messages using the provided handler.
+- `subscribe(handler: EventHandler[Any]) -> None`: Subscribe using any payload-specialized handler.
 - `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
 
 ### AdminClient
@@ -1145,12 +1149,16 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 
 ### EventHandler
 
-An abstract base class for user-defined handlers:
+An abstract base class generic over the message payload type. The payload type
+defaults to `JSONValue`, so existing unsubscripted handlers retain their current
+typing. Parameterizing the handler gives `on_message` the same payload type:
 
 ```python
-class EventHandler(ABC):
+P = TypeVar("P", default=JSONValue)
+
+class EventHandler(ABC, Generic[P]):
     @abstractmethod
-    async def on_message(self, context: Context, message: Message) -> None:
+    async def on_message(self, context: Context, message: Message[P]) -> None:
         # Implement your message handling logic here
         pass
     
@@ -1159,6 +1167,11 @@ class EventHandler(ABC):
         # Implement your timer handling logic here
         pass
 ```
+
+For example, `EventHandler[OrderEvent]` receives `Message[OrderEvent]` when
+`OrderEvent` is a `TypedDict`. This is a static contract only: Prosody still
+delivers plain JSON and does not construct or validate dataclass or Pydantic
+models. Validate the payload explicitly before using such a model.
 
 Note: The on_message method may be called from different threads. Ensure that any handler state is thread-safe. If
 library incompatibility becomes an issue, this may be changed in the future so all handler calls originate from the same

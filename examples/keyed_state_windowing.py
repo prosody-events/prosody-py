@@ -3,12 +3,12 @@
 Exercised by ``mypy`` as a CI gate so the fuller README example stays honest: a
 per-key ``value`` flag plus a capacity-bounded ``message_deque`` batch a burst of
 activity events per user and flush one summary when a per-key timer fires. The
-type parameters are structural JSON annotations (no runtime model validation), so
-the incoming payload is cast to reflect that boundary honestly.
+type parameters are structural JSON annotations (no runtime model validation).
+The generic event handler carries that payload type through each message.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import List, cast
+from typing import List
 
 from typing_extensions import TypedDict
 
@@ -42,14 +42,16 @@ PENDING: MessageDequeDefinition[Activity] = message_deque(
 )  # keep the latest 100 messages
 
 
-class BatchHandler(EventHandler):
-    async def on_message(self, context: Context, message: Message) -> None:
+class BatchHandler(EventHandler[Activity]):
+    async def on_message(
+        self, context: Context, message: Message[Activity]
+    ) -> None:
         # message.key = userId; message.payload = {actor, action}
         window = context.state(WINDOW)  # bind THIS user's handles for THIS event
         pending = context.state(PENDING)
         if not await window.get():
             # no batch open → this is the first event: send it right away
-            await notify(message.key, [cast("Message[Activity]", message)])
+            await notify(message.key, [message])
             await window.set(True)
             # clear_and_schedule (not schedule): timers are NOT rolled back with
             # state, so a retried event must not stack a second timer.
@@ -58,14 +60,14 @@ class BatchHandler(EventHandler):
             )
         else:
             # a batch is open → just save it
-            await pending.append(cast("Message[Activity]", message))
+            await pending.append(message)
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
         # fires ~5 minutes later, for timer.key
         window = context.state(WINDOW)
         pending = context.state(PENDING)
         # the scan resolves the saved messages concurrently
-        batch: List["Message[Activity]"] = [msg async for msg in pending.values()]
+        batch = [msg async for msg in pending.values()]
         if batch:
             await notify(timer.key, batch)  # one summary of the saved messages
         await pending.clear()  # empty the buffer

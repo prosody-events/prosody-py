@@ -3,13 +3,13 @@
 Exercised by ``mypy`` as a CI gate to keep ``py.typed`` honest: it drives the
 generic definition -> handle -> operation flow over both JSON and message
 collections and must type-check cleanly. The type parameters are structural JSON
-annotations (TypedDict here) — there is no runtime model validation, so the
-example casts the incoming payload to reflect that boundary honestly.
+annotations (TypedDict here) — there is no runtime model validation. A generic
+``EventHandler[OrderEvent]`` declares the expected payload shape to the checker.
 """
 
 from contextlib import aclosing
 from datetime import timedelta
-from typing import List, Optional, cast
+from typing import List, Optional
 
 from typing_extensions import TypedDict
 
@@ -44,15 +44,14 @@ TOTALS: MapDefinition[int] = map("totals")  # keys are always str
 BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog", capacity=100)
 
 
-class OrderHandler(EventHandler):
-    async def on_message(self, context: Context, message: Message) -> None:
-        # The type parameter is a structural annotation with no runtime
-        # validation, so casting the erased JSON payload to the declared shape
-        # is the honest way to recover the type at the boundary.
-        payload = cast(OrderEvent, message.payload)
+class OrderHandler(EventHandler[OrderEvent]):
+    async def on_message(
+        self, context: Context, message: Message[OrderEvent]
+    ) -> None:
+        payload = message.payload
 
         cart = context.state(CART)  # ValueState[Cart]
-        current: Cart = await cart.get() or {"items": []}
+        current = await cart.get() or Cart(items=[])
         await cart.set({"items": [*current["items"], payload["order_id"]]})
 
         totals = context.state(TOTALS)  # MapState[int]
@@ -75,7 +74,7 @@ class OrderHandler(EventHandler):
             _key: str = _k
 
         backlog = context.state(BACKLOG)  # DequeState[Message[OrderEvent]]
-        await backlog.append(cast("Message[OrderEvent]", message))
+        await backlog.append(message)
         oldest = await backlog.get(0)  # Optional[Message[OrderEvent]]
         if oldest is not None:
             _order_id: str = oldest.payload["order_id"]

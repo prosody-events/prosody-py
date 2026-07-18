@@ -207,7 +207,7 @@ class ProsodyClient:
         """
         ...
 
-    async def subscribe(self, handler: EventHandler) -> None:
+    async def subscribe(self, handler: EventHandler[Any]) -> None:
         """
         Subscribe to messages using the provided handler.
 
