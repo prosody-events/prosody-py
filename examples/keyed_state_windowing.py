@@ -17,6 +17,7 @@ from prosody import (
     EventHandler,
     Message,
     MessageDequeDefinition,
+    ProsodyClient,
     Timer,
     ValueDefinition,
     message_deque,
@@ -72,3 +73,8 @@ class BatchHandler(EventHandler[Activity]):
             await notify(timer.key, batch)  # one summary of the saved messages
         await pending.clear()  # empty the buffer
         await window.clear()  # close the batch; the next event opens a fresh one
+
+
+async def subscribe(client: ProsodyClient) -> None:
+    """The client accepts a payload-specialized handler."""
+    await client.subscribe(BatchHandler())

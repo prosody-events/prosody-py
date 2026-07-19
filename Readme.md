@@ -417,7 +417,7 @@ Prosody prevents processing loops in distributed systems by tracking the source 
 # Consumer and producer in one application
 client = ProsodyClient(
     group_id="my-service",
-    source_system="my-service-producer",  # Must differ from groupId to allow loopbacks; defaults to groupId
+    source_system="my-service-producer",  # Must differ from group_id to allow loopbacks; defaults to group_id
     subscribed_topics="my-topic"
 )
 ```
@@ -695,6 +695,10 @@ client = ProsodyClient(
     state_collections=[WINDOW, PENDING],
 )
 ```
+
+The complete example is checked by mypy in
+[`examples/keyed_state_windowing.py`](examples/keyed_state_windowing.py), using
+the same PEP 561 types installed applications receive.
 
 `await window.get()` returns `True` or `None` (the collection is only ever set to `True` or cleared), so `not await window.get()` is exactly "no batch open." A few decisions worth naming:
 
@@ -1136,9 +1140,9 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 ### ProsodyClient
 
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
-- `send(topic: str, key: str, payload: Any) -> None`: Send a message to a specified topic.
+- `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
 - `consumer_state() -> str`: Get the current state of the consumer.
-- `subscribe(handler: EventHandler[Any]) -> None`: Subscribe using any payload-specialized handler.
+- `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
 - `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
 
 ### AdminClient
@@ -1186,7 +1190,11 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `offset: int`: The message offset within the partition.
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
-- `payload: JSONValue`: The message payload as a JSON-serializable value.
+- `payload: P`: The statically typed message payload.
+
+`Message[P]` defaults to `Message[JSONValue]`. Supplying a `TypedDict` payload
+specialization gives field-level checking without runtime model construction or
+validation.
 
 ### Context
 

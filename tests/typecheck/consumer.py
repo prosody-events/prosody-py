@@ -10,6 +10,7 @@ from prosody import (
     MapDefinition,
     Message,
     MessageDequeDefinition,
+    ProsodyClient,
     Timer,
     map,
     message_deque,
@@ -62,3 +63,7 @@ class Handler(EventHandler[Event]):
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
         assert_type(timer.key, str)
+
+
+async def subscribe_specialized(client: ProsodyClient) -> None:
+    await client.subscribe(Handler())

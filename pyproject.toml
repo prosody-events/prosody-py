@@ -58,9 +58,15 @@ python-source = "python"
 # ``mypy_path`` resolves ``prosody`` from the source tree (mapping
 # ``prosody.prosody`` to ``prosody.pyi``) so type-checking needs no maturin
 # build. PEP 696 TypeVar defaults require mypy >= 1.11.
-files = ["examples/keyed_state_typed.py", "examples/keyed_state_windowing.py"]
+files = [
+    "examples/keyed_state_typed.py",
+    "examples/keyed_state_windowing.py",
+    "tests/typecheck/negative.py",
+]
 mypy_path = "python"
 python_version = "3.10"
+strict = true
+warn_unused_ignores = true
 
 # ``sentry-sdk`` is an optional runtime dependency, imported lazily inside a
 # ``try/except ImportError`` in ``handler.py``. The examples pull it in only

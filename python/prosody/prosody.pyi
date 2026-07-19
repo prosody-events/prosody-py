@@ -5,7 +5,7 @@ This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
-from typing import Any, List, Optional, Sequence, Union, TypeAlias, Dict, Literal
+from typing import Any, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
 
 from prosody import EventHandler
 from prosody.state import (
@@ -16,6 +16,8 @@ from prosody.state import (
     MessageValueDefinition,
     ValueDefinition,
 )
+
+P = TypeVar("P")
 
 # Any keyed-state collection definition accepted by ``state_collections``.
 StateDefinition: TypeAlias = Union[
@@ -207,7 +209,7 @@ class ProsodyClient:
         """
         ...
 
-    async def subscribe(self, handler: EventHandler[Any]) -> None:
+    async def subscribe(self, handler: EventHandler[P]) -> None:
         """
         Subscribe to messages using the provided handler.
 
