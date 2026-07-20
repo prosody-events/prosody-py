@@ -39,6 +39,12 @@ def make_client(**overrides):
     return ProsodyClient(**BASE, **overrides)
 
 
+@pytest.mark.parametrize("state_cache_size_bytes", [False, True, 0, -1, 2**64])
+def test_invalid_state_cache_size_bytes_is_rejected(state_cache_size_bytes):
+    with pytest.raises(ValueError, match="state_cache_size_bytes"):
+        make_client(state_cache_size_bytes=state_cache_size_bytes)
+
+
 class RawDef:
     """A minimal definition whose ``to_config()`` feeds an arbitrary dict straight
     to the Rust guard, bypassing the typed helpers' coercions."""

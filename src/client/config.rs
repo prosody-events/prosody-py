@@ -31,11 +31,11 @@ use prosody::state::order_codec::Utf8KeyCodec;
 use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
 use prosody::timers::duration::CompactDuration;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
+use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
 use std::collections::HashSet;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
@@ -87,7 +87,9 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
             monopolization: MonopolizationConfigurationBuilder::default(),
             defer: DeferConfigurationBuilder::default(),
             timeout: TimeoutConfigurationBuilder::default(),
-            keyed_state: KeyedStateConfiguration::default(),
+            keyed_state: KeyedStateConfiguration::builder()
+                .build()
+                .map_err(|error| PyValueError::new_err(error.to_string()))?,
             emitter: TelemetryEmitterConfiguration::builder()
                 .build()
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
@@ -929,17 +931,15 @@ fn register_state_collection(
 
 /// Builds the `KeyedStateConfiguration` from the provided Python configuration.
 ///
-/// Reads `state_cache_dir` (str), `state_recovery_delay` (timedelta|float ->
-/// whole seconds >= 1), and `state_collections` (a list of definition objects,
-/// each yielding its config via `to_config()`), registering every declared
-/// collection synchronously and rejecting duplicate names.
+/// Reads the keyed-state cache, recovery, and collection settings, registering
+/// every declared collection synchronously and rejecting duplicate names.
 ///
 /// # Errors
 ///
 /// Returns a `PyValueError` if a keyed-state field is invalid or a collection
 /// name is duplicated.
 fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfiguration> {
-    let mut keyed = KeyedStateConfiguration::default();
+    let mut builder = KeyedStateConfiguration::builder();
 
     if let Some(dir) = config.get_item("state_cache_dir")?
         && !dir.is_none()
@@ -950,7 +950,7 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
                 "state_cache_dir: must not be an empty string",
             ));
         }
-        keyed.cache_dir = PathBuf::from(dir);
+        builder.cache_dir(PathBuf::from(dir));
     }
 
     if let Some(delay) = config.get_item("state_recovery_delay")?
@@ -972,8 +972,31 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
                 "state_recovery_delay: must be >= 1 second",
             ));
         }
-        keyed.recovery_delay = CompactDuration::new(seconds);
+        builder.recovery_delay(CompactDuration::new(seconds));
     }
+
+    if let Some(bytes) = config.get_item("state_cache_size_bytes")?
+        && !bytes.is_none()
+    {
+        if bytes.is_instance_of::<PyBool>() {
+            return Err(PyValueError::new_err(
+                "state_cache_size_bytes: must be an integer in 1..=18446744073709551615",
+            ));
+        }
+        let bytes: u64 = bytes.extract().map_err(|_| {
+            PyValueError::new_err(
+                "state_cache_size_bytes: must be an integer in 1..=18446744073709551615",
+            )
+        })?;
+        let bytes = NonZeroU64::new(bytes).ok_or_else(|| {
+            PyValueError::new_err("state_cache_size_bytes: must be greater than 0")
+        })?;
+        builder.cache_size_bytes(Some(bytes));
+    }
+
+    let mut keyed = builder
+        .build()
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
 
     if let Some(collections) = config.get_item("state_collections")?
         && !collections.is_none()
