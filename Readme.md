@@ -588,21 +588,24 @@ client = ProsodyClient(
 
 ## Keyed State
 
-Prosody supports keyed state: per-key data that a handler reads and writes and that survives across events. State is partitioned by the message key, so each key has a single writer at a time, and by default writes settle atomically with the event — a handler that throws leaves no partial state. Values are either JSON payloads or the full Kafka `Message` the handler received. Register collections on the client before subscribing, then bind them inside the handler with `context.state(definition)`.
+Keyed state is durable working memory for a stream. Each Kafka key gets its own value, map, or deque, so a handler can relate the current event to earlier events for the same key. State survives restarts and rebalances. By default, Prosody saves a handler's changes only when the event succeeds.
 
-The one thing to internalize: **a `Value` gives every Kafka key durable local memory — update it in the handler, and Prosody publishes the new state only when that event succeeds, even across restarts and rebalances.** The whole loop is a per-key counter that increments once per event and settles atomically with it:
+Use keyed state for time-aware processing over each key in a stream: counters, deduplication data, rolling aggregates, pending work, and state machines. This work can be slow and expensive when it requires repeated relational database queries. Keyed state is not designed to be the source of truth for core business data or to provide relational operations such as joins. Keep that data in a relational database and use the right tool for each job.
+
+Give collections a TTL whenever the state does not need to live forever. Choose one comfortably longer than the configured recovery delay and the longest timer or workflow. This prevents inactive keys from accumulating state indefinitely.
+
+### A counter for each key
+
+Declare each collection once, register it on the client, and ask the event context for the current key's state:
 
 ```python
-from prosody import Context, EventHandler, Message, ProsodyClient, ValueDefinition, value
-
-COUNTER: ValueDefinition[int] = value("counter")
+COUNTER: ValueDefinition[int] = value("counter", ttl=timedelta(days=30))
 
 
 class CountHandler(EventHandler):
     async def on_message(self, context: Context, message: Message) -> None:
-        count = context.state(COUNTER)      # ValueState[int] for message.key
-        n = (await count.get() or 0) + 1
-        await count.set(n)                  # settles atomically with the event
+        count = context.state(COUNTER)
+        await count.set((await count.get() or 0) + 1)
 
 
 client = ProsodyClient(
@@ -612,208 +615,72 @@ client = ProsodyClient(
 )
 ```
 
-#### Example: batch a burst of events per user
+The TTL keeps counters for recently active keys for 30 days. Omit it only when indefinite retention is intentional.
 
-Your consumer reads a stream of activity events — likes, comments, follows — each tagged with the user it is about (the Kafka key). Sending a notification for every event spams an active user. What you want: tell them the instant something happens, but if more arrives right after, hold it and send a single summary a few minutes later.
+### Window activity into one notification
 
-By hand this is surprisingly involved — you need a durable place to stash pending events *for each user*, a timer *for each user* to send the summary, and all of it has to survive the process restarting or the work moving to another machine. Prosody gives you exactly those two things: durable per-key state and a per-key timer.
-
-1. **First event for a user** → send it now, mark that a batch is open, and set a timer for 5 minutes out.
-2. **More events arrive before the timer fires** → don't notify again; just save each one.
-3. **Timer fires** → send one summary of everything saved, then close the batch so the next event starts fresh.
+This example sends a user's first activity immediately, saves further activity for five minutes, then sends one summary. The Kafka message key is the user ID.
 
 ```python
-from datetime import datetime, timedelta, timezone
-from typing import List
-
-from typing_extensions import TypedDict
-
-from prosody import (
-    Context,
-    EventHandler,
-    Message,
-    MessageDequeDefinition,
-    ProsodyClient,
-    Timer,
-    ValueDefinition,
-    message_deque,
-    value,
-)
-
-
-class Activity(TypedDict):
-    actor: str
-    action: str
-
-
-# Your own delivery function (push, email, …) — the only thing here you write.
-async def notify(user_id: str, activities: List["Message[Activity]"]) -> None:
-    ...
-
-
-# Declare the collections once, at module scope; register both on the client.
-WINDOW: ValueDefinition[bool] = value("window")  # is a batch open for this user?
+WINDOW: ValueDefinition[bool] = value("window", ttl=timedelta(days=1))
 PENDING: MessageDequeDefinition[Activity] = message_deque(
-    "pending", capacity=100
-)  # keep the latest 100 messages
+    "pending", capacity=100, ttl=timedelta(days=1)
+)
 
 
 class BatchHandler(EventHandler[Activity]):
-    async def on_message(
-        self, context: Context, message: Message[Activity]
-    ) -> None:
-        # message.key = userId; message.payload = {actor, action}
-        window = context.state(WINDOW)  # bind THIS user's handles for THIS event
-        pending = context.state(PENDING)
-        if not await window.get():
-            # no batch open → this is the first event: send it right away
-            await notify(message.key, [message])
-            await window.set(True)
-            # clear_and_schedule (not schedule): timers are NOT rolled back with
-            # state, so a retried event must not stack a second timer — this
-            # keeps exactly one.
-            await context.clear_and_schedule(
-                datetime.now(timezone.utc) + timedelta(minutes=5)
-            )
-        else:
-            await pending.append(message)  # a batch is open → just save it
-
-    async def on_timer(self, context: Context, timer: Timer) -> None:
-        # fires ~5 minutes later, for timer.key
+    async def on_message(self, context: Context, message: Message[Activity]) -> None:
         window = context.state(WINDOW)
         pending = context.state(PENDING)
-        # the scan resolves the saved messages concurrently
-        batch = [msg async for msg in pending.values()]
+
+        if await window.get():
+            await pending.append(message)
+            return
+
+        await notify(message.key, [message])
+        await window.set(True)
+        await context.clear_and_schedule(
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        )
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pending = context.state(PENDING)
+        batch = [message async for message in pending.values()]
+
         if batch:
-            await notify(timer.key, batch)  # one summary of the saved messages
-        await pending.clear()  # empty the buffer
-        await window.clear()   # close the batch; the next event opens a fresh one
-
-
-client = ProsodyClient(
-    group_id="activity",
-    subscribed_topics="activity",
-    state_collections=[WINDOW, PENDING],
-)
+            await notify(timer.key, batch)
+        await pending.clear()
+        await context.state(WINDOW).clear()
 ```
 
-The complete example is checked by mypy in
-[`examples/keyed_state_windowing.py`](examples/keyed_state_windowing.py), using
-the same PEP 561 types installed applications receive.
+See the complete, mypy-checked example for imports, types, client setup, and `notify`: [`examples/keyed_state_windowing.py`](examples/keyed_state_windowing.py).
 
-`await window.get()` returns `True` or `None` (the collection is only ever set to `True` or cleared), so `not await window.get()` is exactly "no batch open." A few decisions worth naming:
+A few details matter:
 
-- **`clear_and_schedule`, not `schedule`.** The timer system is **not** transactional with state settlement — a scheduled timer is not rolled back if the event is retried. Plain `schedule` on a retry would stack a second timer and fire the digest twice; `clear_and_schedule` clears the key's existing timers and sets exactly one, keeping the batch a single-timer invariant across retries. Scheduling takes an **absolute** time (`datetime.now(timezone.utc) + timedelta(minutes=5)`), and `on_timer` reads `timer.key`, not the message key.
-- **A `message_deque` stores whole Kafka messages** (a lightweight reference) and resolves each back on read — so `values()` resolves the saved messages **concurrently**, whereas a `popleft()`-per-item drain would be one Kafka fetch *serially per element*. Drain via the scan + `clear()`, never a pop loop. Saved messages are re-fetched from the source topic, so this pattern needs the topic's retention to comfortably exceed the batching window; a compacted topic or a window that can outlive retention calls for a plain `deque` of payloads instead (an unfetchable reference surfaces as an error, not silent absence).
-- **`capacity=100`** bounds the buffer so one unusually active user can't grow it without limit. On overflow the **oldest saved** message drops — never the one already delivered.
-- **`value(bool)` is a flag**, only ever `True` or **absent** — close with `clear()`, never `set(False)`. The timer, not the flag, owns *when* the batch ends.
-- **No races to reason about.** Prosody runs at most one handler at a time per key, so a message and the timer for the same user never overlap. The first event is deliberately **not** saved, so the summary never repeats it. Sending a notification is an outside effect that isn't undone if the event is retried, so a retry may resend it; a production notifier should use an idempotency key or an outbox.
+- Register both definitions in `state_collections` before subscribing. Keyed state uses Cassandra unless `mock=True`.
+- Use `clear_and_schedule`, not `schedule`, so a retried event does not add another timer for the same key.
+- `capacity=100` bounds each user's pending queue. Because this example only appends, overflow drops the oldest saved message.
+- A `message_deque` keeps references to Kafka messages and fetches them when read. Keep source-topic retention longer than the window; use a plain `deque` of payloads when that is not guaranteed.
+- Prosody runs one handler at a time for a key, so that key's message and timer handlers do not overlap.
+- Notifications are external effects: retrying an event can send one again. Use an idempotency key or an outbox when duplicates matter.
 
-### Definitions
+### Collections and handles
 
-A definition constructor declares one collection and returns a frozen definition object carrying its `name`, `kind`, and `payload`. Reference that definition both in `state_collections` (registration) and in `context.state()` (binding) — declare each collection once and reuse it. (Reuse is a convenience, not a requirement: binding matches a definition to a registered collection by its `name` / `kind` / `payload` fields, not by object identity, so a structurally-equal definition also works.) Three kinds, each with a JSON variant (values are your JSON payload) and a message variant (values are the full Kafka `Message[P]`):
+Definitions describe the collection; `context.state(definition)` returns the current key's handle. Create handles inside the handler and do not retain them or their iterators afterward.
 
-- `value(name, ...)`: single value. Vends `ValueState[T]`.
-- `map(name, ...)`: ordered map with **string** keys. Vends `MapState[V]`.
-- `deque(name, ...)`: double-ended queue. Vends `DequeState[T]`.
-- `message_value(name, ...)`: single value holding a `Message[P]`. Vends `ValueState[Message[P]]`.
-- `message_map(name, ...)`: ordered map of `Message[P]` (string keys). Vends `MapState[Message[P]]`.
-- `message_deque(name, ...)`: deque of `Message[P]`. Vends `DequeState[Message[P]]`.
+| Collection | JSON payload | Kafka message | Main operations |
+| --- | --- | --- | --- |
+| Value | `value` | `message_value` | `get`, `set`, `clear` |
+| Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `set`, `remove`, `items`, `keys`, `clear` |
+| Deque | `deque` | `message_deque` | `append`, `appendleft`, `pop`, `popleft`, `get`, `size`, `values`, `clear` |
 
-A deque's `capacity` is **runtime-only** — never persisted, not part of the collection's identity, and freely changed (including to/from unbounded) across deploys. It is enforced **lazily, on push**: reads, `size()`, iteration, and `pop` never evict, so a deque just reconfigured smaller reports its old length until the next push trims it, and a shrunk bound converges over the next few pushes rather than all at once. Eviction is opposite-end-first (a `append` evicts the front, an `appendleft` the back), so describe it as "at most N slots," **not** "the N most recent" — mixing `append` and `appendleft` on the same bounded deque destroys any global oldest-item interpretation.
+All operations are async. Map and deque scans use `async for`. Map keys are strings. `None` means absence and cannot be stored—use `clear()` or `remove()` instead.
 
-Every constructor accepts `ttl` (whole seconds >= 1, `timedelta` or int) and `read_uncommitted`, plus `keyset_limit` on maps only and `capacity` on deques only (a positive max slot count, enforced lazily on push — see `append`). The type parameter is annotation-level only: it is a **structural JSON annotation** (TypedDict-oriented). Payloads cross the boundary as plain JSON with no model construction or validation in v1, so `dataclass` / Pydantic types are **not** valid type arguments — the parameter guides your type checker but does not enforce a shape at runtime (an adapter hook is future work). Bind the type argument through the annotation on the assignment target (`CART: ValueDefinition[Cart] = value("cart")`); a bare call defaults to the JSON value type.
+Every definition accepts `ttl` and `read_uncommitted`; maps also accept `keyset_limit`, and deques accept `capacity`. Collection names must be unique. Reuse the same typed definition for registration and access so the type checker preserves the payload type. Payload annotations describe JSON shapes but do not perform runtime validation.
 
-### Registration
+By default, writes from a successful handler become visible together; if the handler raises, they are discarded. `commit()` publishes one collection's pending writes immediately, even if the event later fails. `rollback()` discards that collection's writes since its last commit. Most handlers should rely on the default behavior.
 
-Put the definitions in `state_collections` when constructing the client, before calling `subscribe`. Each definition serializes into a collection config entry, so passing the definition object is all that is required. Collection names must be unique within a client — duplicate names are rejected. Keyed state needs Cassandra unless the client runs with `mock=True`. See the [Keyed State configuration](#keyed-state) subsection above for the client-level knobs and per-collection fields.
-
-### State Handles
-
-`context.state(definition)` vends a typed handle bound to the collection for the current event attempt. The handle — and any iterator it opens — is valid only within the handler invocation that created it; there is no post-handler read window. Binding an unregistered name raises a `PermanentStateError`; so does a definition whose `kind` or `payload` disagrees with what was durably registered under that name in the consumer group (the collection's stored schema identity, which core validates at first use — this is a schema conflict across deploys, not a Python object-identity check). All handle methods are async.
-
-`ValueState[T]`:
-
-- `get() -> Optional[T]`: reads the current value, or `None` when absent.
-- `set(value: T) -> None`: buffers a write. Writing `None` (JSON `null`) is rejected with `NullValueError` (transient) — call `clear()`.
-- `clear() -> None`: deletes the stored value.
-- `commit() -> None` / `rollback() -> None`: see [Commit and Rollback](#commit-and-rollback).
-
-`MapState[V]` (keys are always `str`):
-
-- `get(key: str) -> Optional[V]`: reads the value for `key`, or `None` when absent.
-- `get(key: str, default: D) -> V | D`: reads the value for `key`, returning `default` **only when the key is absent**. A present-but-falsy value (`0`, `False`, `""`, `[]`) returns as-is — the branch tests core absence, not truthiness.
-- `contains(key: str) -> bool`: reports whether a stored cell exists for `key` (read-your-writes). The **cheap** presence check — no value decode, no resolver — so a message-backed map answers `True` even for a key whose Kafka message can no longer be fetched. It is not zero-I/O: a cache miss still reads Cassandra. Not `__contains__`, because Python's `in` cannot `await`.
-- `get_many(keys: List[str]) -> List[Optional[V]]`: reads several keys in one isolated batch, returning one entry per key in the same order (`result[i]` is the value for `keys[i]`); a missing key is `None`, and a repeated key is answered at each spot. The whole read happens as one step, so no other change to this event's state slips in partway through. This is the batched, cache-populating way to read a **known set of keys** — prefer it over iterating `keys()` and calling `get(key)` per key (see [Scan Iteration](#scan-iteration)).
-- `set(key: str, value: V) -> None`: inserts or overwrites. Writing `None` (JSON `null`) is rejected with `NullValueError` (transient) — call `remove(key)`.
-- `remove(key: str) -> None`: removes `key` (named `remove` because `del` cannot be async). Deliberately returns `None`, not a boolean "was present" flag (surfacing that would force a hidden read on every remove).
-- `clear() -> None`: removes every entry.
-- `items(direction=Direction.FORWARD)` / `keys(direction=Direction.FORWARD)` / `values()` / `__aiter__`: see [Scan Iteration](#scan-iteration).
-- `commit() -> None` / `rollback() -> None`.
-
-`DequeState[T]`:
-
-- `append(item: T) -> None`: appends at the back. Writing `None` (JSON `null`) is rejected. On a `capacity`-bounded deque (below), a push is the only operation that enforces the bound: it evicts from the opposite (front) end toward capacity — decode-free, no Kafka fetch — before appending.
-- `appendleft(item: T) -> None`: prepends at the front. Writing `None` (JSON `null`) is rejected. On a bounded deque it evicts from the back before prepending.
-- `pop() -> Optional[T]`: removes and returns the back element, or `None` when empty.
-- `popleft() -> Optional[T]`: removes and returns the front element, or `None` when empty.
-- `peek() -> Optional[T]`: reads the back element without removing it, or `None` when empty (pairs with `pop()`). An endpoint-*slot* read — exactly `get(size - 1)` minus the length round trip. Under a TTL an expired endpoint slot yields `None` even when live interior elements exist; a peek never searches inward.
-- `peekleft() -> Optional[T]`: reads the front element without removing it, or `None` when empty (pairs with `popleft()`; the front-endpoint counterpart of `peek()`).
-- `size() -> int`: number of live elements (named `size` because `len` cannot be async).
-- `is_empty() -> bool`: whether the deque holds no live elements (a method for the same reason).
-- `clear() -> None`: removes every element.
-- `get(index: int) -> Optional[T]`: reads the element at front-relative `index`, or `None` past the end. `index` must be a non-negative integer that fits a native `u32`; a fractional value raises `TypeError` and a negative or oversized one raises `OverflowError` at the native boundary, both of which classify transient at the handler bridge, so the caller mistake retries and stays visible rather than discarding the message.
-- `values(direction=Direction.FORWARD)` / `__aiter__`: see [Scan Iteration](#scan-iteration).
-- `commit() -> None` / `rollback() -> None`.
-
-### Scan Iteration
-
-Maps expose `items(direction=...)`, `keys(direction=...)`, and `values()`; deques expose `values(direction=...)`. Each returns an async iterator, so you can drive it with `async for`. `direction` is `Direction.FORWARD` (default) or `Direction.BACKWARD`. On a map, `values()` is forward-only; `items()` and `keys()` accept a direction. `MapState` iterates its **keys** (`async for k in m`, like `dict`) and `DequeState` iterates its elements, so the handle itself works in an `async for`.
-
-`keys()` is a **cheap key-only scan**: it never decodes a value or runs the resolver, so a message-backed map enumerates keys with **zero Kafka fetches**. It is not zero-I/O — pulling a chunk still does a presence-only read — but it skips the value work entirely. `items()` and `values()` resolve whole entries; `values()` is a projection of the pair scan that drops the keys, so it costs the same as `items()`. Two consequences worth internalizing:
-
-- When you need the values, iterate `items()` and use what it hands you. Iterating `keys()` and then calling `get(key)` inside the loop pays a round trip per key — one batched `items()` scan is cheaper. Use `keys()`/`contains()` when you only need presence.
-- When you already know which keys you want, use `get_many(keys)` — one batched, cache-populating read — rather than a scan. `get_many` is the only read that batches and warms the cache regardless of the map's keyset-tracking regime.
-
-> **Behavior change (0.4.0):** `async for k in m` now yields **keys** like `dict` (it forwarded to `items()` before). Iterate `m.items()` for `(key, value)` entries. Unpacking `async for k, v in m` breaks at runtime — and treacherously, since it *succeeds* for a two-character key.
-
-Iterators are valid only within the attempt that opened them. Exiting an `async for` loop early with a bare `break` does **not** close the underlying cursor — that is harmless by construction (no store permit is held between pulls, the cursor is attempt-epoch fenced, and the native drop closes it on GC). For a deterministic early close, wrap the scan in `contextlib.aclosing(...)`:
-
-```python
-from contextlib import aclosing
-
-async with aclosing(context.state(totals).items(Direction.BACKWARD)) as scan:
-    async for key, total in scan:
-        if total > 1000:
-            break  # aclosing closes the cursor on exit
-```
-
-### Commit and Rollback
-
-Every handle exposes `commit()` and `rollback()` (both `-> None`). By default a handler's writes are buffered and settle atomically when the event completes; commit and rollback are the explicit mid-handler escape hatch.
-
-- `commit()` durably flushes this collection's buffered operations mid-handler. It is at-least-once: the flush becomes visible even if the event later fails and is redelivered, and it establishes a floor that a later `rollback()` cannot cross.
-- `rollback()` discards this collection's buffered uncommitted operations back to the last commit floor. It is infallible.
-
-Both return `None`. The erased core seam deliberately drops the store outcome, so there is **no** applied/noop return value — do not expect one.
-
-### Semantics
-
-- **Per-key single writer.** State is keyed by the message key; only one handler invocation writes a given key at a time.
-- **Transactional by default.** A handler's writes settle atomically with the event. A handler that throws leaves no partial state (unless you opted a collection into `read_uncommitted`, or flushed explicitly with `commit()`).
-- **At-least-once.** Redelivery re-runs the handler; reads reflect committed prior attempts. Keep handlers idempotent.
-- **Attempt-scoped.** The context, the handles it vends, and any iterators those handles open are valid only within the handler invocation that created them. Do not retain them past the handler.
-- **Cancellation honesty.** An `asyncio` cancellation may drop the in-flight native future; core's attempt-epoch fence keeps that safe, so a follow-up operation on a fresh attempt still succeeds.
-
-### Error Handling
-
-Keyed-state failures surface as structured errors that flow through the same handler-error bridge as everything else (the transient/permanent category is carried as data, never parsed from the message). Every state error also inherits from the `StateError` brand, so you can catch all of them with `except StateError`:
-
-- `TransientStateError` (subclasses `TransientError`): the default. A temporary store read/write failure (for example a timeout), **and every caller mistake** — a rejected `None`/unrepresentable write (use `clear()` / `remove(key)` instead), an item-shape mismatch, an invalid scan direction, or a malformed definition. Caller mistakes are transient on purpose: a permanent error discards the in-flight message and can silently lose data, so a code error retries and stays visible (logs / metrics / lag) until you fix it.
-- `NullValueError` (subclasses `TransientStateError` and `ValueError`): a `None` / JSON-`null` write, which is not a storable value. It reads as a `ValueError` to callers who care about the argument and classifies transient if it propagates.
-- `PermanentStateError` (subclasses `PermanentError`): reserved for failures a retry genuinely cannot resolve within the running process — an unregistered or identity-mismatched collection, or a duplicate registration. (A handler may also raise one explicitly to declare its own failure permanent.)
-
-Because they subclass the existing error hierarchy, rethrowing them from a handler classifies the event exactly like a plain `PermanentError` / `TransientError` through the same `is_permanent` bridge.
+State failures inherit from `StateError`. Temporary store failures and invalid values raise `TransientStateError`; registration or collection-definition conflicts raise `PermanentStateError`. Writing `None` raises the more specific `NullValueError`.
 
 ## OpenTelemetry Tracing
 
