@@ -181,7 +181,7 @@ class ProsodyClient:
             state_collections: Keyed-state collections to register before subscribe. Pass the definition objects from `value`/`map`/`deque`/`message_value`/`message_map`/`message_deque`; each serializes into a collection config entry. Duplicate names are rejected.
             state_cache_dir: Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively). Env: PROSODY_STATE_CACHE_DIR. Defaults to a per-client temp dir.
             state_cache_size_bytes: Capacity of the in-memory keyed-state cache, in bytes. Must be greater than 0. Env: PROSODY_STATE_CACHE_SIZE_BYTES. Defaults to the storage-engine default.
-            state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_KEYED_STATE_RECOVERY_DELAY. Defaults to 30s.
+            state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_STATE_RECOVERY_DELAY. Defaults to 30s.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.
