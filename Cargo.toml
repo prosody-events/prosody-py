@@ -17,7 +17,7 @@ name = "prosody"
 [dependencies]
 chrono = "0.4"
 futures = "0.3"
-mimalloc = { version = "0.1", features = ["local_dynamic_tls"] }
+mimalloc = { version = "0.1", features = ["local_dynamic_tls", "v2"] }
 opentelemetry = "0.32"
 # TODO restore the crates.io registry pin once the keyed-state core branch merges and releases.
 prosody = { git = "https://github.com/prosody-events/prosody.git", rev = "454361285d1b984baee4ae9b19b91bf8e86d6356", features = [
