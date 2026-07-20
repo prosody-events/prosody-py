@@ -131,6 +131,8 @@ async def random_topic_and_group():
     try:
         await _wait(admin.delete_topic(topic))
     except with_suppress:
+        # Best-effort fixture teardown: ignore timeout/errors if the topic is
+        # already gone or the broker is slow — cleanup must not fail the run.
         pass
 
 
@@ -179,6 +181,8 @@ async def test_state_op_trace_graph(random_topic_and_group):
     try:
         await _wait(client.unsubscribe())
     except with_suppress:
+        # Best-effort teardown: swallow unsubscribe timeout/errors so they don't
+        # mask the flush/shutdown and span-graph assertions that follow.
         pass
 
     # Flush/shutdown the exporter; a shutdown error fails the audit.
