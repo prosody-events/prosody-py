@@ -887,7 +887,7 @@ async def test_concurrent_anext_serialize_ordered_distinct(state_client):
     assert obs["keys"] == [f"k{i:03d}" for i in range(6)]
 
 
-async def test_aclose_queued_behind_anext_closes_once(state_client):
+async def test_aclose_after_anext_closes_once(state_client):
     client, topic, _ = state_client
 
     async def cb(ctx, msg, results):
@@ -896,12 +896,19 @@ async def test_aclose_queued_behind_anext_closes_once(state_client):
             for i in range(3):
                 await _wait(m.set(f"k{i}", i))
             it = m.items()
-            # Fire an anext and immediately queue an aclose behind it; both must
-            # settle without error (close is core-owned/idempotent) and a
-            # follow-up op must still succeed.
-            a = asyncio.ensure_future(_wait(it.__anext__()))
-            b = asyncio.ensure_future(_wait(it.aclose()))
-            await asyncio.gather(a, b)
+            # Task creation does not prove that the native pull acquired its
+            # mutex before close. Establish the required order explicitly.
+            pulled = asyncio.Event()
+
+            async def pull():
+                await _wait(it.__anext__())
+                pulled.set()
+
+            async def close_after_pull():
+                await _wait(pulled.wait())
+                await _wait(it.aclose())
+
+            await asyncio.gather(pull(), close_after_pull())
             await _wait(m.set("after", 1))
             await results.send({"ok": (await _wait(m.get("after"))) == 1})
         except Exception as e:  # pragma: no cover
