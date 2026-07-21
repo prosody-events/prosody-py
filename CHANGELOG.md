@@ -1,22 +1,5 @@
 # Changelog
 
-## [0.4.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.3.0...prosody-py-v0.4.0) (2026-07-18)
-
-
-### ⚠ BREAKING CHANGES
-
-* **state:** `MapState.__aiter__` — `async for k in map` now yields **keys** like `dict` (it yielded `(key, value)` entries before). Iterate `map.items()` for entries. Unpacking `async for k, v in map` breaks at runtime.
-
-
-### Features
-
-* **state:** cheap `await map.contains(key)` presence check (no value decode, no resolver)
-* **state:** rewired `map.keys(direction=...)` to the cheap key-only scan and added the `direction` kwarg
-* **state:** `await map.get(key, default)` returning the default only on absence (a present-but-falsy value returns as-is)
-* **state:** deque `peek()` / `peekleft()` non-destructive endpoint reads
-* **state:** runtime-mutable `capacity=` on `deque` / `message_deque`, enforced lazily on push
-* **state:** `DequeState.clear()` to empty a deque
-
 ## [0.3.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.2.0...prosody-py-v0.3.0) (2026-05-18)
 
 
