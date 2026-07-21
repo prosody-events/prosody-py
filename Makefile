@@ -35,6 +35,13 @@ check:
 check-watch:
 	bacon
 
+# Type-check the examples and self-falsifying negative fixtures (config in
+# [tool.mypy]). Expected errors use precise ignore codes; warn_unused_ignores
+# makes the gate fail if a public signature accidentally permits one.
+# mypy_path resolves prosody from source, so no maturin build is required.
+mypy:
+	mypy
+
 # Run Clippy for linting
 lint:
 	cargo clippy

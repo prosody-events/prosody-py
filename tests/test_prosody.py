@@ -12,6 +12,10 @@ from prosody.prosody import AdminClient
 
 from prosody import ProsodyClient, EventHandler, Message, Context, Timer, permanent, transient
 
+
+def test_event_handler_is_runtime_subscriptable():
+    assert EventHandler[dict] is not None
+
 # Use pytest's built-in logging; logs will appear at DEBUG level
 logger = logging.getLogger(__name__)
 

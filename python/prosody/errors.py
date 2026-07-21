@@ -45,6 +45,52 @@ class PermanentError(EventHandlerError):
     is_permanent = True
 
 
+class StateError(Exception):
+    """
+    Brand mixin marking a keyed-state error, independent of its category.
+
+    Every state error raised by the native layer inherits from this alongside
+    a concrete category (`PermanentError`/`TransientError`), so callers can
+    catch all keyed-state failures with `except StateError` regardless of
+    whether they retry. Subclassing `Exception` (rather than being a bare
+    `object` mixin) is what makes it usable in an `except` clause.
+    """
+    __slots__ = ()
+
+
+class PermanentStateError(StateError, PermanentError):
+    """
+    Permanent keyed-state failure — a config/deploy error, never a caller data
+    mistake: an unregistered collection name, a registered-identity mismatch, or
+    a duplicate registration.
+
+    Classifies permanent through the existing `is_permanent` bridge unchanged,
+    so a rethrown instance discards the message rather than retrying.
+    """
+
+
+class TransientStateError(StateError, TransientError):
+    """
+    Transient keyed-state failure — a store timeout AND every caller mistake at
+    the state boundary (a null/unrepresentable write, a wrong item shape, an
+    invalid index, an invalid direction token, a malformed definition).
+
+    Caller mistakes are transient so the message retries and stays visible
+    rather than being silently discarded. Classifies transient through the
+    existing `is_permanent` bridge unchanged.
+    """
+
+
+class NullValueError(TransientStateError, ValueError):
+    """
+    A `None` / JSON-`null` write, which is not a storable value — use `clear()`
+    (value/deque) or `remove(key)` (map) to delete instead.
+
+    Reads as a `ValueError` to callers who care about the argument, and
+    classifies transient (via `TransientStateError`) if it propagates uncaught.
+    """
+
+
 def create_error_decorator(error_class, exception_types):
     def decorator(func):
         @wraps(func)

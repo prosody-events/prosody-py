@@ -97,6 +97,35 @@ jobs:
       - name: Enforce TOML formatting
         run: taplo validate
 
+  mypy:
+    name: Types and wheel metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install native build dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: cmake libcurl4-openssl-dev
+          version: 1.0
+      - name: Install type-check dependencies
+        run: pip install "maturin>=1.14,<2.0" "mypy>=1.11" "opentelemetry-api>=1.44.0,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.12.0"
+      - name: Type-check examples against the source tree
+        run: mypy
+      - name: Build the wheel
+        run: maturin build --out dist --interpreter python
+      - name: Verify and install the wheel
+        run: |
+          python tests/typecheck/check_wheel.py dist/*.whl
+          pip install --force-reinstall dist/*.whl
+      - name: Type-check a downstream consumer against the installed wheel
+        run: mypy --config-file tests/typecheck/mypy.ini tests/typecheck/consumer.py
+
   dependencies:
     name: Dependencies
     runs-on: ubuntu-latest

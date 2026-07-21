@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use futures::pin_mut;
@@ -50,6 +50,7 @@ struct TimerExecutionContext<'a> {
     timer_class: &'a Py<PyAny>,
     event_class: &'a Py<PyAny>,
     timer_method: &'a Py<PyAny>,
+    message_class: &'a Py<PyAny>,
     locals: &'a TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
     otel_get_current: &'a Py<PyAny>,
@@ -215,7 +216,7 @@ impl FallibleHandler for PythonHandler {
         demand_type: DemandType,
     ) -> Result<(), Self::Error>
     where
-        C: EventContext,
+        C: EventContext<Payload = Self::Payload>,
     {
         let _ = demand_type; // Not used in Python handler
         // Propagate tracing context to Python
@@ -282,7 +283,7 @@ impl FallibleHandler for PythonHandler {
         demand_type: DemandType,
     ) -> Result<(), Self::Error>
     where
-        C: EventContext,
+        C: EventContext<Payload = Self::Payload>,
     {
         let _ = demand_type; // Not used in Python handler
 
@@ -301,6 +302,7 @@ impl FallibleHandler for PythonHandler {
             timer_class: &self.0.timer_class,
             event_class: &self.0.event_class,
             timer_method: &self.0.timer_method,
+            message_class: &self.0.message_class,
             locals: &self.0.locals,
             propagator: self.0.propagator.clone(),
             otel_get_current: &self.0.otel_get_current,
@@ -423,7 +425,7 @@ fn execute<C>(
     impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
 )>
 where
-    C: EventContext,
+    C: EventContext<Payload = serde_json::Value>,
 {
     Python::attach(move |py| {
         // Create Python message objects using cached OpenTelemetry functions
@@ -432,6 +434,8 @@ where
             get_current: execution_context.otel_get_current.clone_ref(py),
             inject: execution_context.otel_inject.clone_ref(py),
             propagator: execution_context.propagator,
+            message_class: execution_context.message_class.clone_ref(py),
+            state_handles: Mutex::new(HashMap::new()),
         };
         let payload = pythonize(py, message.payload())?;
 
@@ -492,7 +496,7 @@ fn execute_timer<C>(
     impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
 )>
 where
-    C: EventContext,
+    C: EventContext<Payload = serde_json::Value>,
 {
     Python::attach(move |py| {
         // Create Python timer object using cached OpenTelemetry functions
@@ -501,6 +505,8 @@ where
             get_current: timer_context.otel_get_current.clone_ref(py),
             inject: timer_context.otel_inject.clone_ref(py),
             propagator: timer_context.propagator,
+            message_class: timer_context.message_class.clone_ref(py),
+            state_handles: Mutex::new(HashMap::new()),
         };
 
         let timer = timer_context.timer_class.call1(

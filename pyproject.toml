@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "maturin"
-requires = ["maturin>=1.13,<2.0"]
+requires = ["maturin>=1.14,<2.0"]
 
 [project]
 classifiers = [
@@ -14,17 +14,17 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Rust",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Distributed Computing",
+    "Typing :: Typed",
 ]
 dependencies = [
-    "opentelemetry-api>=1.41.1,<2.0.0",
+    "opentelemetry-api>=1.44.0,<2.0.0",
     "threadsafe-async>=0.2.1,<1.0.0",
+    "typing_extensions>=4.12.0",
 ]
 description = "High-performance Python bindings for a Rust-based Kafka client"
 dynamic = ["version"]
@@ -32,18 +32,19 @@ keywords = ["async", "client", "distributed", "kafka", "messaging"]
 license = "MIT"
 name = "prosody-events"
 readme = "Readme.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 
 [project.optional-dependencies]
 dev = [
-    "opentelemetry-exporter-otlp>=1.41.1,<2.0.0",
-    "opentelemetry-sdk>=1.41.1,<2.0.0",
-    "pytest-asyncio>=1.3.0,<2.0.0",
+    "mypy>=1.11",
+    "opentelemetry-exporter-otlp>=1.44.0,<2.0.0",
+    "opentelemetry-sdk>=1.44.0,<2.0.0",
+    "pytest-asyncio>=1.4.0,<2.0.0",
     "pytest-watch>=4.2.0",
-    "pytest>=9.0.3",
-    "sentry-sdk>=2.60.0,<3.0.0",
+    "pytest>=9.1.1",
+    "sentry-sdk>=2.66.0,<3.0.0",
 ]
-sentry = ["sentry-sdk>=2.60.0,<3.0.0"]
+sentry = ["sentry-sdk>=2.66.0,<3.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/prosody-events/prosody-py"
@@ -52,6 +53,28 @@ Repository = "https://github.com/prosody-events/prosody-py"
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
+
+[tool.mypy]
+# ``mypy_path`` resolves ``prosody`` from the source tree (mapping
+# ``prosody.prosody`` to ``prosody.pyi``) so type-checking needs no maturin
+# build. PEP 696 TypeVar defaults require mypy >= 1.11.
+files = [
+    "examples/keyed_state_typed.py",
+    "examples/keyed_state_windowing.py",
+    "tests/typecheck/negative.py",
+]
+mypy_path = "python"
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+
+# ``sentry-sdk`` is an optional runtime dependency, imported lazily inside a
+# ``try/except ImportError`` in ``handler.py``. The examples pull it in only
+# transitively via ``from prosody import ...``; the type gate stays lightweight
+# and does not install it, so treat its absence as ``Any`` rather than an error.
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "sentry_sdk.*"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"

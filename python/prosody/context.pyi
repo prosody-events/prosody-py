@@ -1,5 +1,24 @@
 from datetime import datetime
-from typing import List
+from typing import List, overload
+
+from prosody.message import Message
+from prosody.state import (
+    DequeDefinition,
+    DequeState,
+    MapDefinition,
+    MapState,
+    MessageDequeDefinition,
+    MessageMapDefinition,
+    MessageValueDefinition,
+    ValueDefinition,
+    ValueState,
+)
+from typing_extensions import TypeVar
+
+T = TypeVar("T")
+V = TypeVar("V")
+P = TypeVar("P")
+
 
 class Context:
     """
@@ -74,5 +93,38 @@ class Context:
 
         Returns:
             A coroutine that completes when cancellation is signaled.
+        """
+        ...
+
+    # Message-payload definitions listed first, mirroring the vend dispatch order.
+    @overload
+    def state(
+        self, definition: MessageValueDefinition[P]
+    ) -> ValueState[Message[P]]: ...
+    @overload
+    def state(
+        self, definition: MessageMapDefinition[P]
+    ) -> MapState[Message[P]]: ...
+    @overload
+    def state(
+        self, definition: MessageDequeDefinition[P]
+    ) -> DequeState[Message[P]]: ...
+    @overload
+    def state(self, definition: ValueDefinition[T]) -> ValueState[T]: ...
+    @overload
+    def state(self, definition: MapDefinition[V]) -> MapState[V]: ...
+    @overload
+    def state(self, definition: DequeDefinition[T]) -> DequeState[T]:
+        """Bind a registered collection for the current event attempt.
+
+        Returns a typed handle over the collection: JSON definitions vend
+        ``ValueState[T]`` / ``MapState[V]`` / ``DequeState[T]``; message
+        definitions vend the same handles parameterized by ``Message[P]``. The
+        handle — and any iterator it opens — is valid only within the handler
+        invocation that created it; do not retain it past the handler.
+
+        Binding an unregistered name, or a definition whose ``kind`` / ``payload``
+        disagrees with the collection's durably-registered schema, raises
+        :class:`~prosody.errors.PermanentStateError`.
         """
         ...

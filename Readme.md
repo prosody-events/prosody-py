@@ -14,14 +14,23 @@ strategies, and integrated OpenTelemetry support for distributed tracing.
 - **Backpressure**: Pauses partitions when handlers fall behind
 - **Mocking**: In-memory Kafka broker for tests (`mock=True`)
 - **Failure Handling**: Pipeline (retry forever), Low-Latency (dead letter), Best-Effort (log and skip)
+- **Type Checking**: PEP 561 type information for mypy and other Python type checkers
 
 ## Installation
 
-Prosody supports Python 3.8 and above, including free-threaded builds (3.13t, 3.14t). Install from PyPI:
+Prosody supports Python 3.10 and above, including free-threaded builds (3.14t). Install from PyPI:
 
 ```bash
 pip install prosody-events
 ```
+
+The wheel includes a `py.typed` marker and type information for the public API,
+so applications can type-check normal `prosody` imports without installing a
+separate stub package. For example, run `mypy your_application/` after installing
+Prosody and mypy. Keyed-state definitions carry their declared value type through
+`Context.state(...)`. `EventHandler[Payload]` carries a declared structural JSON
+payload type through `on_message`; an unsubscripted handler defaults to
+`JSONValue`. See [Keyed State](#keyed-state-cassandra) for typed examples.
 
 ## Quick Start
 
@@ -263,6 +272,29 @@ Persistent storage for timers and deferred retries (not needed if `mock=True`):
 | `cassandra_rack` / `PROSODY_CASSANDRA_RACK` | Prefer this rack for queries     | -       |
 | `cassandra_retention` / `PROSODY_CASSANDRA_RETENTION` | Delete data older than this | 1y     |
 
+### Keyed State
+
+Register keyed-state collections before you subscribe. Persistence is backed by Cassandra and is not needed when `mock=True`. See the [Keyed State](#keyed-state-1) feature section for handler usage; the client-level knobs and per-collection fields are below. Where an option and an environment variable are paired, an explicitly set option wins; otherwise the environment variable applies, then the default.
+
+| Option / Environment Variable                                | Description                                                                                                                                                             | Default             |
+|--------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
+| `state_collections` / -                                      | Keyed-state collections to register before subscribe (list of definition objects; duplicate names are rejected)                                                        | (none)              |
+| `state_cache_dir` / `PROSODY_STATE_CACHE_DIR`                | Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively)                                                    | per-client temp dir |
+| `state_cache_size_bytes` / `PROSODY_STATE_CACHE_SIZE_BYTES`  | Capacity of the in-memory keyed-state cache, in bytes; must be greater than 0. One cache is shared by all partition keyspaces                                            | engine default      |
+| `state_recovery_delay` / `PROSODY_STATE_RECOVERY_DELAY` | Delay before the recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (`timedelta` or float seconds; the env var accepts a duration string like `30s`) | 30s                 |
+
+Each `state_collections` entry has these fields. Prefer the definition constructors (`value` / `map` / `deque` and their `message_*` variants, documented below): they serialize into `state_collections` so you declare each collection once and reuse the same object with `context.state()`.
+
+| Field              | Description                                                                          | Default    |
+|--------------------|-------------------------------------------------------------------------------------|------------|
+| `name`             | Collection name; non-empty and unique within the client                             | (required) |
+| `kind`             | `"value"`, `"map"`, or `"deque"`                                                     | (required) |
+| `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received) | (required) |
+| `ttl`              | Per-write TTL, whole seconds >= 1 (must exceed the recovery delay); `timedelta` or int seconds | (none)     |
+| `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
+| `keyset_limit`     | Map-only; ordered-scan bound in `0..=4096` (`0` disables ordered-scan tracking)      | 128        |
+| `capacity`         | Deque-only; positive int max slot count, enforced lazily on push (runtime-only, may change across deploys) | (unbounded) |
+
 ## Liveness and Readiness Probes
 
 Prosody includes a built-in probe server for consumer-based applications that provides health check endpoints. The probe
@@ -386,7 +418,7 @@ Prosody prevents processing loops in distributed systems by tracking the source 
 # Consumer and producer in one application
 client = ProsodyClient(
     group_id="my-service",
-    source_system="my-service-producer",  # Must differ from groupId to allow loopbacks; defaults to groupId
+    source_system="my-service-producer",  # Must differ from group_id to allow loopbacks; defaults to group_id
     subscribed_topics="my-topic"
 )
 ```
@@ -553,6 +585,108 @@ client = ProsodyClient(
     mock=True  # No Cassandra required in mock mode
 )
 ```
+
+## Keyed State
+
+Keyed state gives every Kafka key its own durable working memory. Prosody automatically uses the current message or timer key, so a handler can relate the current event to earlier events for that key. State survives restarts and rebalances. By default, changes become visible only when the event succeeds.
+
+Use keyed state for time-aware stream processing: counters, deduplication, rolling aggregates, pending work, and per-key workflows. Keep your relational database as the source of truth for business data and for work that needs joins or ad hoc queries. Reconstructing stream state with repeated database queries can be slow and expensive; keyed state is built for that job.
+
+Most collections should have a TTL. Set it comfortably beyond the longest timer or workflow that uses the state; Prosody validates the minimum supported TTL. Omit it only when keeping inactive keys forever is intentional.
+
+### A counter for each key
+
+Declare each collection once, register it on the client, and ask the event context for the current key's state:
+
+```python
+COUNTER: ValueDefinition[int] = value("counter", ttl=timedelta(days=30))
+
+
+class CountHandler(EventHandler):
+    async def on_message(self, context: Context, message: Message) -> None:
+        count = context.state(COUNTER)
+        await count.set((await count.get() or 0) + 1)
+
+
+client = ProsodyClient(
+    group_id="counters",
+    subscribed_topics="events",
+    state_collections=[COUNTER],
+)
+```
+
+Here, counters expire after 30 days without an update.
+
+### Window activity into one notification
+
+This example turns a burst of activity into two useful notifications. It sends the first event immediately, collects later events for five minutes, then sends one summary. Because the user ID is the Kafka key, every user gets an independent window.
+
+```python
+WINDOW: ValueDefinition[bool] = value("window", ttl=timedelta(days=1))
+PENDING: MessageDequeDefinition[Activity] = message_deque(
+    "pending", capacity=100, ttl=timedelta(days=1)
+)
+
+
+class BatchHandler(EventHandler[Activity]):
+    async def on_message(self, context: Context, message: Message[Activity]) -> None:
+        window = context.state(WINDOW)
+        pending = context.state(PENDING)
+
+        if await window.get():
+            await pending.append(message)
+            return
+
+        await notify(message.key, [message])
+        await window.set(True)
+        await context.clear_and_schedule(
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        )
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pending = context.state(PENDING)
+        batch = [message async for message in pending.values()]
+
+        if batch:
+            await notify(timer.key, batch)
+        await pending.clear()
+        await context.state(WINDOW).clear()
+```
+
+See the complete, mypy-checked example for imports, types, client setup, and `notify`: [`examples/keyed_state_windowing.py`](examples/keyed_state_windowing.py).
+
+Why this works:
+
+- Register both definitions in `state_collections` before subscribing. Keyed state uses Cassandra unless `mock=True`.
+- Use `clear_and_schedule`, not `schedule`, so a retried event does not add another timer for the same key.
+- `capacity=100` and the one-day TTL prevent an inactive or unusually busy key from retaining an unlimited backlog. Since this example only appends, overflow drops the oldest saved message.
+- A `message_deque` requires the original Kafka messages to remain available for the whole window. Use a plain `deque` of payloads if topic retention or compaction cannot guarantee that.
+- Prosody runs one handler at a time for each key, so a user's message and timer handlers cannot overlap.
+- Sending a notification is outside Prosody's state transaction and may happen again after a retry. Give notifications a stable idempotency key, or send them through an outbox, when duplicates matter.
+
+### Collections and handles
+
+A definition gives a collection a stable name, kind, and options. Register it once on the client, then pass the same definition to `context.state()` to access the current key. Do not reuse a persisted name for a different collection kind or payload type.
+
+Create handles inside the handler and do not retain them or their iterators afterward.
+
+| Collection | JSON payload | Kafka message | Main operations |
+| --- | --- | --- | --- |
+| Value | `value` | `message_value` | `get`, `set`, `clear` |
+| Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `set`, `remove`, `items`, `keys`, `clear` |
+| Deque | `deque` | `message_deque` | `append`, `appendleft`, `pop`, `popleft`, `get`, `size`, `values`, `clear` |
+
+All operations are async. Map and deque scans use `async for`. Map keys are strings. `None` means absence and cannot be stored—use `clear()` or `remove()` instead. Payload annotations guide the type checker but do not validate data at runtime.
+
+### When changes become visible
+
+Reads inside a handler see its earlier writes. The default behavior is the safest choice for most handlers: Prosody buffers those changes and publishes them together when the event succeeds. If the handler raises, none of its pending changes become visible.
+
+Each collection also offers explicit controls for workflows that need different behavior:
+
+- `read_uncommitted=True` writes that collection's changes after the handler succeeds but before the event is recorded as complete. A crash in between can leave the changes visible even though the event is retried. Use it only for idempotent changes, where processing the same event again produces the same stored result.
+- `await state.commit()` immediately publishes this collection's pending changes. They remain visible even if the handler later raises and the event is retried.
+- `await state.rollback()` discards this collection's pending changes since its last `commit()`. It cannot undo changes that were already committed.
 
 ## OpenTelemetry Tracing
 
@@ -880,9 +1014,9 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 ### ProsodyClient
 
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
-- `send(topic: str, key: str, payload: Any) -> None`: Send a message to a specified topic.
+- `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
 - `consumer_state() -> str`: Get the current state of the consumer.
-- `subscribe(handler: EventHandler) -> None`: Subscribe to messages using the provided handler.
+- `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
 - `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
 
 ### AdminClient
@@ -893,12 +1027,16 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 
 ### EventHandler
 
-An abstract base class for user-defined handlers:
+An abstract base class generic over the message payload type. The payload type
+defaults to `JSONValue`, so existing unsubscripted handlers retain their current
+typing. Parameterizing the handler gives `on_message` the same payload type:
 
 ```python
-class EventHandler(ABC):
+P = TypeVar("P", default=JSONValue)
+
+class EventHandler(ABC, Generic[P]):
     @abstractmethod
-    async def on_message(self, context: Context, message: Message) -> None:
+    async def on_message(self, context: Context, message: Message[P]) -> None:
         # Implement your message handling logic here
         pass
     
@@ -907,6 +1045,11 @@ class EventHandler(ABC):
         # Implement your timer handling logic here
         pass
 ```
+
+For example, `EventHandler[OrderEvent]` receives `Message[OrderEvent]` when
+`OrderEvent` is a `TypedDict`. This is a static contract only: Prosody still
+delivers plain JSON and does not construct or validate dataclass or Pydantic
+models. Validate the payload explicitly before using such a model.
 
 Note: The on_message method may be called from different threads. Ensure that any handler state is thread-safe. If
 library incompatibility becomes an issue, this may be changed in the future so all handler calls originate from the same
@@ -921,7 +1064,11 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `offset: int`: The message offset within the partition.
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
-- `payload: JSONValue`: The message payload as a JSON-serializable value.
+- `payload: P`: The statically typed message payload.
+
+`Message[P]` defaults to `Message[JSONValue]`. Supplying a `TypedDict` payload
+specialization gives field-level checking without runtime model construction or
+validation.
 
 ### Context
 
@@ -934,6 +1081,7 @@ Represents the context of a Kafka message, providing timer scheduling methods:
 - `scheduled() -> List[datetime]`: Returns a list of all scheduled timer times
 - `should_cancel() -> bool`: Check if cancellation has been requested (includes timeout and shutdown)
 - `on_cancel() -> Coroutine`: Awaitable that completes when cancellation is signaled
+- `state(definition) -> ValueState[T] | MapState[V] | DequeState[T]`: Binds a registered collection for the current event attempt, returning a typed handle (message definitions vend `*State[Message[P]]`). Raises `PermanentStateError` when the name was never registered, or when the definition's `kind` / `payload` disagrees with the collection's durably-registered schema. See the [Keyed State](#keyed-state-2) API reference below.
 
 ### Timer
 
@@ -941,6 +1089,66 @@ Represents a timer that has fired, provided to the `on_timer` method:
 
 - `key: str`: The entity key identifying what this timer belongs to
 - `time: datetime`: The time when this timer was scheduled to fire
+
+### Keyed State
+
+Definition constructors (each returns a frozen definition object used both in `state_collections` and with `context.state()`). Each accepts `ttl` and `read_uncommitted`, plus `keyset_limit` on the map variants:
+
+- `value(name, *, ttl=None, read_uncommitted=None) -> ValueDefinition[T]`
+- `map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MapDefinition[V]`
+- `deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> DequeDefinition[T]`
+- `message_value(name, *, ttl=None, read_uncommitted=None) -> MessageValueDefinition[P]`
+- `message_map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MessageMapDefinition[P]`
+- `message_deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> MessageDequeDefinition[P]`
+
+`ValueState[T]`:
+
+- `get() -> Optional[T]`
+- `set(value: T) -> None`
+- `clear() -> None`
+- `commit() -> None`
+- `rollback() -> None`
+
+`MapState[V]` (keys are `str`):
+
+- `get(key: str, default=None) -> Optional[V] | default` — default only on absence
+- `contains(key: str) -> bool` — cheap presence check (no decode/resolver)
+- `get_many(keys: List[str]) -> List[Optional[V]]`
+- `set(key: str, value: V) -> None`
+- `remove(key: str) -> None`
+- `clear() -> None`
+- `items(direction=Direction.FORWARD)` — async iterator over `(str, V)` entries
+- `keys(direction=Direction.FORWARD)` — cheap async iterator over `str` keys
+- `values()` — async iterator over `V` values (forward-only)
+- `__aiter__()` — forward async iteration over `str` keys (like `dict`)
+- `commit() -> None`
+- `rollback() -> None`
+
+`DequeState[T]`:
+
+- `append(item: T) -> None`
+- `appendleft(item: T) -> None`
+- `pop() -> Optional[T]`
+- `popleft() -> Optional[T]`
+- `peek() -> Optional[T]` — back endpoint, non-destructive
+- `peekleft() -> Optional[T]` — front endpoint, non-destructive
+- `size() -> int`
+- `is_empty() -> bool`
+- `clear() -> None`
+- `get(index: int) -> Optional[T]`
+- `values(direction=Direction.FORWARD)` — async iterator over `T` elements
+- `__aiter__()` — forward async iteration over `T` elements
+- `commit() -> None`
+- `rollback() -> None`
+
+`Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
+
+Errors:
+
+- `StateError`: brand mixin on every keyed-state error; catch all of them with `except StateError`.
+- `TransientStateError` (subclasses `TransientError`): the default — a temporary store read/write failure, or any caller mistake (a `None`/unrepresentable write, item-shape mismatch, invalid scan direction, malformed definition), rejected transient so it retries rather than discarding the message.
+- `NullValueError` (subclasses `TransientStateError` and `ValueError`): a `None` / JSON-`null` write; use `clear()` / `remove(key)` to delete instead.
+- `PermanentStateError` (subclasses `PermanentError`): reserved for failures a retry cannot resolve in-process (unregistered / identity-mismatched collection, duplicate registration), or one a handler raises explicitly.
 
 ## License
 

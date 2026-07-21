@@ -2,12 +2,15 @@ import asyncio
 import logging
 import os
 from abc import ABC, abstractmethod
+from typing import Any, Generic
+
+from typing_extensions import TypeVar
 
 from opentelemetry import trace
 from opentelemetry.propagate import extract
 
 from prosody.context import Context
-from prosody.message import Message
+from prosody.message import JSONValue, Message
 from prosody.timer import Timer
 
 _log = logging.getLogger(__name__)
@@ -46,23 +49,29 @@ def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -
         sentry.capture_exception(exc.__cause__ or exc)
 
 
-class EventHandler(ABC):
+P = TypeVar("P", default=JSONValue)
+
+
+class EventHandler(ABC, Generic[P]):
     """
-    Abstract base class for event handlers.
+    Abstract base class for event handlers, generic over the message payload.
 
     Subclasses must implement the `on_message` method to define custom message
     processing logic. Subclasses may optionally implement the `on_timer` method
-    to handle timer events.
+    to handle timer events. An unsubscripted handler defaults its payload to
+    ``JSONValue``; use ``EventHandler[Payload]`` with a structural JSON type such
+    as a ``TypedDict`` to give ``on_message`` a narrower static contract. This
+    annotation does not perform runtime validation or model construction.
     """
 
     @abstractmethod
-    async def on_message(self, context: Context, message: Message) -> None:
+    async def on_message(self, context: Context, message: Message[P]) -> None:
         """
         Handle a Kafka message.
 
         Args:
             context (Context): The context of the message.
-            message (Message): The Kafka message to be processed.
+            message (Message[P]): The Kafka message to be processed.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
@@ -95,7 +104,7 @@ class EventHandler(ABC):
 
 
 class ProsodyHandler:
-    def __init__(self, handler: EventHandler):
+    def __init__(self, handler: EventHandler[Any]):
         self.handler = handler
         self.tracer = trace.get_tracer(__name__)
 
