@@ -11,7 +11,7 @@ from contextlib import aclosing
 from datetime import timedelta
 from typing import List, Optional
 
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, assert_type
 
 from prosody import (
     Context,
@@ -25,6 +25,7 @@ from prosody import (
     message_deque,
     value,
 )
+from prosody.message import JSONValue
 
 
 class Cart(TypedDict):
@@ -92,4 +93,4 @@ class OrderHandler(EventHandler[OrderEvent]):
 async def unparameterized(m: Message) -> None:
     """A bare ``Message`` (defaulting to ``Message[JSONValue]``) type-checks."""
     _topic: str = m.topic
-    _payload = m.payload
+    assert_type(m.payload, JSONValue)

@@ -32,7 +32,7 @@ class Activity(TypedDict):
 
 # Your own delivery function (push, email, …) — the only thing here you write.
 async def notify(user_id: str, activities: List["Message[Activity]"]) -> None:
-    ...
+    pass
 
 
 # Declare the collections once, at module scope; register both on the client via

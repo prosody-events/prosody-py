@@ -8,11 +8,11 @@ infra-backed FFI scenarios in ``test_keyed_state.py``.
 
 import contextlib
 import dataclasses
+import importlib
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import prosody
 from prosody import (
     Direction,
     Message,
@@ -131,12 +131,12 @@ def test_state_error_is_catchable_brand():
         TransientStateError("t"),
         NullValueError("n"),
     ):
-        with pytest.raises(StateError):
-            raise exc
         try:
             raise exc
         except StateError as caught:
             assert caught is exc
+        with pytest.raises(StateError):
+            raise exc
 
 
 # --- generic Message ---
@@ -153,6 +153,7 @@ def test_message_generic_subscript_and_payload():
 
 
 def test_exports_present():
+    prosody = importlib.import_module("prosody")
     for n in (
         "Direction",
         "value",
