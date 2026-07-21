@@ -14,11 +14,14 @@ use crate::client::ProsodyClient;
 use crate::context::Context;
 use crate::logging::PythonLoggingLayer;
 use crate::state::{NativeDequeState, NativeMapState, NativeStateScan, NativeValueState};
-use ::prosody::tracing::initialize_tracing;
+use ::prosody::tracing::{
+    flush_telemetry as core_flush_telemetry, initialize_tracing,
+    shutdown_telemetry as core_shutdown_telemetry,
+};
 use mimalloc::MiMalloc;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
-use pyo3::{Bound, PyResult, Python, pymodule};
+use pyo3::{Bound, PyResult, Python, pyfunction, pymodule, wrap_pyfunction};
 
 mod admin;
 mod client;
@@ -75,5 +78,39 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     prosody_module.add_class::<NativeDequeState>()?;
     prosody_module.add_class::<NativeStateScan>()?;
 
+    prosody_module.add_function(wrap_pyfunction!(flush_telemetry, prosody_module)?)?;
+    let shutdown = wrap_pyfunction!(shutdown_telemetry, prosody_module)?;
+    prosody_module.add_function(shutdown.clone())?;
+
+    // Auto-flush and shut down telemetry at interpreter exit so short-lived
+    // scripts don't lose the tail of their trace/metric data to the batch
+    // exporters' export interval.
+    py.import("atexit")?.call_method1("register", (shutdown,))?;
+
     Ok(())
+}
+
+/// Exports all buffered spans and metrics without tearing the telemetry
+/// pipeline down.
+///
+/// Call this for a mid-run flush (e.g. one of several clients shutting
+/// down while others keep running); use [`shutdown_telemetry`] once at
+/// process exit instead. A safe no-op if tracing was never initialized.
+/// Blocks until the export completes.
+#[pyfunction]
+fn flush_telemetry() -> PyResult<()> {
+    core_flush_telemetry()
+        .map_err(|error| PyRuntimeError::new_err(format!("Failed to flush telemetry: {error}")))
+}
+
+/// Flushes all buffered telemetry and shuts the export pipeline down.
+///
+/// Automatically registered with `atexit` so it runs once at interpreter
+/// shutdown; call it manually only if the process needs to shut telemetry
+/// down earlier. A safe no-op if tracing was never initialized. Blocks
+/// until the final export completes.
+#[pyfunction]
+fn shutdown_telemetry() -> PyResult<()> {
+    core_shutdown_telemetry()
+        .map_err(|error| PyRuntimeError::new_err(format!("Failed to shut down telemetry: {error}")))
 }
