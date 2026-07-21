@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.3.0...prosody-py-v0.4.0) (2026-07-21)
+
+
+### Features
+
+* **state:** add durable keyed state ([#19](https://github.com/prosody-events/prosody-py/issues/19)) ([5386255](https://github.com/prosody-events/prosody-py/commit/538625594281265fc2445f52dcb5d0469100ccfa))
+
+
+### Bug Fixes
+
+* **release:** restore published release boundary ([d6bfcb9](https://github.com/prosody-events/prosody-py/commit/d6bfcb9aa0d898c1961cdefe89f8dd0af8a1cd39))
+
 ## [0.3.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.2.0...prosody-py-v0.3.0) (2026-05-18)
 
 
