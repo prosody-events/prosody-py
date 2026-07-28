@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
+use crate::message::MessageCore;
 use chrono::{DateTime, Utc};
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
@@ -439,6 +440,10 @@ where
         };
         let payload = pythonize(py, message.payload())?;
 
+        // The core message rides along so a message-collection write can store
+        // the message the handler received; see `MessageCore`.
+        let core = Py::new(py, MessageCore::new(message.clone()))?;
+
         let message = execution_context.message_class.call1(
             py,
             (
@@ -448,6 +453,7 @@ where
                 *message.timestamp(),
                 message.key().as_ref(),
                 payload,
+                core,
             ),
         )?;
 

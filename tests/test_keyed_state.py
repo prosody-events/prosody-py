@@ -29,6 +29,7 @@ from prosody import (
     ProsodyClient,
     EventHandler,
     Direction,
+    Message,
     value,
     map,
     deque,
@@ -493,6 +494,61 @@ async def test_message_deque_roundtrip(state_client):
     assert obs["head"] == obs["orig"]
     assert obs["scanned_len"] == 1
     assert obs["scanned_first_payload"] == {"marker": md}
+
+
+async def test_only_a_delivered_message_is_storable(state_client):
+    """A message collection stores where a message sits in Kafka, so only a
+    message a handler received can go into one.
+
+    Both rejected cases are real: a ``Message`` built in Python has no Kafka
+    position behind it, and a message read back out of a collection dropped its
+    core message so the loader could reclaim the permit it was resolved under.
+    Rejecting them transiently keeps the event visible rather than discarding it.
+    """
+    client, topic, _ = state_client
+    mk = nonce()
+
+    async def cb(ctx, msg, results):
+        lm = ctx.state(STATE_DEFS["last_msg"])
+        outcomes = {}
+        try:
+            forged = Message(
+                msg.topic, msg.partition, msg.offset, msg.timestamp, msg.key, msg.payload
+            )
+            outcomes["forged"] = await _store_outcome(lm, forged)
+
+            # Round-trip a real one, then try to store what came back.
+            await _wait(lm.set(msg))
+            await _wait(lm.commit())
+            outcomes["reread"] = await _store_outcome(lm, await _wait(lm.get()))
+
+            # The delivered message itself still stores.
+            await _wait(lm.set(msg))
+            outcomes["delivered"] = "stored"
+            await results.send(outcomes)
+        except Exception as e:  # pragma: no cover
+            await results.send({"error": str(e)})
+
+    handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, mk, {"marker": mk}))
+    obs = await _wait(handler.results.receive())
+
+    assert obs.get("error") is None
+    assert obs["forged"] == "transient"
+    assert obs["reread"] == "transient"
+    assert obs["delivered"] == "stored"
+
+
+async def _store_outcome(handle, item):
+    """Classifies what storing ``item`` did: ``"stored"`` or the error category."""
+    try:
+        await _wait(handle.set(item))
+    except TransientStateError:
+        return "transient"
+    except PermanentStateError:
+        return "permanent"
+    return "stored"
 
 
 async def test_message_map_roundtrip(state_client):

@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Union, TypeAlias, Dict, Generic
+from typing import Any, List, Optional, Union, TypeAlias, Dict, Generic
 
 from typing_extensions import TypeVar
 
@@ -28,6 +28,11 @@ class Message(Generic[P]):
 
     The payload type is generic: ``Message[Cart]`` narrows ``payload`` to
     ``Cart`` while a bare ``Message`` keeps the JSON-serializable default.
+
+    Only a message a handler received can be stored in a message collection. A
+    message collection stores where a message sits in Kafka, and only a delivered
+    message knows that. Storing one built in Python, or one read back out of a
+    collection, raises :class:`TransientStateError`.
     """
 
     topic: str
@@ -47,3 +52,12 @@ class Message(Generic[P]):
 
     payload: P
     """The message payload (JSON-serializable by default)."""
+
+    _core: Optional[Any] = field(default=None, compare=False, repr=False)
+    """Internal handle to the Kafka position this message was delivered at.
+
+    Set only on a message a handler receives, and only readable by the native
+    layer, which needs it to store this message in a message collection. Not part
+    of the public API: it is excluded from equality and ``repr``, so a message
+    built in Python still compares equal to the delivered one it mirrors.
+    """
