@@ -22,7 +22,7 @@
 //! invalid enum token, an out-of-range index) reject TRANSIENT — a caller code
 //! error retries and stays visible rather than discarding the message.
 
-use chrono::{DateTime, Utc};
+use crate::message::MessageCore;
 use opentelemetry::Context as OtelContext;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::FutureExt;
@@ -30,7 +30,7 @@ use prosody::consumer::Keyed;
 use prosody::consumer::event_context::{
     BoxDequeState, BoxMapState, BoxStateCursor, BoxValueState, ErasedCategory, ErasedStateError,
 };
-use prosody::consumer::message::{ConsumerMessage, ConsumerMessageValue};
+use prosody::consumer::message::ConsumerMessage;
 use prosody::state::Direction;
 use pyo3::exceptions::PyStopAsyncIteration;
 use pyo3::gc::{PyTraverseError, PyVisit};
@@ -42,8 +42,7 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use tokio::sync::{Mutex, Semaphore};
-use tracing::Span;
+use tokio::sync::Mutex;
 
 /// Maximum number of immediately-ready scan items transported through `PyO3`
 /// in one vector. Core owns ready draining, error ordering, and pull
@@ -192,54 +191,37 @@ fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> PyResult<Dire
     }
 }
 
-/// Rebuilds a `ConsumerMessage<Value>` from the Python `Message` for a
-/// message-collection write.
+/// Recovers the consumer message a delivered `Message` carries.
 ///
-/// Only topic/partition/offset/key/timestamp/payload feed the stored value; a
-/// fresh single-permit semaphore supplies the (never-contended) processing
-/// permit. Mirrors the JS `consumer_message()`.
+/// The dataclass fields are not enough to rebuild one, and rebuilding is
+/// forbidden — see [`MessageCore`] for why. Every `Message` prosody hands to a
+/// handler carries its core message, whether it arrived from the topic or was
+/// read back out of a collection. One built in Python does not.
 ///
 /// # Errors
 ///
-/// Returns a transient error if an attribute is missing or the payload is not
-/// representable as JSON, and propagates the raw extraction error (an
-/// out-of-range offset raises `OverflowError`, transient by default).
+/// Returns a transient error when the message carries no core message. Storing
+/// something other than a delivered message is a caller mistake, and caller
+/// mistakes reject transient so the event stays visible instead of being
+/// discarded.
 fn consumer_message(
     py: Python,
     env: &StateEnv,
     message: &Bound<PyAny>,
 ) -> PyResult<ConsumerMessage<Value>> {
-    let topic: String = message.getattr("topic")?.extract()?;
-    let partition: i32 = message.getattr("partition")?.extract()?;
-    let offset: i64 = message.getattr("offset")?.extract()?;
-    let timestamp: DateTime<Utc> = message.getattr("timestamp")?.extract()?;
-    let key: String = message.getattr("key")?.extract()?;
-    let payload: Value = depythonize::<Value>(&message.getattr("payload")?).map_err(|error| {
-        transient_error(
-            py,
-            env,
-            &format!("message.payload is not representable as JSON: {error}"),
-        )
-    })?;
-    let permit = Arc::new(Semaphore::new(1))
-        .try_acquire_owned()
-        .map_err(|error| {
+    message
+        .getattr("_core")
+        .ok()
+        .and_then(|core| core.cast_into::<MessageCore>().ok())
+        .map(|core| core.get().message())
+        .ok_or_else(|| {
             transient_error(
                 py,
                 env,
-                &format!("failed to acquire message permit: {error}"),
+                "only a message prosody delivered can be stored; one built in Python carries no \
+                 Kafka position to store",
             )
-        })?;
-    let value = ConsumerMessageValue {
-        source_system: None,
-        topic: topic.as_str().into(),
-        partition,
-        offset,
-        key: key.into(),
-        timestamp,
-        payload,
-    };
-    Ok(ConsumerMessage::new(value, Span::current(), permit))
+        })
 }
 
 /// The collection's item payload kind, used to route a write and its item
@@ -271,12 +253,17 @@ impl StateItem {
 }
 
 /// Positionally constructs the Python `Message`, identical to `handler.rs`.
+///
+/// Carries the resolved message as its [`MessageCore`], so a message read back
+/// out of a collection can be stored into another one and its consumer permit
+/// stays held for as long as Python holds the message.
 fn build_message(
     py: Python,
     env: &StateEnv,
     message: &ConsumerMessage<Value>,
 ) -> PyResult<Py<PyAny>> {
     let payload = pythonize(py, message.payload())?;
+    let core = Py::new(py, MessageCore::new(message.clone()))?;
     let object = env.0.message_class.bind(py).call1((
         message.topic().as_ref(),
         message.partition(),
@@ -284,6 +271,7 @@ fn build_message(
         *message.timestamp(),
         message.key().as_ref(),
         payload,
+        core,
     ))?;
     Ok(object.unbind())
 }
