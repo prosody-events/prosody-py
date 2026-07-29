@@ -498,12 +498,14 @@ async def test_message_deque_roundtrip(state_client):
 
 async def test_only_a_delivered_message_is_storable(state_client):
     """A message collection stores where a message sits in Kafka, so only a
-    message a handler received can go into one.
+    message prosody delivered can go into one.
 
-    Both rejected cases are real: a ``Message`` built in Python has no Kafka
-    position behind it, and a message read back out of a collection dropped its
-    core message so the loader could reclaim the permit it was resolved under.
-    Rejecting them transiently keeps the event visible rather than discarding it.
+    Every delivered message qualifies, including one read back out of a
+    collection: the wrapper holds the message it came from, which is both what
+    the write needs and what keeps the loader's permit held while Python can
+    still reach it. A ``Message`` built in Python has no Kafka position behind it
+    and is rejected transiently, keeping the event visible rather than
+    discarding it.
     """
     client, topic, _ = state_client
     mk = nonce()
@@ -517,14 +519,17 @@ async def test_only_a_delivered_message_is_storable(state_client):
             )
             outcomes["forged"] = await _store_outcome(lm, forged)
 
-            # Round-trip a real one, then try to store what came back.
-            await _wait(lm.set(msg))
+            outcomes["delivered"] = await _store_outcome(lm, msg)
             await _wait(lm.commit())
-            outcomes["reread"] = await _store_outcome(lm, await _wait(lm.get()))
 
-            # The delivered message itself still stores.
-            await _wait(lm.set(msg))
-            outcomes["delivered"] = "stored"
+            # A message read back out of the collection is storable too, and
+            # round-trips to the same Kafka position.
+            reread = await _wait(lm.get())
+            outcomes["reread"] = await _store_outcome(lm, reread)
+            await _wait(lm.commit())
+            again = await _wait(lm.get())
+            outcomes["same_offset"] = again.offset == msg.offset
+            outcomes["same_payload"] = again.payload == msg.payload
             await results.send(outcomes)
         except Exception as e:  # pragma: no cover
             await results.send({"error": str(e)})
@@ -536,8 +541,10 @@ async def test_only_a_delivered_message_is_storable(state_client):
 
     assert obs.get("error") is None
     assert obs["forged"] == "transient"
-    assert obs["reread"] == "transient"
     assert obs["delivered"] == "stored"
+    assert obs["reread"] == "stored"
+    assert obs["same_offset"] is True
+    assert obs["same_payload"] is True
 
 
 async def _store_outcome(handle, item):

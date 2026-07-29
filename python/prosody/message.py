@@ -29,10 +29,11 @@ class Message(Generic[P]):
     The payload type is generic: ``Message[Cart]`` narrows ``payload`` to
     ``Cart`` while a bare ``Message`` keeps the JSON-serializable default.
 
-    Only a message a handler received can be stored in a message collection. A
-    message collection stores where a message sits in Kafka, and only a delivered
-    message knows that. Storing one built in Python, or one read back out of a
-    collection, raises :class:`TransientStateError`.
+    A message prosody delivered can be stored in a message collection, whether
+    it arrived from the topic or was read back out of a collection. A message
+    collection stores where a message sits in Kafka, which only a delivered
+    message knows, so storing one built in Python raises
+    :class:`TransientStateError`.
     """
 
     topic: str
@@ -54,10 +55,10 @@ class Message(Generic[P]):
     """The message payload (JSON-serializable by default)."""
 
     _core: Optional[Any] = field(default=None, compare=False, repr=False)
-    """Internal handle to the Kafka position this message was delivered at.
+    """Internal handle to the message prosody delivered.
 
-    Set only on a message a handler receives, and only readable by the native
-    layer, which needs it to store this message in a message collection. Not part
-    of the public API: it is excluded from equality and ``repr``, so a message
-    built in Python still compares equal to the delivered one it mirrors.
+    Set on every message prosody hands to a handler, and only readable by the
+    native layer, which needs it to store this message in a message collection.
+    Not part of the public API: it is excluded from equality and ``repr``, so a
+    message built in Python still compares equal to the delivered one it mirrors.
     """

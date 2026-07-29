@@ -194,9 +194,9 @@ fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> PyResult<Dire
 /// Recovers the consumer message a delivered `Message` carries.
 ///
 /// The dataclass fields are not enough to rebuild one, and rebuilding is
-/// forbidden — see [`MessageCore`] for why. A `Message` a handler received
-/// carries its core message; one built in Python, or read back out of keyed
-/// state, does not.
+/// forbidden — see [`MessageCore`] for why. Every `Message` prosody hands to a
+/// handler carries its core message, whether it arrived from the topic or was
+/// read back out of a collection. One built in Python does not.
 ///
 /// # Errors
 ///
@@ -218,8 +218,8 @@ fn consumer_message(
             transient_error(
                 py,
                 env,
-                "only a message delivered to a handler can be stored; a message built in Python \
-                 or read back out of keyed state carries no Kafka position to store",
+                "only a message prosody delivered can be stored; one built in Python carries no \
+                 Kafka position to store",
             )
         })
 }
@@ -254,20 +254,16 @@ impl StateItem {
 
 /// Positionally constructs the Python `Message`, identical to `handler.rs`.
 ///
-/// Carries no [`MessageCore`]. The loader takes a permit from its
-/// `max_uncommitted` semaphore for every message it resolves, and nothing
-/// clears the processing state of a message read out of keyed state, so holding
-/// the resolved message would pin a permit until Python collected the dataclass
-/// — a scan longer than the semaphore would stall the loader on permits it is
-/// itself holding. Letting it drop when this read returns hands the permit
-/// back. The cost is that a message read out of keyed state cannot be stored
-/// again.
+/// Carries the resolved message as its [`MessageCore`], so a message read back
+/// out of a collection can be stored into another one and its consumer permit
+/// stays held for as long as Python holds the message.
 fn build_message(
     py: Python,
     env: &StateEnv,
     message: &ConsumerMessage<Value>,
 ) -> PyResult<Py<PyAny>> {
     let payload = pythonize(py, message.payload())?;
+    let core = Py::new(py, MessageCore::new(message.clone()))?;
     let object = env.0.message_class.bind(py).call1((
         message.topic().as_ref(),
         message.partition(),
@@ -275,6 +271,7 @@ fn build_message(
         *message.timestamp(),
         message.key().as_ref(),
         payload,
+        core,
     ))?;
     Ok(object.unbind())
 }

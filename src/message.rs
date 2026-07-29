@@ -3,8 +3,12 @@
 //! The Python `Message` is a frozen dataclass of plain values, so on its own it
 //! cannot serve a message-collection write: that write stores the message's
 //! Kafka coordinates, which live on core's [`ConsumerMessage`]. [`MessageCore`]
-//! carries that message along with the dataclass so the write uses the one the
-//! handler received.
+//! carries that message along with the dataclass, so every `Message` prosody
+//! hands to a handler holds the message it came from and can be written back.
+//!
+//! Holding it also keeps the message's consumer permit held. That permit is how
+//! the loader bounds how many messages are in memory at once, so it must stay
+//! held for as long as Python can still reach the message.
 //!
 //! Rebuilding a [`ConsumerMessage`] from the dataclass fields is not an option.
 //! Its constructor takes an `OwnedSemaphorePermit`, and that permit is how the
