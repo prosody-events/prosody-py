@@ -410,10 +410,6 @@ class PublishedDeque(Generic[T]):
     async def size(self, key: str) -> int:
         return await self._native.len(key)
 
-    async def length(self, key: str) -> int:
-        """Compatibility alias for :meth:`size`."""
-        return await self.size(key)
-
     async def is_empty(self, key: str) -> bool:
         return await self._native.is_empty(key)
 
