@@ -1184,4 +1184,4 @@ async for map_key, item in await items.items("user-1"):
     ...
 ```
 
-Maps also provide `get_many(key, map_keys)`. Deques provide `get(key, index)`, `length(key)`, and ordered async iteration. Set `read_cache=timedelta(...)` on the descriptor to override the inherited cache, or `read_cache=False` to read durable storage on every operation. To retire a publication, deploy the descriptor with `published=False` while retaining both its registration and `state_subsystem` for that deploy.
+Published maps provide the same read operations as owned maps: `get`, `get_many`, `contains`, `items`, `keys`, and `values`. Published deques likewise provide `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. Their extra first argument is the owner key. All iteration uses the same chunked cursor adapter as owned state. Set `read_cache=timedelta(...)` on the descriptor to override the inherited cache, or `read_cache=False` to read durable storage on every operation. To retire a publication, deploy the descriptor with `published=False` while retaining both its registration and `state_subsystem` for that deploy.

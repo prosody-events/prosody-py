@@ -337,10 +337,24 @@ class PublishedMap(Generic[V]):
     async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]:
         return await self._native.get_many(key, map_keys)
 
+    async def contains(self, key: str, map_key: str) -> bool:
+        return await self._native.contains_key(key, map_key)
+
     async def items(
         self, key: str, direction: Direction = Direction.FORWARD
     ) -> "_StateScan[tuple[str, V]]":
         return _StateScan(await self._native.scan(key, direction.value), _identity)
+
+    async def keys(
+        self, key: str, direction: Direction = Direction.FORWARD
+    ) -> "_StateScan[str]":
+        return _StateScan(await self._native.keys(key, direction.value), _identity)
+
+    async def values(self, key: str) -> "_StateScan[V]":
+        return _StateScan(
+            await self._native.scan(key, Direction.FORWARD.value),
+            lambda entry: entry[1],
+        )
 
 
 class PublishedDeque(Generic[T]):
@@ -352,8 +366,21 @@ class PublishedDeque(Generic[T]):
     async def get(self, key: str, index: int) -> Optional[T]:
         return await self._native.get(key, index)
 
+    async def size(self, key: str) -> int:
+        return await self._native.len(key)
+
     async def length(self, key: str) -> int:
-        return await self._native.length(key)
+        """Compatibility alias for :meth:`size`."""
+        return await self.size(key)
+
+    async def is_empty(self, key: str) -> bool:
+        return await self._native.is_empty(key)
+
+    async def peek(self, key: str) -> Optional[T]:
+        return await self._native.peek_back(key)
+
+    async def peekleft(self, key: str) -> Optional[T]:
+        return await self._native.peek_front(key)
 
     async def values(
         self, key: str, direction: Direction = Direction.FORWARD
@@ -372,15 +399,25 @@ class _PublishedMapNative(Protocol[V]):
         self, key: str, map_keys: List[str]
     ) -> List[Optional[V]]: ...
 
+    async def contains_key(self, key: str, map_key: str) -> bool: ...
+
     async def scan(
         self, key: str, direction: str
     ) -> "_NativeScan[tuple[str, V]]": ...
+
+    async def keys(self, key: str, direction: str) -> "_NativeScan[str]": ...
 
 
 class _PublishedDequeNative(Protocol[T]):
     async def get(self, key: str, index: int) -> Optional[T]: ...
 
-    async def length(self, key: str) -> int: ...
+    async def len(self, key: str) -> int: ...
+
+    async def is_empty(self, key: str) -> bool: ...
+
+    async def peek_front(self, key: str) -> Optional[T]: ...
+
+    async def peek_back(self, key: str) -> Optional[T]: ...
 
     async def scan(self, key: str, direction: str) -> "_NativeScan[T]": ...
 

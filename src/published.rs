@@ -1,6 +1,8 @@
 //! Python-native read-only views over published keyed state.
 
-use crate::state::{StateEnv, parse_direction, published_deque_scan, published_map_scan};
+use crate::state::{
+    StateEnv, parse_direction, published_deque_scan, published_map_key_scan, published_map_scan,
+};
 use prosody::JsonCodec;
 use prosody::high_level::erased::{
     ErasedDirection, SharedDequeReader, SharedMapReader, SharedValueReader,
@@ -79,6 +81,21 @@ impl PublishedMap {
         })
     }
 
+    fn contains_key<'p>(
+        &self,
+        py: Python<'p>,
+        key: String,
+        map_key: String,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        future_into_py(py, async move {
+            inner
+                .contains_key(key, map_key)
+                .await
+                .map_err(|error| runtime_error(&error))
+        })
+    }
+
     fn scan<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
         let direction = erased_direction(parse_direction(py, &self.env, direction)?);
         let inner = self.inner.clone();
@@ -89,6 +106,19 @@ impl PublishedMap {
                 .await
                 .map_err(|error| runtime_error(&error))?;
             Python::attach(|py| Ok(Py::new(py, published_map_scan(cursor, env))?.into_any()))
+        })
+    }
+
+    fn keys<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
+        let direction = erased_direction(parse_direction(py, &self.env, direction)?);
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            let cursor = inner
+                .keys(key, direction)
+                .await
+                .map_err(|error| runtime_error(&error))?;
+            Python::attach(|py| Ok(Py::new(py, published_map_key_scan(cursor, env))?.into_any()))
         })
     }
 }
@@ -113,10 +143,42 @@ impl PublishedDeque {
         })
     }
 
-    fn length<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+    fn len<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
         future_into_py(py, async move {
             inner.len(key).await.map_err(|error| runtime_error(&error))
+        })
+    }
+
+    fn is_empty<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        future_into_py(py, async move {
+            inner
+                .is_empty(key)
+                .await
+                .map_err(|error| runtime_error(&error))
+        })
+    }
+
+    fn peek_front<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        future_into_py(py, async move {
+            let value = inner
+                .peek_front(key)
+                .await
+                .map_err(|error| runtime_error(&error))?;
+            Python::attach(|py| Ok(pythonize(py, &value)?.unbind()))
+        })
+    }
+
+    fn peek_back<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        future_into_py(py, async move {
+            let value = inner
+                .peek_back(key)
+                .await
+                .map_err(|error| runtime_error(&error))?;
+            Python::attach(|py| Ok(pythonize(py, &value)?.unbind()))
         })
     }
 

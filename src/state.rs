@@ -1212,6 +1212,19 @@ pub(crate) fn published_map_scan(
     }
 }
 
+pub(crate) fn published_map_key_scan(
+    cursor: BoxStateCursor<String>,
+    env: StateEnv,
+) -> NativeStateScan {
+    NativeStateScan {
+        inner: Arc::new(Mutex::new(ScanState::MapKeys {
+            cursor,
+            retained: VecDeque::new(),
+        })),
+        env,
+    }
+}
+
 pub(crate) fn published_deque_scan(
     cursor: BoxStateCursor<Value>,
     env: StateEnv,

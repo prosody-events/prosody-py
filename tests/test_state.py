@@ -111,26 +111,68 @@ async def test_client_state_dispatches_by_definition_type(definition, method):
 @pytest.mark.asyncio
 async def test_published_scans_reuse_typed_state_scan_adapter():
     class NativeMap:
+        async def contains_key(self, key, map_key):
+            assert (key, map_key) == ("user-1", "a")
+            return True
+
         async def scan(self, key, direction):
             assert (key, direction) == ("user-1", "forward")
             return _StubScan([("a", 1), ("b", 2)])
 
+        async def keys(self, key, direction):
+            assert (key, direction) == ("user-1", "backward")
+            return _StubScan(["b", "a"])
+
     class NativeDeque:
+        async def len(self, key):
+            assert key == "user-1"
+            return 2
+
+        async def is_empty(self, key):
+            assert key == "user-1"
+            return False
+
+        async def peek_front(self, key):
+            assert key == "user-1"
+            return 1
+
+        async def peek_back(self, key):
+            assert key == "user-1"
+            return 2
+
         async def scan(self, key, direction):
             assert (key, direction) == ("user-1", "backward")
             return _StubScan([2, 1])
 
+    published_map = PublishedMap(NativeMap())
     items = [
         item
-        async for item in await PublishedMap(NativeMap()).items("user-1")
+        async for item in await published_map.items("user-1")
     ]
+    keys = [
+        key
+        async for key in await published_map.keys(
+            "user-1", Direction.BACKWARD
+        )
+    ]
+    map_values = [
+        value async for value in await published_map.values("user-1")
+    ]
+    published_deque = PublishedDeque(NativeDeque())
     values = [
         item
-        async for item in await PublishedDeque(NativeDeque()).values(
+        async for item in await published_deque.values(
             "user-1", Direction.BACKWARD
         )
     ]
     assert items == [("a", 1), ("b", 2)]
+    assert keys == ["b", "a"]
+    assert map_values == [1, 2]
+    assert await published_map.contains("user-1", "a")
+    assert await published_deque.size("user-1") == 2
+    assert not await published_deque.is_empty("user-1")
+    assert await published_deque.peekleft("user-1") == 1
+    assert await published_deque.peek("user-1") == 2
     assert values == [2, 1]
 
 
