@@ -175,6 +175,8 @@ def test_exports_present():
         "PermanentStateError",
         "TransientStateError",
         "NullValueError",
+        "flush_telemetry",
+        "shutdown_telemetry",
     ):
         assert hasattr(prosody, n), n
 

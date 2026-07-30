@@ -12,7 +12,12 @@ from prosody.errors import (
 )
 from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
 from prosody.message import Message as Message
-from prosody.prosody import AdminClient as AdminClient, ProsodyClient as ProsodyClient
+from prosody.prosody import (
+    AdminClient as AdminClient,
+    ProsodyClient as ProsodyClient,
+    flush_telemetry as flush_telemetry,
+    shutdown_telemetry as shutdown_telemetry,
+)
 from prosody.state import (
     DequeDefinition as DequeDefinition,
     DequeState as DequeState,
