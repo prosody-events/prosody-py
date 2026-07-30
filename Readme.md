@@ -1175,13 +1175,13 @@ cart = context.state(CART)
 Another service uses that descriptor with the client instead. Published readers observe committed state only:
 
 ```python
-carts = await client.state("carts", CART)
-cart = await carts.get("user-1")
+cart_reader = await client.state("carts", CART)
+cart = await cart_reader.get("user-1")
 
 ITEMS = map("items")
-items = await client.state("carts", ITEMS)
-async for map_key, item in await items.items("user-1"):
+item_reader = await client.state("carts", ITEMS)
+async for map_key, item in await item_reader.items("user-1"):
     ...
 ```
 
-Published maps provide the same read operations as owned maps: `get`, `get_many`, `contains`, `items`, `keys`, and `values`. Published deques likewise provide `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. Their extra first argument is the owner key. All iteration uses the same chunked cursor adapter as owned state. Set `read_cache=timedelta(...)` on the descriptor to override the inherited cache, or `read_cache=False` to read durable storage on every operation. To retire a publication, deploy the descriptor with `published=False` while retaining both its registration and `state_subsystem` for that deploy.
+Published maps provide the same read operations as owned maps: `get`, `get_many`, `contains`, `items`, `keys`, and `values`. Published deques likewise provide `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. An owned handle gets its state key from the current event; a published reader is outside a handler, so each operation receives that state key explicitly. All iteration uses the same chunked cursor adapter as owned state. Set `read_cache=timedelta(...)` on the descriptor to override the inherited cache, or `read_cache=False` to read durable storage on every operation. To retire a publication, deploy the descriptor with `published=False` while retaining both its registration and `state_subsystem` for that deploy.
