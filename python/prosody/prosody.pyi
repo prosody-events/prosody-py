@@ -5,7 +5,7 @@ This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
-from typing import Any, AsyncIterator, Generic, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
+from typing import AsyncIterator, Generic, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
 
 from prosody import EventHandler
 from prosody.state import (
@@ -21,14 +21,14 @@ P = TypeVar("P")
 T = TypeVar("T")
 V = TypeVar("V")
 
-# Any keyed-state collection definition accepted by ``state_collections``.
+# Every keyed-state collection definition accepted by ``state_collections``.
 StateDefinition: TypeAlias = Union[
-    ValueDefinition[Any],
-    MapDefinition[Any],
-    DequeDefinition[Any],
-    MessageValueDefinition[Any],
-    MessageMapDefinition[Any],
-    MessageDequeDefinition[Any],
+    ValueDefinition[object],
+    MapDefinition[object],
+    DequeDefinition[object],
+    MessageValueDefinition[object],
+    MessageMapDefinition[object],
+    MessageDequeDefinition[object],
 ]
 
 # Define a JSONValue type that represents all possible JSON-serializable values

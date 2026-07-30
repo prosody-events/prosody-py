@@ -25,6 +25,7 @@ from prosody.message import JSONValue, Message
 T = TypeVar("T", default=JSONValue)  # value / deque item type
 V = TypeVar("V", default=JSONValue)  # map value type
 P = TypeVar("P", default=JSONValue)  # message payload type
+D_co = TypeVar("D_co", covariant=True, default=JSONValue)
 D = TypeVar("D")  # get() default's own type, preserved in the return
 _Y = TypeVar("_Y")  # yielded item type of a scan
 
@@ -93,7 +94,7 @@ class PublishedDeque(Generic[T]):
     ) -> _StateScan[T]: ...
 
 
-class ValueDefinition(Generic[T]):
+class ValueDefinition(Generic[D_co]):
     """A single-value JSON collection definition.
 
     ``kind = "value"``, ``payload = "json"``. Vends :class:`ValueState` ``[T]``.
@@ -120,7 +121,7 @@ class ValueDefinition(Generic[T]):
         ...
 
 
-class MapDefinition(Generic[V]):
+class MapDefinition(Generic[D_co]):
     """An ordered-map JSON collection definition (string keys).
 
     ``kind = "map"``, ``payload = "json"``. Vends :class:`MapState` ``[V]``.
@@ -150,7 +151,7 @@ class MapDefinition(Generic[V]):
         ...
 
 
-class DequeDefinition(Generic[T]):
+class DequeDefinition(Generic[D_co]):
     """A double-ended-queue JSON collection definition.
 
     ``kind = "deque"``, ``payload = "json"``. Vends :class:`DequeState` ``[T]``.
@@ -180,7 +181,7 @@ class DequeDefinition(Generic[T]):
         ...
 
 
-class MessageValueDefinition(Generic[P]):
+class MessageValueDefinition(Generic[D_co]):
     """A single-value collection storing whole Kafka messages.
 
     ``kind = "value"``, ``payload = "message"``. Vends
@@ -204,7 +205,7 @@ class MessageValueDefinition(Generic[P]):
         ...
 
 
-class MessageMapDefinition(Generic[P]):
+class MessageMapDefinition(Generic[D_co]):
     """An ordered-map collection storing whole Kafka messages.
 
     ``kind = "map"``, ``payload = "message"``. Vends
@@ -230,7 +231,7 @@ class MessageMapDefinition(Generic[P]):
         ...
 
 
-class MessageDequeDefinition(Generic[P]):
+class MessageDequeDefinition(Generic[D_co]):
     """A double-ended-queue collection storing whole Kafka messages.
 
     ``kind = "deque"``, ``payload = "message"``. Vends
