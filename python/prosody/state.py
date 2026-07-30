@@ -18,9 +18,9 @@ native layer owns all of it.
 import enum
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Protocol, Union
+from typing import Any, Callable, ClassVar, Generic, List, Optional, Protocol, Union
 
-from typing_extensions import Literal, TypeVar
+from typing_extensions import Literal, TypedDict, TypeVar
 
 from prosody.message import JSONValue
 
@@ -52,18 +52,45 @@ def _ttl_seconds(ttl: Optional[Union[timedelta, int]]) -> Optional[int]:
     return int(ttl)
 
 
-def _config(defn: Any) -> Dict[str, Any]:
+ReadCache = Optional[Union[timedelta, float, Literal[False]]]
+
+
+class _StateConfig(TypedDict):
+    name: str
+    kind: str
+    payload: str
+    ttl_seconds: Optional[int]
+    read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
+    keyset_limit: Optional[int]
+    capacity: Optional[int]
+
+
+class _Definition(Protocol):
+    name: str
+    kind: str
+    payload: str
+    ttl: Optional[Union[timedelta, int]]
+    read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
+    keyset_limit: Optional[int]
+    capacity: Optional[int]
+
+
+def _config(definition: _Definition) -> _StateConfig:
     """Build the registration/vend config dict the client layer consumes."""
     return {
-        "name": defn.name,
-        "kind": defn.kind,
-        "payload": defn.payload,
-        "ttl_seconds": _ttl_seconds(defn.ttl),
-        "read_uncommitted": defn.read_uncommitted,
-        "published": getattr(defn, "published", None),
-        "read_cache": getattr(defn, "read_cache", None),
-        "keyset_limit": getattr(defn, "keyset_limit", None),
-        "capacity": getattr(defn, "capacity", None),
+        "name": definition.name,
+        "kind": definition.kind,
+        "payload": definition.payload,
+        "ttl_seconds": _ttl_seconds(definition.ttl),
+        "read_uncommitted": definition.read_uncommitted,
+        "published": definition.published,
+        "read_cache": definition.read_cache,
+        "keyset_limit": definition.keyset_limit,
+        "capacity": definition.capacity,
     }
 
 
@@ -75,11 +102,13 @@ class ValueDefinition(Generic[T]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     published: Optional[bool] = None
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None
+    read_cache: ReadCache = None
+    keyset_limit: ClassVar[Optional[int]] = None
+    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "value"
     payload: ClassVar[str] = "json"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -92,12 +121,13 @@ class MapDefinition(Generic[V]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     published: Optional[bool] = None
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None
+    read_cache: ReadCache = None
     keyset_limit: Optional[int] = None
+    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "map"
     payload: ClassVar[str] = "json"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -110,12 +140,13 @@ class DequeDefinition(Generic[T]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     published: Optional[bool] = None
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None
+    read_cache: ReadCache = None
     capacity: Optional[int] = None
+    keyset_limit: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "json"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -127,10 +158,14 @@ class MessageValueDefinition(Generic[P]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    published: ClassVar[Optional[bool]] = None
+    read_cache: ClassVar[ReadCache] = None
+    keyset_limit: ClassVar[Optional[int]] = None
+    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "value"
     payload: ClassVar[str] = "message"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -143,10 +178,13 @@ class MessageMapDefinition(Generic[P]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     keyset_limit: Optional[int] = None
+    published: ClassVar[Optional[bool]] = None
+    read_cache: ClassVar[ReadCache] = None
+    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "map"
     payload: ClassVar[str] = "message"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -159,10 +197,13 @@ class MessageDequeDefinition(Generic[P]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     capacity: Optional[int] = None
+    published: ClassVar[Optional[bool]] = None
+    read_cache: ClassVar[ReadCache] = None
+    keyset_limit: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "message"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 

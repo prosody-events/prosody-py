@@ -15,9 +15,9 @@ is future work. Map keys are always ``str``.
 
 import enum
 from datetime import timedelta
-from typing import Any, Dict, Generic, List, Optional, Tuple, Union, overload
+from typing import Generic, List, Optional, Tuple, Union, overload
 
-from typing_extensions import Literal, TypeVar
+from typing_extensions import Literal, TypedDict, TypeVar
 
 from prosody.message import JSONValue, Message
 
@@ -28,6 +28,19 @@ P = TypeVar("P", default=JSONValue)  # message payload type
 D_co = TypeVar("D_co", covariant=True, default=JSONValue)
 D = TypeVar("D")  # get() default's own type, preserved in the return
 _Y = TypeVar("_Y")  # yielded item type of a scan
+ReadCache = Optional[Union[timedelta, float, Literal[False]]]
+
+
+class _StateConfig(TypedDict):
+    name: str
+    kind: str
+    payload: str
+    ttl_seconds: Optional[int]
+    read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
+    keyset_limit: Optional[int]
+    capacity: Optional[int]
 
 
 class Direction(enum.Enum):
@@ -104,7 +117,7 @@ class ValueDefinition(Generic[D_co]):
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
-    read_cache: Optional[Union[timedelta, float, Literal[False]]]
+    read_cache: ReadCache
     kind: str
     payload: str
 
@@ -114,9 +127,9 @@ class ValueDefinition(Generic[D_co]):
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
         published: Optional[bool] = ...,
-        read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
+        read_cache: ReadCache = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
@@ -132,7 +145,7 @@ class MapDefinition(Generic[D_co]):
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
-    read_cache: Optional[Union[timedelta, float, Literal[False]]]
+    read_cache: ReadCache
     keyset_limit: Optional[int]
     kind: str
     payload: str
@@ -143,10 +156,10 @@ class MapDefinition(Generic[D_co]):
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
         published: Optional[bool] = ...,
-        read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
+        read_cache: ReadCache = ...,
         keyset_limit: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
@@ -162,7 +175,7 @@ class DequeDefinition(Generic[D_co]):
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
-    read_cache: Optional[Union[timedelta, float, Literal[False]]]
+    read_cache: ReadCache
     capacity: Optional[int]
     kind: str
     payload: str
@@ -173,10 +186,10 @@ class DequeDefinition(Generic[D_co]):
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
         published: Optional[bool] = ...,
-        read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
+        read_cache: ReadCache = ...,
         capacity: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
@@ -200,7 +213,7 @@ class MessageValueDefinition(Generic[D_co]):
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
@@ -226,7 +239,7 @@ class MessageMapDefinition(Generic[D_co]):
         read_uncommitted: Optional[bool] = ...,
         keyset_limit: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
@@ -252,7 +265,7 @@ class MessageDequeDefinition(Generic[D_co]):
         read_uncommitted: Optional[bool] = ...,
         capacity: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
