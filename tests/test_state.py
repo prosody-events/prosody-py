@@ -31,6 +31,7 @@ from prosody import (
     NullValueError,
     PermanentError,
     TransientError,
+    ProsodyClient,
 )
 
 
@@ -44,6 +45,8 @@ def test_value_to_config():
         "payload": "json",
         "ttl_seconds": None,
         "read_uncommitted": None,
+        "published": None,
+        "read_cache": None,
         "keyset_limit": None,
         "capacity": None,
     }
@@ -70,6 +73,37 @@ def test_deque_capacity_to_config():
 
 def test_read_uncommitted_passthrough():
     assert value("c", read_uncommitted=True).to_config()["read_uncommitted"] is True
+
+
+def test_publication_and_read_cache_share_the_descriptor():
+    definition = value("cart", published=True, read_cache=timedelta(seconds=2))
+    assert definition.to_config()["published"] is True
+    assert definition.read_cache == timedelta(seconds=2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("definition", "method"),
+    (
+        (value("value", read_cache=False), "_published_value"),
+        (map("map", read_cache=2.0), "_published_map"),
+        (deque("deque"), "_published_deque"),
+    ),
+)
+async def test_client_state_dispatches_by_definition_type(definition, method):
+    class StubClient:
+        def __getattr__(self, name):
+            async def open_state(*args, **kwargs):
+                return name, args, kwargs
+
+            return open_state
+
+    result = await ProsodyClient.state(StubClient(), "checkout", definition)
+    assert result == (
+        method,
+        ("checkout", definition.name),
+        {"read_cache": definition.read_cache},
+    )
 
 
 def test_kinds_and_payloads():

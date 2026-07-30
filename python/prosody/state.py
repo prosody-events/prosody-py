@@ -58,6 +58,8 @@ def _config(defn: Any) -> Dict[str, Any]:
         "payload": defn.payload,
         "ttl_seconds": _ttl_seconds(defn.ttl),
         "read_uncommitted": defn.read_uncommitted,
+        "published": getattr(defn, "published", None),
+        "read_cache": getattr(defn, "read_cache", None),
         "keyset_limit": getattr(defn, "keyset_limit", None),
         "capacity": getattr(defn, "capacity", None),
     }
@@ -70,6 +72,8 @@ class ValueDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    published: Optional[bool] = None
+    read_cache: Optional[Union[timedelta, float, bool]] = None
     kind: ClassVar[str] = "value"
     payload: ClassVar[str] = "json"
 
@@ -85,6 +89,8 @@ class MapDefinition(Generic[V]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    published: Optional[bool] = None
+    read_cache: Optional[Union[timedelta, float, bool]] = None
     keyset_limit: Optional[int] = None
     kind: ClassVar[str] = "map"
     payload: ClassVar[str] = "json"
@@ -101,6 +107,8 @@ class DequeDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    published: Optional[bool] = None
+    read_cache: Optional[Union[timedelta, float, bool]] = None
     capacity: Optional[int] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "json"
@@ -162,9 +170,17 @@ def value(
     *,
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
+    published: Optional[bool] = None,
+    read_cache: Optional[Union[timedelta, float, bool]] = None,
 ) -> ValueDefinition[T]:
     """Define a single-value JSON collection."""
-    return ValueDefinition(name, ttl=ttl, read_uncommitted=read_uncommitted)
+    return ValueDefinition(
+        name,
+        ttl=ttl,
+        read_uncommitted=read_uncommitted,
+        published=published,
+        read_cache=read_cache,
+    )
 
 
 def map(  # this module-local name mirrors the collection kind; no builtin use here
@@ -172,6 +188,8 @@ def map(  # this module-local name mirrors the collection kind; no builtin use h
     *,
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
+    published: Optional[bool] = None,
+    read_cache: Optional[Union[timedelta, float, bool]] = None,
     keyset_limit: Optional[int] = None,
 ) -> MapDefinition[V]:
     """Define an ordered-map JSON collection (string keys)."""
@@ -179,6 +197,8 @@ def map(  # this module-local name mirrors the collection kind; no builtin use h
         name,
         ttl=ttl,
         read_uncommitted=read_uncommitted,
+        published=published,
+        read_cache=read_cache,
         keyset_limit=keyset_limit,
     )
 
@@ -188,6 +208,8 @@ def deque(
     *,
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
+    published: Optional[bool] = None,
+    read_cache: Optional[Union[timedelta, float, bool]] = None,
     capacity: Optional[int] = None,
 ) -> DequeDefinition[T]:
     """Define a double-ended-queue JSON collection.
@@ -197,7 +219,12 @@ def deque(
     changed across deploys.
     """
     return DequeDefinition(
-        name, ttl=ttl, read_uncommitted=read_uncommitted, capacity=capacity
+        name,
+        ttl=ttl,
+        read_uncommitted=read_uncommitted,
+        published=published,
+        read_cache=read_cache,
+        capacity=capacity,
     )
 
 

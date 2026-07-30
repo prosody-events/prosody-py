@@ -20,7 +20,7 @@ futures = "0.3"
 mimalloc = { version = "0.1", features = ["local_dynamic_tls", "v2"] }
 opentelemetry = "0.32"
 # TODO: replace this Git revision with the published Prosody release once the backend change is released.
-prosody = { git = "https://github.com/prosody-events/prosody", rev = "83a2902ea3d5a79cd25f0f84d2ab27a94f9c4f1c", features = ["libz-static"] }
+prosody = { git = "https://github.com/prosody-events/prosody", rev = "f278ac70927a2dc470352e60a4c9fbcbba4747a2", features = ["libz-static"] }
 pyo3 = { version = "0.29", features = ["chrono"] }
 pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
 pythonize = "0.29"

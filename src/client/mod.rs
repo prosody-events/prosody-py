@@ -7,15 +7,16 @@
 
 use opentelemetry::propagation::TextMapPropagator;
 use prosody::JsonCodec;
-use prosody::high_level::erased::{ErasedConsumerState, SharedHighLevelClient};
-use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
+use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache, SharedHighLevelClient};
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::process;
+use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
 use tracing::{Instrument, debug, info_span};
@@ -24,6 +25,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 use crate::client::config::try_build_config;
 use crate::client::format::format_list;
 use crate::handler::PythonHandler;
+use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
 
 mod config;
 mod format;
@@ -33,7 +35,7 @@ mod format;
 /// This client provides methods for sending messages to Kafka topics and
 /// subscribing to topics for message consumption. It supports different
 /// operational modes and configuration options.
-#[pyclass]
+#[pyclass(subclass, name = "_NativeProsodyClient")]
 pub struct ProsodyClient {
     client: SharedHighLevelClient<PythonHandler, JsonCodec>,
     get_context: Py<PyAny>,
@@ -133,6 +135,69 @@ impl ProsodyClient {
                 )));
             }
             Ok(consumer_state_name(&state))
+        })
+    }
+
+    /// Opens a read-only published value collection.
+    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
+    fn _published_value<'p>(
+        &self,
+        py: Python<'p>,
+        subsystem: String,
+        name: String,
+        read_cache: Option<&Bound<'p, PyAny>>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let cache = parse_read_cache(read_cache)?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            let inner = client
+                .value_state(subsystem, name, cache)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| Ok(Py::new(py, PublishedValue { inner })?.into_any()))
+        })
+    }
+
+    /// Opens a read-only published map collection.
+    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
+    fn _published_map<'p>(
+        &self,
+        py: Python<'p>,
+        subsystem: String,
+        name: String,
+        read_cache: Option<&Bound<'p, PyAny>>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let cache = parse_read_cache(read_cache)?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            let inner = client
+                .map_state(subsystem, name, cache)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| Ok(Py::new(py, PublishedMap { inner })?.into_any()))
+        })
+    }
+
+    /// Opens a read-only published deque collection.
+    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
+    fn _published_deque<'p>(
+        &self,
+        py: Python<'p>,
+        subsystem: String,
+        name: String,
+        read_cache: Option<&Bound<'p, PyAny>>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let cache = parse_read_cache(read_cache)?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            let inner = client
+                .deque_state(subsystem, name, cache)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner })?.into_any()))
         })
     }
 
@@ -313,6 +378,34 @@ impl ProsodyClient {
 
         Ok(())
     }
+}
+
+fn parse_read_cache(value: Option<&Bound<'_, PyAny>>) -> PyResult<ErasedReadCache> {
+    let Some(value) = value else {
+        return Ok(ErasedReadCache::Inherit);
+    };
+    if value.is_instance_of::<PyBool>() {
+        return if value.extract::<bool>()? {
+            Err(PyValueError::new_err(
+                "read_cache=True is ambiguous; pass a duration, False, or None",
+            ))
+        } else {
+            Ok(ErasedReadCache::Disabled)
+        };
+    }
+    let seconds = if let Ok(seconds) = value.extract::<f64>() {
+        seconds
+    } else if let Ok(total_seconds) = value.getattr("total_seconds") {
+        total_seconds.call0()?.extract::<f64>()?
+    } else {
+        return Err(PyTypeError::new_err(
+            "read_cache must be seconds, timedelta, False, or None",
+        ));
+    };
+    if !seconds.is_finite() || seconds <= 0.0_f64 {
+        return Err(PyValueError::new_err("read_cache must be positive"));
+    }
+    Ok(ErasedReadCache::Ttl(Duration::from_secs_f64(seconds)))
 }
 
 #[allow(clippy::multiple_inherent_impl)]

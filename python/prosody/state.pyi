@@ -17,7 +17,7 @@ import enum
 from datetime import timedelta
 from typing import Any, Dict, Generic, List, Optional, Tuple, Union, overload
 
-from typing_extensions import TypeVar
+from typing_extensions import Literal, TypeVar
 
 from prosody.message import JSONValue, Message
 
@@ -76,6 +76,8 @@ class ValueDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: Optional[Union[timedelta, float, Literal[False]]]
     kind: str
     payload: str
 
@@ -84,6 +86,8 @@ class ValueDefinition(Generic[T]):
         name: str,
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
+        published: Optional[bool] = ...,
+        read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
     ) -> None: ...
     def to_config(self) -> Dict[str, Any]:
         """Return the config dict passed to the client and to ``state()``."""
@@ -100,6 +104,8 @@ class MapDefinition(Generic[V]):
     name: str
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: Optional[Union[timedelta, float, Literal[False]]]
     keyset_limit: Optional[int]
     kind: str
     payload: str
@@ -109,6 +115,8 @@ class MapDefinition(Generic[V]):
         name: str,
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
+        published: Optional[bool] = ...,
+        read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
         keyset_limit: Optional[int] = ...,
     ) -> None: ...
     def to_config(self) -> Dict[str, Any]:
@@ -126,6 +134,8 @@ class DequeDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: Optional[Union[timedelta, float, Literal[False]]]
     capacity: Optional[int]
     kind: str
     payload: str
@@ -135,6 +145,8 @@ class DequeDefinition(Generic[T]):
         name: str,
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
+        published: Optional[bool] = ...,
+        read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
         capacity: Optional[int] = ...,
     ) -> None: ...
     def to_config(self) -> Dict[str, Any]:
@@ -223,6 +235,8 @@ def value(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
+    published: Optional[bool] = ...,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
 ) -> ValueDefinition[T]:
     """Define a single-value JSON collection (vends :class:`ValueState` ``[T]``).
 
@@ -238,6 +252,8 @@ def map(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
+    published: Optional[bool] = ...,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
     keyset_limit: Optional[int] = ...,
 ) -> MapDefinition[V]:
     """Define an ordered-map JSON collection (vends :class:`MapState` ``[V]``).
@@ -253,6 +269,8 @@ def deque(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
+    published: Optional[bool] = ...,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
     capacity: Optional[int] = ...,
 ) -> DequeDefinition[T]:
     """Define a double-ended-queue JSON collection (vends :class:`DequeState` ``[T]``).

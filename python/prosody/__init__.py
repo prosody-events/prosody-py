@@ -1,6 +1,12 @@
 import logging
 
-from prosody.prosody import ProsodyClient, AdminClient
+from prosody.prosody import (
+    _NativeProsodyClient,
+    AdminClient,
+    PublishedDeque,
+    PublishedMap,
+    PublishedValue,
+)
 
 from prosody.context import Context
 from prosody.errors import (
@@ -35,5 +41,28 @@ from prosody.state import (
     DequeState,
 )
 from prosody.timer import Timer
+
+
+class ProsodyClient(_NativeProsodyClient):
+    """Prosody client with typed published-state composition."""
+
+    async def state(self, subsystem, definition):
+        """Open a read-only view of a published JSON collection."""
+        if isinstance(definition, ValueDefinition):
+            return await self._published_value(
+                subsystem, definition.name, read_cache=definition.read_cache
+            )
+        if isinstance(definition, MapDefinition):
+            return await self._published_map(
+                subsystem, definition.name, read_cache=definition.read_cache
+            )
+        if isinstance(definition, DequeDefinition):
+            return await self._published_deque(
+                subsystem, definition.name, read_cache=definition.read_cache
+            )
+        raise TypeError(
+            "definition must be a JSON ValueDefinition, MapDefinition, or "
+            "DequeDefinition"
+        )
 
 logging.getLogger('prosody.consumer.poll').setLevel(logging.ERROR)

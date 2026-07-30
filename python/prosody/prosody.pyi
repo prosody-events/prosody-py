@@ -5,7 +5,7 @@ This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
-from typing import Any, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
+from typing import Any, AsyncIterator, Generic, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
 
 from prosody import EventHandler
 from prosody.state import (
@@ -18,6 +18,8 @@ from prosody.state import (
 )
 
 P = TypeVar("P")
+T = TypeVar("T")
+V = TypeVar("V")
 
 # Any keyed-state collection definition accepted by ``state_collections``.
 StateDefinition: TypeAlias = Union[
@@ -47,7 +49,23 @@ Duration: TypeAlias = Union[float, timedelta]
 StringOrList: TypeAlias = Union[str, List[str]]
 
 
-class ProsodyClient:
+class PublishedValue(Generic[T]):
+    async def get(self, key: str) -> Optional[T]: ...
+
+
+class PublishedMap(Generic[V]):
+    async def get(self, key: str, map_key: str) -> Optional[V]: ...
+    async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]: ...
+    async def scan(self, key: str, *, backward: bool = False) -> AsyncIterator[tuple[str, V]]: ...
+
+
+class PublishedDeque(Generic[T]):
+    async def get(self, key: str, index: int) -> Optional[T]: ...
+    async def length(self, key: str) -> int: ...
+    async def scan(self, key: str, *, backward: bool = False) -> AsyncIterator[T]: ...
+
+
+class _NativeProsodyClient:
     """
     A client for interacting with Kafka using the Prosody library.
 
@@ -121,6 +139,7 @@ class ProsodyClient:
             state_cache_dir: Optional[str] = None,
             state_cache_size_bytes: Optional[int] = None,
             state_recovery_delay: Optional[Duration] = None,
+            state_subsystem: Optional[str] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.
@@ -210,6 +229,16 @@ class ProsodyClient:
             Literal['unconfigured', 'configured', 'running']: The current state.
         """
         ...
+
+    async def _published_value(
+        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
+    ) -> PublishedValue[Any]: ...
+    async def _published_map(
+        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
+    ) -> PublishedMap[Any]: ...
+    async def _published_deque(
+        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
+    ) -> PublishedDeque[Any]: ...
 
     async def subscribe(self, handler: EventHandler[P]) -> None:
         """

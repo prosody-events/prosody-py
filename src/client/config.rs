@@ -29,6 +29,7 @@ use prosody::state::descriptor::{
     DequeDescriptor, MapDescriptor, StateDescriptor, deque_state, map_state, value_state,
 };
 use prosody::state::order_codec::Utf8KeyCodec;
+use prosody::subsystem::SubsystemName;
 use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
 use prosody::timers::duration::CompactDuration;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -734,6 +735,7 @@ fn with_def<D: StateDescriptor>(
     descriptor: D,
     ttl_seconds: Option<u32>,
     read_uncommitted: Option<bool>,
+    published: Option<bool>,
 ) -> D {
     let mut descriptor = descriptor;
     if let Some(ttl) = ttl_seconds {
@@ -741,6 +743,9 @@ fn with_def<D: StateDescriptor>(
     }
     if read_uncommitted == Some(true) {
         descriptor = descriptor.read_uncommitted();
+    }
+    if let Some(published) = published {
+        descriptor = descriptor.published(published);
     }
     descriptor
 }
@@ -902,6 +907,12 @@ fn register_state_collection(
     let capacity = parse_capacity(cfg, index, &kind)?;
 
     let read_uncommitted = optional_bool(cfg, "read_uncommitted")?;
+    let published = optional_bool(cfg, "published")?;
+    if published == Some(true) && matches!(payload, CollectionPayload::Message) {
+        return Err(PyValueError::new_err(format!(
+            "state_collections[{index}].published: published readers support JSON collections only"
+        )));
+    }
     let name = name.as_str();
     match (kind, payload) {
         (CollectionKind::Value, CollectionPayload::Json) => {
@@ -909,6 +920,7 @@ fn register_state_collection(
                 value_state::<JsonCodec>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             ));
         }
         (CollectionKind::Map, CollectionPayload::Json) => {
@@ -916,6 +928,7 @@ fn register_state_collection(
                 map_state::<Utf8KeyCodec, JsonCodec>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             );
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
         }
@@ -924,6 +937,7 @@ fn register_state_collection(
                 deque_state::<JsonCodec>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             );
             let _ = keyed.register(with_capacity(descriptor, capacity));
         }
@@ -932,6 +946,7 @@ fn register_state_collection(
                 message_state::<KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             ));
         }
         (CollectionKind::Map, CollectionPayload::Message) => {
@@ -939,6 +954,7 @@ fn register_state_collection(
                 message_map_state::<Utf8KeyCodec, KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             );
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
         }
@@ -947,6 +963,7 @@ fn register_state_collection(
                 message_deque_state::<KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             );
             let _ = keyed.register(with_capacity(descriptor, capacity));
         }
@@ -999,6 +1016,16 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
             ));
         }
         builder.recovery_delay(CompactDuration::new(seconds));
+    }
+
+    if let Some(subsystem) = config.get_item("state_subsystem")?
+        && !subsystem.is_none()
+    {
+        let subsystem: String = subsystem.extract()?;
+        builder.subsystem(Some(
+            SubsystemName::try_new(subsystem)
+                .map_err(|error| PyValueError::new_err(error.to_string()))?,
+        ));
     }
 
     if let Some(bytes) = config.get_item("state_cache_size_bytes")?

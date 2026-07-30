@@ -282,6 +282,7 @@ Register keyed-state collections before you subscribe. Persistence is backed by 
 | `state_cache_dir` / `PROSODY_STATE_CACHE_DIR`                | Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively)                                                    | per-client temp dir |
 | `state_cache_size_bytes` / `PROSODY_STATE_CACHE_SIZE_BYTES`  | Capacity of the in-memory keyed-state cache, in bytes; must be greater than 0. One cache is shared by all partition keyspaces                                            | engine default      |
 | `state_recovery_delay` / `PROSODY_STATE_RECOVERY_DELAY` | Delay before the recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (`timedelta` or float seconds; the env var accepts a duration string like `30s`) | 30s                 |
+| `state_subsystem` / - | Subsystem name used to advertise descriptors declared with `published=True` | (none) |
 
 Each `state_collections` entry has these fields. Prefer the definition constructors (`value` / `map` / `deque` and their `message_*` variants, documented below): they serialize into `state_collections` so you declare each collection once and reuse the same object with `context.state()`.
 
@@ -1153,3 +1154,32 @@ Errors:
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Published state
+
+The same descriptor binds owned state in a handler and opens read-only published state from a client. The owner opts in on the descriptor and configures its subsystem:
+
+```python
+CART = value("cart", published=True)
+owner = ProsodyClient(
+    **config,
+    state_subsystem="carts",
+    state_collections=[CART],
+)
+
+# In the owner's handler:
+cart = context.state(CART)
+```
+
+Another service uses that descriptor with the client instead. Published readers observe committed state only:
+
+```python
+carts = await client.state("carts", CART)
+cart = await carts.get("user-1")
+
+ITEMS = map("items")
+items = await client.state("carts", ITEMS)
+async for map_key, item in await items.scan("user-1"):
+    ...
+```
+
+Maps also provide `get_many(key, map_keys)`. Deques provide `get(key, index)`, `length(key)`, and ordered async iteration. Set `read_cache=timedelta(...)` on the descriptor to override the inherited cache, or `read_cache=False` to read durable storage on every operation. To retire a publication, deploy the descriptor with `published=False` while retaining both its registration and `state_subsystem` for that deploy.
