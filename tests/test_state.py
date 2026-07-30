@@ -32,6 +32,8 @@ from prosody import (
     PermanentError,
     TransientError,
     ProsodyClient,
+    PublishedMap,
+    PublishedDeque,
 )
 
 
@@ -99,11 +101,37 @@ async def test_client_state_dispatches_by_definition_type(definition, method):
             return open_state
 
     result = await ProsodyClient.state(StubClient(), "checkout", definition)
-    assert result == (
+    assert result._native == (
         method,
         ("checkout", definition.name),
         {"read_cache": definition.read_cache},
     )
+
+
+@pytest.mark.asyncio
+async def test_published_scans_reuse_typed_state_scan_adapter():
+    class NativeMap:
+        async def scan(self, key, direction):
+            assert (key, direction) == ("user-1", "forward")
+            return _StubScan([("a", 1), ("b", 2)])
+
+    class NativeDeque:
+        async def scan(self, key, direction):
+            assert (key, direction) == ("user-1", "backward")
+            return _StubScan([2, 1])
+
+    items = [
+        item
+        async for item in await PublishedMap(NativeMap()).items("user-1")
+    ]
+    values = [
+        item
+        async for item in await PublishedDeque(NativeDeque()).values(
+            "user-1", Direction.BACKWARD
+        )
+    ]
+    assert items == [("a", 1), ("b", 2)]
+    assert values == [2, 1]
 
 
 def test_kinds_and_payloads():

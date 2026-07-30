@@ -3,9 +3,6 @@ import logging
 from prosody.prosody import (
     _NativeProsodyClient,
     AdminClient,
-    PublishedDeque,
-    PublishedMap,
-    PublishedValue,
 )
 
 from prosody.context import Context
@@ -39,6 +36,9 @@ from prosody.state import (
     ValueState,
     MapState,
     DequeState,
+    PublishedValue,
+    PublishedMap,
+    PublishedDeque,
 )
 from prosody.timer import Timer
 
@@ -49,16 +49,22 @@ class ProsodyClient(_NativeProsodyClient):
     async def state(self, subsystem, definition):
         """Open a read-only view of a published JSON collection."""
         if isinstance(definition, ValueDefinition):
-            return await self._published_value(
-                subsystem, definition.name, read_cache=definition.read_cache
+            return PublishedValue(
+                await self._published_value(
+                    subsystem, definition.name, read_cache=definition.read_cache
+                )
             )
         if isinstance(definition, MapDefinition):
-            return await self._published_map(
-                subsystem, definition.name, read_cache=definition.read_cache
+            return PublishedMap(
+                await self._published_map(
+                    subsystem, definition.name, read_cache=definition.read_cache
+                )
             )
         if isinstance(definition, DequeDefinition):
-            return await self._published_deque(
-                subsystem, definition.name, read_cache=definition.read_cache
+            return PublishedDeque(
+                await self._published_deque(
+                    subsystem, definition.name, read_cache=definition.read_cache
+                )
             )
         raise TypeError(
             "definition must be a JSON ValueDefinition, MapDefinition, or "

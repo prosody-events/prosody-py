@@ -1,30 +1,30 @@
 //! Python-native read-only views over published keyed state.
 
+use crate::state::{StateEnv, parse_direction, published_deque_scan, published_map_scan};
 use prosody::JsonCodec;
 use prosody::high_level::erased::{
-    ErasedDirection, SharedDequeReader, SharedMapReader, SharedStateStream, SharedValueReader,
+    ErasedDirection, SharedDequeReader, SharedMapReader, SharedValueReader,
 };
+use prosody::state::Direction;
 use prosody::state_reader::StateReaderError;
-use pyo3::exceptions::{PyRuntimeError, PyStopAsyncIteration};
-use pyo3::{Bound, Py, PyAny, PyRef, PyResult, Python, pyclass, pymethods};
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::pythonize;
-use serde_json::Value;
 
 fn runtime_error(error: &StateReaderError) -> pyo3::PyErr {
     PyRuntimeError::new_err(error.to_string())
 }
 
-fn direction(backward: bool) -> ErasedDirection {
-    if backward {
-        ErasedDirection::Backward
-    } else {
-        ErasedDirection::Forward
+fn erased_direction(direction: Direction) -> ErasedDirection {
+    match direction {
+        Direction::Forward => ErasedDirection::Forward,
+        Direction::Backward => ErasedDirection::Backward,
     }
 }
 
 /// A read-only published value collection.
-#[pyclass]
+#[pyclass(name = "_NativePublishedValue")]
 pub struct PublishedValue {
     pub(crate) inner: SharedValueReader<JsonCodec>,
 }
@@ -44,9 +44,10 @@ impl PublishedValue {
 }
 
 /// A read-only published map collection.
-#[pyclass]
+#[pyclass(name = "_NativePublishedMap")]
 pub struct PublishedMap {
     pub(crate) inner: SharedMapReader<JsonCodec>,
+    pub(crate) env: StateEnv,
 }
 
 #[pymethods]
@@ -78,47 +79,25 @@ impl PublishedMap {
         })
     }
 
-    #[pyo3(signature = (key, *, backward = false))]
-    fn scan<'p>(&self, py: Python<'p>, key: String, backward: bool) -> PyResult<Bound<'p, PyAny>> {
+    fn scan<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
+        let direction = erased_direction(parse_direction(py, &self.env, direction)?);
         let inner = self.inner.clone();
+        let env = self.env.clone();
         future_into_py(py, async move {
-            let stream = inner
-                .stream(key, direction(backward))
+            let cursor = inner
+                .stream(key, direction)
                 .await
                 .map_err(|error| runtime_error(&error))?;
-            Python::attach(|py| Ok(Py::new(py, PyPublishedMapScan { inner: stream })?.into_any()))
-        })
-    }
-}
-
-/// Async iterator over published map entries.
-#[pyclass(name = "_PublishedMapScan")]
-pub struct PyPublishedMapScan {
-    inner: SharedStateStream<(String, Value)>,
-}
-
-#[pymethods]
-impl PyPublishedMapScan {
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let inner = self.inner.clone();
-        future_into_py(py, async move {
-            let Some(item) = inner.next().await else {
-                return Err(PyStopAsyncIteration::new_err(()));
-            };
-            let item = item.map_err(|error| runtime_error(&error))?;
-            Python::attach(|py| Ok(pythonize(py, &item)?.unbind()))
+            Python::attach(|py| Ok(Py::new(py, published_map_scan(cursor, env))?.into_any()))
         })
     }
 }
 
 /// A read-only published deque collection.
-#[pyclass]
+#[pyclass(name = "_NativePublishedDeque")]
 pub struct PublishedDeque {
     pub(crate) inner: SharedDequeReader<JsonCodec>,
+    pub(crate) env: StateEnv,
 }
 
 #[pymethods]
@@ -141,39 +120,16 @@ impl PublishedDeque {
         })
     }
 
-    #[pyo3(signature = (key, *, backward = false))]
-    fn scan<'p>(&self, py: Python<'p>, key: String, backward: bool) -> PyResult<Bound<'p, PyAny>> {
+    fn scan<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
+        let direction = erased_direction(parse_direction(py, &self.env, direction)?);
         let inner = self.inner.clone();
+        let env = self.env.clone();
         future_into_py(py, async move {
-            let stream = inner
-                .stream(key, direction(backward))
+            let cursor = inner
+                .stream(key, direction)
                 .await
                 .map_err(|error| runtime_error(&error))?;
-            Python::attach(|py| Ok(Py::new(py, PyPublishedDequeScan { inner: stream })?.into_any()))
-        })
-    }
-}
-
-/// Async iterator over published deque elements.
-#[pyclass(name = "_PublishedDequeScan")]
-pub struct PyPublishedDequeScan {
-    inner: SharedStateStream<Value>,
-}
-
-#[pymethods]
-impl PyPublishedDequeScan {
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let inner = self.inner.clone();
-        future_into_py(py, async move {
-            let Some(item) = inner.next().await else {
-                return Err(PyStopAsyncIteration::new_err(()));
-            };
-            let item = item.map_err(|error| runtime_error(&error))?;
-            Python::attach(|py| Ok(pythonize(py, &item)?.unbind()))
+            Python::attach(|py| Ok(Py::new(py, published_deque_scan(cursor, env))?.into_any()))
         })
     }
 }

@@ -18,7 +18,7 @@ native layer owns all of it.
 import enum
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, ClassVar, Dict, Generic, List, Optional, Union
+from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Protocol, Union
 
 from typing_extensions import TypeVar
 
@@ -28,6 +28,8 @@ from prosody.message import JSONValue
 T = TypeVar("T", default=JSONValue)  # value / deque item type
 V = TypeVar("V", default=JSONValue)  # map value type
 P = TypeVar("P", default=JSONValue)  # message payload type
+X = TypeVar("X")
+Y = TypeVar("Y")
 
 
 class Direction(enum.Enum):
@@ -272,11 +274,16 @@ def message_deque(
     )
 
 
-def _identity(item: Any) -> Any:
+def _identity(item: X) -> X:
     return item
 
 
-class _StateScan:
+class _NativeScan(Protocol[X]):
+    async def __anext__(self) -> X: ...
+    async def aclose(self) -> None: ...
+
+
+class _StateScan(Generic[Y]):
     """Async iterator over a native scan cursor, applying a per-flavour transform.
 
     The native cursor already handles retained-chunk flattening, serialization,
@@ -290,20 +297,92 @@ class _StateScan:
     a deterministic early close use ``contextlib.aclosing(...)``.
     """
 
-    def __init__(self, native: Any, transform: Any) -> None:
+    def __init__(
+        self, native: _NativeScan[X], transform: Callable[[X], Y]
+    ) -> None:
         self._native = native
         self._transform = transform
 
-    def __aiter__(self) -> "_StateScan":
+    def __aiter__(self) -> "_StateScan[Y]":
         return self
 
-    async def __anext__(self) -> Any:
+    async def __anext__(self) -> Y:
         # Re-raises the native StopAsyncIteration at exhaustion (never coerced
         # by PEP 479 since it crosses no generator boundary here).
         return self._transform(await self._native.__anext__())
 
     async def aclose(self) -> None:
         await self._native.aclose()
+
+
+class PublishedValue(Generic[T]):
+    """Read-only access to a published value collection."""
+
+    def __init__(self, native: "_PublishedValueNative[T]") -> None:
+        self._native = native
+
+    async def get(self, key: str) -> Optional[T]:
+        return await self._native.get(key)
+
+
+class PublishedMap(Generic[V]):
+    """Read-only access to a published ordered-map collection."""
+
+    def __init__(self, native: "_PublishedMapNative[V]") -> None:
+        self._native = native
+
+    async def get(self, key: str, map_key: str) -> Optional[V]:
+        return await self._native.get(key, map_key)
+
+    async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]:
+        return await self._native.get_many(key, map_keys)
+
+    async def items(
+        self, key: str, direction: Direction = Direction.FORWARD
+    ) -> _StateScan:
+        return _StateScan(await self._native.scan(key, direction.value), _identity)
+
+
+class PublishedDeque(Generic[T]):
+    """Read-only access to a published deque collection."""
+
+    def __init__(self, native: "_PublishedDequeNative[T]") -> None:
+        self._native = native
+
+    async def get(self, key: str, index: int) -> Optional[T]:
+        return await self._native.get(key, index)
+
+    async def length(self, key: str) -> int:
+        return await self._native.length(key)
+
+    async def values(
+        self, key: str, direction: Direction = Direction.FORWARD
+    ) -> _StateScan:
+        return _StateScan(await self._native.scan(key, direction.value), _identity)
+
+
+class _PublishedValueNative(Protocol[T]):
+    async def get(self, key: str) -> Optional[T]: ...
+
+
+class _PublishedMapNative(Protocol[V]):
+    async def get(self, key: str, map_key: str) -> Optional[V]: ...
+
+    async def get_many(
+        self, key: str, map_keys: List[str]
+    ) -> List[Optional[V]]: ...
+
+    async def scan(
+        self, key: str, direction: str
+    ) -> "_NativeScan[tuple[str, V]]": ...
+
+
+class _PublishedDequeNative(Protocol[T]):
+    async def get(self, key: str, index: int) -> Optional[T]: ...
+
+    async def length(self, key: str) -> int: ...
+
+    async def scan(self, key: str, direction: str) -> "_NativeScan[T]": ...
 
 
 class ValueState(Generic[T]):

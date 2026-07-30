@@ -16,9 +16,6 @@ from typing import TypeVar, overload
 
 from prosody.prosody import (
     AdminClient as AdminClient,
-    PublishedDeque as PublishedDeque,
-    PublishedMap as PublishedMap,
-    PublishedValue as PublishedValue,
     _NativeProsodyClient,
 )
 from prosody.state import (
@@ -32,6 +29,9 @@ from prosody.state import (
     MessageValueDefinition as MessageValueDefinition,
     ValueDefinition as ValueDefinition,
     ValueState as ValueState,
+    PublishedValue as PublishedValue,
+    PublishedMap as PublishedMap,
+    PublishedDeque as PublishedDeque,
     deque as deque,
     map as map,
     message_deque as message_deque,

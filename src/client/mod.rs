@@ -8,6 +8,7 @@
 use opentelemetry::propagation::TextMapPropagator;
 use prosody::JsonCodec;
 use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache, SharedHighLevelClient};
+use prosody::propagator::new_propagator;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
@@ -16,6 +17,7 @@ use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::process;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
@@ -26,6 +28,7 @@ use crate::client::config::try_build_config;
 use crate::client::format::format_list;
 use crate::handler::PythonHandler;
 use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
+use crate::state::StateEnv;
 
 mod config;
 mod format;
@@ -170,13 +173,14 @@ impl ProsodyClient {
     ) -> PyResult<Bound<'p, PyAny>> {
         self.check_fork()?;
         let cache = parse_read_cache(read_cache)?;
+        let env = self.published_env(py)?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
                 .map_state(subsystem, name, cache)
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedMap { inner })?.into_any()))
+            Python::attach(|py| Ok(Py::new(py, PublishedMap { inner, env })?.into_any()))
         })
     }
 
@@ -191,13 +195,14 @@ impl ProsodyClient {
     ) -> PyResult<Bound<'p, PyAny>> {
         self.check_fork()?;
         let cache = parse_read_cache(read_cache)?;
+        let env = self.published_env(py)?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
                 .deque_state(subsystem, name, cache)
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner })?.into_any()))
+            Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner, env })?.into_any()))
         })
     }
 
@@ -410,6 +415,17 @@ fn parse_read_cache(value: Option<&Bound<'_, PyAny>>) -> PyResult<ErasedReadCach
 
 #[allow(clippy::multiple_inherent_impl)]
 impl ProsodyClient {
+    fn published_env(&self, py: Python) -> PyResult<StateEnv> {
+        let message_class = py.import("prosody")?.getattr("Message")?.unbind();
+        StateEnv::resolve(
+            py,
+            &self.get_context,
+            &self.inject,
+            Arc::new(new_propagator()),
+            &message_class,
+        )
+    }
+
     fn check_fork(&self) -> PyResult<()> {
         if process::id() != self.pid {
             return Err(PyRuntimeError::new_err(

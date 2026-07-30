@@ -1178,7 +1178,7 @@ cart = await carts.get("user-1")
 
 ITEMS = map("items")
 items = await client.state("carts", ITEMS)
-async for map_key, item in await items.scan("user-1"):
+async for map_key, item in await items.items("user-1"):
     ...
 ```
 

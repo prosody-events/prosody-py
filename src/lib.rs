@@ -13,9 +13,7 @@ use crate::admin::AdminClient;
 use crate::client::ProsodyClient;
 use crate::context::Context;
 use crate::logging::PythonLoggingLayer;
-use crate::published::{
-    PublishedDeque, PublishedMap, PublishedValue, PyPublishedDequeScan, PyPublishedMapScan,
-};
+use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
 use crate::state::{NativeDequeState, NativeMapState, NativeStateScan, NativeValueState};
 use ::prosody::tracing::{
     flush_telemetry as core_flush_telemetry, initialize_tracing,
@@ -84,8 +82,6 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     prosody_module.add_class::<PublishedValue>()?;
     prosody_module.add_class::<PublishedMap>()?;
     prosody_module.add_class::<PublishedDeque>()?;
-    prosody_module.add_class::<PyPublishedMapScan>()?;
-    prosody_module.add_class::<PyPublishedDequeScan>()?;
 
     prosody_module.add_function(wrap_pyfunction!(flush_telemetry, prosody_module)?)?;
     let shutdown = wrap_pyfunction!(shutdown_telemetry, prosody_module)?;
