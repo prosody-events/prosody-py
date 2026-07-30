@@ -19,8 +19,9 @@ use prosody::consumer::middleware::retry::RetryConfigurationBuilder;
 use prosody::consumer::middleware::scheduler::SchedulerConfigurationBuilder;
 use prosody::consumer::middleware::timeout::TimeoutConfigurationBuilder;
 use prosody::consumer::middleware::topic::FailureTopicConfigurationBuilder;
+use prosody::high_level::ConsumerBuilders;
+use prosody::high_level::erased::new_erased;
 use prosody::high_level::mode::{Mode, ModeError};
-use prosody::high_level::{ConsumerBuilders, HighLevelClient};
 use prosody::loader::KafkaLoader;
 use prosody::loader::KafkaLoaderConfiguration;
 use prosody::producer::ProducerConfigurationBuilder;
@@ -38,7 +39,6 @@ use std::collections::HashSet;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::process;
-use std::sync::Arc;
 
 /// The Cassandra TTL ceiling in seconds (`630_720_000`, twenty years). Core
 /// also validates this at consumer build; enforcing it here yields an earlier,
@@ -96,16 +96,32 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         };
 
         let _guard = get_runtime().handle().enter();
-        let client = HighLevelClient::new(
+        let mock = consumer_builders
+            .consumer
+            .clone()
+            .build()
+            .map_err(|error| PyValueError::new_err(error.to_string()))?
+            .mock;
+        let cassandra = if mock {
+            None
+        } else {
+            Some(
+                CassandraConfigurationBuilder::default()
+                    .build()
+                    .map_err(|error| PyValueError::new_err(error.to_string()))?,
+            )
+        };
+        let mut producer = ProducerConfigurationBuilder::default();
+        let client = new_erased(
             Mode::default(),
-            &mut ProducerConfigurationBuilder::default(),
+            &mut producer,
             &consumer_builders,
-            &CassandraConfigurationBuilder::default(),
+            cassandra,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         return Ok(ProsodyClient {
-            client: Arc::new(client),
+            client,
             get_context,
             inject,
             pid: process::id(),
@@ -127,16 +143,26 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     let cassandra_config = build_cassandra_config(config)?;
 
     let _guard = get_runtime().handle().enter();
-    let client = HighLevelClient::new(
-        mode,
-        &mut producer_config,
-        &consumer_builders,
-        &cassandra_config,
-    )
-    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mock = consumer_builders
+        .consumer
+        .clone()
+        .build()
+        .map_err(|error| PyValueError::new_err(error.to_string()))?
+        .mock;
+    let cassandra = if mock {
+        None
+    } else {
+        Some(
+            cassandra_config
+                .build()
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?,
+        )
+    };
+    let client = new_erased(mode, &mut producer_config, &consumer_builders, cassandra)
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     Ok(ProsodyClient {
-        client: Arc::new(client),
+        client,
         get_context,
         inject,
         pid: process::id(),
