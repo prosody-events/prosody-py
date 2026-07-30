@@ -1162,10 +1162,11 @@ The same descriptor binds owned state in a handler and opens read-only published
 
 ```python
 CART = value("cart", published=True)
+ITEMS = map("items", published=True)
 owner = ProsodyClient(
     **config,
     state_subsystem="carts",
-    state_collections=[CART],
+    state_collections=[CART, ITEMS],
 )
 
 # In the owner's handler:
@@ -1178,7 +1179,6 @@ Another service uses that descriptor with the client instead. Published readers 
 cart_reader = await client.state("carts", CART)
 cart = await cart_reader.get("user-1")
 
-ITEMS = map("items")
 item_reader = await client.state("carts", ITEMS)
 async for map_key, item in await item_reader.items("user-1"):
     ...
