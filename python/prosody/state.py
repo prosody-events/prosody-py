@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Callable, ClassVar, Dict, Generic, List, Optional, Protocol, Union
 
-from typing_extensions import TypeVar
+from typing_extensions import Literal, TypeVar
 
 from prosody.message import JSONValue
 
@@ -75,7 +75,7 @@ class ValueDefinition(Generic[T]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     published: Optional[bool] = None
-    read_cache: Optional[Union[timedelta, float, bool]] = None
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None
     kind: ClassVar[str] = "value"
     payload: ClassVar[str] = "json"
 
@@ -92,7 +92,7 @@ class MapDefinition(Generic[V]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     published: Optional[bool] = None
-    read_cache: Optional[Union[timedelta, float, bool]] = None
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None
     keyset_limit: Optional[int] = None
     kind: ClassVar[str] = "map"
     payload: ClassVar[str] = "json"
@@ -110,7 +110,7 @@ class DequeDefinition(Generic[T]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     published: Optional[bool] = None
-    read_cache: Optional[Union[timedelta, float, bool]] = None
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None
     capacity: Optional[int] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "json"
@@ -173,7 +173,7 @@ def value(
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
     published: Optional[bool] = None,
-    read_cache: Optional[Union[timedelta, float, bool]] = None,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
 ) -> ValueDefinition[T]:
     """Define a single-value JSON collection."""
     return ValueDefinition(
@@ -191,7 +191,7 @@ def map(  # this module-local name mirrors the collection kind; no builtin use h
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
     published: Optional[bool] = None,
-    read_cache: Optional[Union[timedelta, float, bool]] = None,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
     keyset_limit: Optional[int] = None,
 ) -> MapDefinition[V]:
     """Define an ordered-map JSON collection (string keys)."""
@@ -211,7 +211,7 @@ def deque(
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
     published: Optional[bool] = None,
-    read_cache: Optional[Union[timedelta, float, bool]] = None,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
     capacity: Optional[int] = None,
 ) -> DequeDefinition[T]:
     """Define a double-ended-queue JSON collection.
@@ -339,7 +339,7 @@ class PublishedMap(Generic[V]):
 
     async def items(
         self, key: str, direction: Direction = Direction.FORWARD
-    ) -> _StateScan:
+    ) -> "_StateScan[tuple[str, V]]":
         return _StateScan(await self._native.scan(key, direction.value), _identity)
 
 
@@ -357,7 +357,7 @@ class PublishedDeque(Generic[T]):
 
     async def values(
         self, key: str, direction: Direction = Direction.FORWARD
-    ) -> _StateScan:
+    ) -> "_StateScan[T]":
         return _StateScan(await self._native.scan(key, direction.value), _identity)
 
 

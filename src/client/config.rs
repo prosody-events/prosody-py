@@ -40,6 +40,7 @@ use std::collections::HashSet;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::process;
+use std::time::Duration;
 
 /// The Cassandra TTL ceiling in seconds (`630_720_000`, twenty years). Core
 /// also validates this at consumer build; enforcing it here yields an earlier,
@@ -1033,18 +1034,30 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
     {
         if bytes.is_instance_of::<PyBool>() {
             return Err(PyValueError::new_err(
-                "state_cache_size_bytes: must be an integer in 1..=18446744073709551615",
+                "state_cache_size_bytes: must be a positive integer",
             ));
         }
         let bytes: u64 = bytes.extract().map_err(|_| {
-            PyValueError::new_err(
-                "state_cache_size_bytes: must be an integer in 1..=18446744073709551615",
-            )
+            PyValueError::new_err("state_cache_size_bytes: must be a positive integer")
         })?;
         let bytes = NonZeroU64::new(bytes).ok_or_else(|| {
-            PyValueError::new_err("state_cache_size_bytes: must be greater than 0")
+            PyValueError::new_err("state_cache_size_bytes: must be a positive integer")
         })?;
         builder.cache_size_bytes(Some(bytes));
+    }
+
+    let read_cache = read_cache_config(config)?;
+    if let Some(bytes) = read_cache.size_bytes {
+        builder.read_cache_size_bytes(Some(bytes));
+    }
+    match read_cache.ttl {
+        ReadCacheTtl::Inherit => {}
+        ReadCacheTtl::Disabled => {
+            builder.read_cache_ttl(None);
+        }
+        ReadCacheTtl::Ttl(ttl) => {
+            builder.read_cache_ttl(Some(ttl));
+        }
     }
 
     let mut keyed = builder
@@ -1074,6 +1087,66 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
     }
 
     Ok(keyed)
+}
+
+struct ReadCacheConfig {
+    size_bytes: Option<NonZeroU64>,
+    ttl: ReadCacheTtl,
+}
+
+enum ReadCacheTtl {
+    Inherit,
+    Disabled,
+    Ttl(Duration),
+}
+
+fn read_cache_config(config: &Bound<PyDict>) -> PyResult<ReadCacheConfig> {
+    let mut result = ReadCacheConfig {
+        size_bytes: None,
+        ttl: ReadCacheTtl::Inherit,
+    };
+    if let Some(bytes) = config.get_item("state_read_cache_size_bytes")?
+        && !bytes.is_none()
+    {
+        if bytes.is_instance_of::<PyBool>() {
+            return Err(PyValueError::new_err(
+                "state_read_cache_size_bytes: must be a positive integer",
+            ));
+        }
+        let bytes: u64 = bytes.extract().map_err(|_| {
+            PyValueError::new_err("state_read_cache_size_bytes: must be a positive integer")
+        })?;
+        let bytes = NonZeroU64::new(bytes).ok_or_else(|| {
+            PyValueError::new_err("state_read_cache_size_bytes: must be a positive integer")
+        })?;
+        result.size_bytes = Some(bytes);
+    }
+
+    let Some(cache) = config.get_item("state_read_cache")? else {
+        return Ok(result);
+    };
+    if cache.is_none() {
+        return Ok(result);
+    }
+    if cache.is_instance_of::<PyBool>() {
+        if cache.is_truthy()? {
+            return Err(PyValueError::new_err(
+                "state_read_cache: True is ambiguous; use a duration or False",
+            ));
+        }
+        result.ttl = ReadCacheTtl::Disabled;
+        return Ok(result);
+    }
+    let duration = decode_duration(&cache).map_err(|error| {
+        PyValueError::new_err(format!("state_read_cache: {}", error.value(cache.py())))
+    })?;
+    if duration.is_zero() {
+        return Err(PyValueError::new_err(
+            "state_read_cache: duration must be greater than 0",
+        ));
+    }
+    result.ttl = ReadCacheTtl::Ttl(duration);
+    Ok(result)
 }
 
 /// Builds `ConsumerBuilders` from the provided Python configuration.
