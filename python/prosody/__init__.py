@@ -1,6 +1,11 @@
 import logging
 
-from prosody.prosody import ProsodyClient, AdminClient
+from prosody.prosody import (
+    AdminClient,
+    ProsodyClient,
+    flush_telemetry,
+    shutdown_telemetry,
+)
 
 from prosody.context import Context
 from prosody.errors import (
