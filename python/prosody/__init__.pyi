@@ -12,7 +12,14 @@ from prosody.errors import (
 )
 from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
 from prosody.message import Message as Message
-from prosody.prosody import AdminClient as AdminClient, ProsodyClient as ProsodyClient
+from typing import TypeVar, overload
+
+from prosody.prosody import (
+    AdminClient as AdminClient,
+    _NativeProsodyClient,
+    flush_telemetry as flush_telemetry,
+    shutdown_telemetry as shutdown_telemetry,
+)
 from prosody.state import (
     DequeDefinition as DequeDefinition,
     DequeState as DequeState,
@@ -24,6 +31,9 @@ from prosody.state import (
     MessageValueDefinition as MessageValueDefinition,
     ValueDefinition as ValueDefinition,
     ValueState as ValueState,
+    PublishedValue as PublishedValue,
+    PublishedMap as PublishedMap,
+    PublishedDeque as PublishedDeque,
     deque as deque,
     map as map,
     message_deque as message_deque,
@@ -32,3 +42,26 @@ from prosody.state import (
     value as value,
 )
 from prosody.timer import Timer as Timer
+
+T = TypeVar("T")
+V = TypeVar("V")
+
+class ProsodyClient(_NativeProsodyClient):
+    @overload
+    async def state(
+        self,
+        subsystem: str,
+        definition: ValueDefinition[T],
+    ) -> PublishedValue[T]: ...
+    @overload
+    async def state(
+        self,
+        subsystem: str,
+        definition: MapDefinition[V],
+    ) -> PublishedMap[V]: ...
+    @overload
+    async def state(
+        self,
+        subsystem: str,
+        definition: DequeDefinition[T],
+    ) -> PublishedDeque[T]: ...

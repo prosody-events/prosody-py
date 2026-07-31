@@ -281,7 +281,10 @@ Register keyed-state collections before you subscribe. Persistence is backed by 
 | `state_collections` / -                                      | Keyed-state collections to register before subscribe (list of definition objects; duplicate names are rejected)                                                        | (none)              |
 | `state_cache_dir` / `PROSODY_STATE_CACHE_DIR`                | Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively)                                                    | per-client temp dir |
 | `state_cache_size_bytes` / `PROSODY_STATE_CACHE_SIZE_BYTES`  | Capacity of the in-memory keyed-state cache, in bytes; must be greater than 0. One cache is shared by all partition keyspaces                                            | engine default      |
+| `state_read_cache_size_bytes` / `PROSODY_STATE_READ_CACHE_SIZE_BYTES` | Capacity of the published-state read cache, in bytes; must be greater than 0                                                                                      | state cache size, then 1 MiB |
+| `state_read_cache` / `PROSODY_STATE_READ_CACHE_TTL`          | Default published-read cache TTL, or `False` to bypass the cache                                                                                                         | 5s                  |
 | `state_recovery_delay` / `PROSODY_STATE_RECOVERY_DELAY` | Delay before the recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (`timedelta` or float seconds; the env var accepts a duration string like `30s`) | 30s                 |
+| `subsystem` / `PROSODY_SUBSYSTEM` | Subsystem name used to advertise descriptors declared with `published=True` | (none) |
 
 Each `state_collections` entry has these fields. Prefer the definition constructors (`value` / `map` / `deque` and their `message_*` variants, documented below): they serialize into `state_collections` so you declare each collection once and reuse the same object with `context.state()`.
 
@@ -292,6 +295,8 @@ Each `state_collections` entry has these fields. Prefer the definition construct
 | `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received) | (required) |
 | `ttl`              | Per-write TTL, whole seconds >= 1 (must exceed the recovery delay); `timedelta` or int seconds | (none)     |
 | `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
+| `published`        | Allow other clients to read this JSON collection without subscribing                | false      |
+| `read_cache`       | Published-read cache override: a duration, `False`, or inherit when omitted          | inherit    |
 | `keyset_limit`     | Map-only; ordered-scan bound in `0..=4096` (`0` disables ordered-scan tracking)      | 128        |
 | `capacity`         | Deque-only; positive int max slot count, enforced lazily on push (runtime-only, may change across deploys) | (unbounded) |
 
@@ -593,6 +598,43 @@ Keyed state gives every Kafka key its own durable working memory. Prosody automa
 Use keyed state for time-aware stream processing: counters, deduplication, rolling aggregates, pending work, and per-key workflows. Keep your relational database as the source of truth for business data and for work that needs joins or ad hoc queries. Reconstructing stream state with repeated database queries can be slow and expensive; keyed state is built for that job.
 
 Most collections should have a TTL. Set it comfortably beyond the longest timer or workflow that uses the state; Prosody validates the minimum supported TTL. Omit it only when keeping inactive keys forever is intentional.
+
+### Published state
+
+Published state lets another client read a JSON value, map, or deque without subscribing to the owner's topics. Use the same typed definition for the owned collection and its read-only view. The owner sets `published=True`, names its `subsystem`, and registers the definition as usual:
+
+```python
+CART: ValueDefinition[dict[str, str]] = value(
+    "cart",
+    published=True,
+    read_cache=timedelta(seconds=2),
+)
+ITEMS: MapDefinition[dict[str, str]] = map("items", published=True)
+owner = ProsodyClient(
+    **config,
+    subsystem="carts",
+    state_collections=[CART, ITEMS],
+)
+
+# Inside the owner's handler, the event supplies the user key.
+cart = context.state(CART)
+await cart.set({"sku": "book"})
+```
+
+Another client opens a reader by naming the subsystem and passing that same definition. The reader is independent of subscriptions and only returns committed state:
+
+```python
+cart_reader = await client.state("carts", CART)
+cart = await cart_reader.get("user-1")
+
+item_reader = await client.state("carts", ITEMS)
+async for map_key, item in item_reader.items("user-1"):
+    ...
+```
+
+Published readers provide the owned collection's read operations without its mutations. An owned handle gets the user key from the current event; a published reader is outside a handler, so every operation takes that key explicitly. Map and deque iteration is asynchronous and reads in chunks rather than loading the entire collection.
+
+The default cache window is five seconds unless the client configuration changes it. Set `read_cache=timedelta(...)` on a definition to choose a different freshness window, or `read_cache=False` to read durable storage on every operation. To stop publishing a collection, deploy its definition with `published=False` while keeping it registered and retaining `subsystem` for that deployment.
 
 ### A counter for each key
 
@@ -1016,6 +1058,9 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
 - `consumer_state() -> str`: Get the current state of the consumer.
+- `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
+- `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
+- `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
 - `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
 - `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
 
@@ -1092,11 +1137,11 @@ Represents a timer that has fired, provided to the `on_timer` method:
 
 ### Keyed State
 
-Definition constructors (each returns a frozen definition object used both in `state_collections` and with `context.state()`). Each accepts `ttl` and `read_uncommitted`, plus `keyset_limit` on the map variants:
+Definition constructors return frozen objects used both in `state_collections` and with `context.state()`. JSON definitions accept `published` and `read_cache` in addition to the options below:
 
-- `value(name, *, ttl=None, read_uncommitted=None) -> ValueDefinition[T]`
-- `map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MapDefinition[V]`
-- `deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> DequeDefinition[T]`
+- `value(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None) -> ValueDefinition[T]`
+- `map(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, keyset_limit=None) -> MapDefinition[V]`
+- `deque(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, capacity=None) -> DequeDefinition[T]`
 - `message_value(name, *, ttl=None, read_uncommitted=None) -> MessageValueDefinition[P]`
 - `message_map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MessageMapDefinition[P]`
 - `message_deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> MessageDequeDefinition[P]`
@@ -1142,6 +1187,8 @@ Definition constructors (each returns a frozen definition object used both in `s
 - `rollback() -> None`
 
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
+
+Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, and `values` return async iterators directly.
 
 Errors:
 

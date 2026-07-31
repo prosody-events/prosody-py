@@ -29,6 +29,7 @@ use prosody::state::descriptor::{
     DequeDescriptor, MapDescriptor, StateDescriptor, deque_state, map_state, value_state,
 };
 use prosody::state::order_codec::Utf8KeyCodec;
+use prosody::subsystem::SubsystemName;
 use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
 use prosody::timers::duration::CompactDuration;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -39,6 +40,7 @@ use std::collections::HashSet;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::process;
+use std::time::Duration;
 
 /// The Cassandra TTL ceiling in seconds (`630_720_000`, twenty years). Core
 /// also validates this at consumer build; enforcing it here yields an earlier,
@@ -96,27 +98,13 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         };
 
         let _guard = get_runtime().handle().enter();
-        let mock = consumer_builders
-            .consumer
-            .clone()
-            .build()
-            .map_err(|error| PyValueError::new_err(error.to_string()))?
-            .mock;
-        let cassandra = if mock {
-            None
-        } else {
-            Some(
-                CassandraConfigurationBuilder::default()
-                    .build()
-                    .map_err(|error| PyValueError::new_err(error.to_string()))?,
-            )
-        };
+        let cassandra = CassandraConfigurationBuilder::default();
         let mut producer = ProducerConfigurationBuilder::default();
         let client = new_erased(
             Mode::default(),
             &mut producer,
             &consumer_builders,
-            cassandra,
+            &cassandra,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -140,25 +128,10 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
 
     let mut producer_config = build_producer_config(config)?;
     let consumer_builders = build_consumer_builders(config)?;
-    let cassandra_config = build_cassandra_config(config)?;
+    let cassandra = build_cassandra_config(config)?;
 
     let _guard = get_runtime().handle().enter();
-    let mock = consumer_builders
-        .consumer
-        .clone()
-        .build()
-        .map_err(|error| PyValueError::new_err(error.to_string()))?
-        .mock;
-    let cassandra = if mock {
-        None
-    } else {
-        Some(
-            cassandra_config
-                .build()
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?,
-        )
-    };
-    let client = new_erased(mode, &mut producer_config, &consumer_builders, cassandra)
+    let client = new_erased(mode, &mut producer_config, &consumer_builders, &cassandra)
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     Ok(ProsodyClient {
@@ -734,6 +707,7 @@ fn with_def<D: StateDescriptor>(
     descriptor: D,
     ttl_seconds: Option<u32>,
     read_uncommitted: Option<bool>,
+    published: Option<bool>,
 ) -> D {
     let mut descriptor = descriptor;
     if let Some(ttl) = ttl_seconds {
@@ -741,6 +715,9 @@ fn with_def<D: StateDescriptor>(
     }
     if read_uncommitted == Some(true) {
         descriptor = descriptor.read_uncommitted();
+    }
+    if let Some(published) = published {
+        descriptor = descriptor.published(published);
     }
     descriptor
 }
@@ -902,6 +879,12 @@ fn register_state_collection(
     let capacity = parse_capacity(cfg, index, &kind)?;
 
     let read_uncommitted = optional_bool(cfg, "read_uncommitted")?;
+    let published = optional_bool(cfg, "published")?;
+    if published == Some(true) && matches!(payload, CollectionPayload::Message) {
+        return Err(PyValueError::new_err(format!(
+            "state_collections[{index}].published: published readers support JSON collections only"
+        )));
+    }
     let name = name.as_str();
     match (kind, payload) {
         (CollectionKind::Value, CollectionPayload::Json) => {
@@ -909,6 +892,7 @@ fn register_state_collection(
                 value_state::<JsonCodec>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             ));
         }
         (CollectionKind::Map, CollectionPayload::Json) => {
@@ -916,6 +900,7 @@ fn register_state_collection(
                 map_state::<Utf8KeyCodec, JsonCodec>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             );
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
         }
@@ -924,6 +909,7 @@ fn register_state_collection(
                 deque_state::<JsonCodec>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             );
             let _ = keyed.register(with_capacity(descriptor, capacity));
         }
@@ -932,6 +918,7 @@ fn register_state_collection(
                 message_state::<KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             ));
         }
         (CollectionKind::Map, CollectionPayload::Message) => {
@@ -939,6 +926,7 @@ fn register_state_collection(
                 message_map_state::<Utf8KeyCodec, KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             );
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
         }
@@ -947,6 +935,7 @@ fn register_state_collection(
                 message_deque_state::<KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
                 read_uncommitted,
+                published,
             );
             let _ = keyed.register(with_capacity(descriptor, capacity));
         }
@@ -1001,23 +990,45 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
         builder.recovery_delay(CompactDuration::new(seconds));
     }
 
+    if let Some(subsystem) = config.get_item("subsystem")?
+        && !subsystem.is_none()
+    {
+        let subsystem: String = subsystem.extract()?;
+        builder.subsystem(Some(
+            SubsystemName::try_new(subsystem)
+                .map_err(|error| PyValueError::new_err(error.to_string()))?,
+        ));
+    }
+
     if let Some(bytes) = config.get_item("state_cache_size_bytes")?
         && !bytes.is_none()
     {
         if bytes.is_instance_of::<PyBool>() {
             return Err(PyValueError::new_err(
-                "state_cache_size_bytes: must be an integer in 1..=18446744073709551615",
+                "state_cache_size_bytes: must be a positive integer",
             ));
         }
         let bytes: u64 = bytes.extract().map_err(|_| {
-            PyValueError::new_err(
-                "state_cache_size_bytes: must be an integer in 1..=18446744073709551615",
-            )
+            PyValueError::new_err("state_cache_size_bytes: must be a positive integer")
         })?;
         let bytes = NonZeroU64::new(bytes).ok_or_else(|| {
-            PyValueError::new_err("state_cache_size_bytes: must be greater than 0")
+            PyValueError::new_err("state_cache_size_bytes: must be a positive integer")
         })?;
         builder.cache_size_bytes(Some(bytes));
+    }
+
+    let read_cache = read_cache_config(config)?;
+    if let Some(bytes) = read_cache.size_bytes {
+        builder.read_cache_size_bytes(Some(bytes));
+    }
+    match read_cache.ttl {
+        ReadCacheTtl::Inherit => {}
+        ReadCacheTtl::Disabled => {
+            builder.read_cache_ttl(None);
+        }
+        ReadCacheTtl::Ttl(ttl) => {
+            builder.read_cache_ttl(Some(ttl));
+        }
     }
 
     let mut keyed = builder
@@ -1047,6 +1058,66 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
     }
 
     Ok(keyed)
+}
+
+struct ReadCacheConfig {
+    size_bytes: Option<NonZeroU64>,
+    ttl: ReadCacheTtl,
+}
+
+enum ReadCacheTtl {
+    Inherit,
+    Disabled,
+    Ttl(Duration),
+}
+
+fn read_cache_config(config: &Bound<PyDict>) -> PyResult<ReadCacheConfig> {
+    let mut result = ReadCacheConfig {
+        size_bytes: None,
+        ttl: ReadCacheTtl::Inherit,
+    };
+    if let Some(bytes) = config.get_item("state_read_cache_size_bytes")?
+        && !bytes.is_none()
+    {
+        if bytes.is_instance_of::<PyBool>() {
+            return Err(PyValueError::new_err(
+                "state_read_cache_size_bytes: must be a positive integer",
+            ));
+        }
+        let bytes: u64 = bytes.extract().map_err(|_| {
+            PyValueError::new_err("state_read_cache_size_bytes: must be a positive integer")
+        })?;
+        let bytes = NonZeroU64::new(bytes).ok_or_else(|| {
+            PyValueError::new_err("state_read_cache_size_bytes: must be a positive integer")
+        })?;
+        result.size_bytes = Some(bytes);
+    }
+
+    let Some(cache) = config.get_item("state_read_cache")? else {
+        return Ok(result);
+    };
+    if cache.is_none() {
+        return Ok(result);
+    }
+    if cache.is_instance_of::<PyBool>() {
+        if cache.is_truthy()? {
+            return Err(PyValueError::new_err(
+                "state_read_cache: True is ambiguous; use a duration or False",
+            ));
+        }
+        result.ttl = ReadCacheTtl::Disabled;
+        return Ok(result);
+    }
+    let duration = decode_duration(&cache).map_err(|error| {
+        PyValueError::new_err(format!("state_read_cache: {}", error.value(cache.py())))
+    })?;
+    if duration.is_zero() {
+        return Err(PyValueError::new_err(
+            "state_read_cache: duration must be greater than 0",
+        ));
+    }
+    result.ttl = ReadCacheTtl::Ttl(duration);
+    Ok(result)
 }
 
 /// Builds `ConsumerBuilders` from the provided Python configuration.

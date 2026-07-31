@@ -5,7 +5,7 @@ This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
-from typing import Any, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
+from typing import AsyncIterator, Generic, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
 
 from prosody import EventHandler
 from prosody.state import (
@@ -18,15 +18,17 @@ from prosody.state import (
 )
 
 P = TypeVar("P")
+T = TypeVar("T")
+V = TypeVar("V")
 
-# Any keyed-state collection definition accepted by ``state_collections``.
+# Every keyed-state collection definition accepted by ``state_collections``.
 StateDefinition: TypeAlias = Union[
-    ValueDefinition[Any],
-    MapDefinition[Any],
-    DequeDefinition[Any],
-    MessageValueDefinition[Any],
-    MessageMapDefinition[Any],
-    MessageDequeDefinition[Any],
+    ValueDefinition[object],
+    MapDefinition[object],
+    DequeDefinition[object],
+    MessageValueDefinition[object],
+    MessageMapDefinition[object],
+    MessageDequeDefinition[object],
 ]
 
 # Define a JSONValue type that represents all possible JSON-serializable values
@@ -46,8 +48,42 @@ Duration: TypeAlias = Union[float, timedelta]
 # Define a StringOrList type alias for parameters that accept either a string or a list of strings
 StringOrList: TypeAlias = Union[str, List[str]]
 
+def flush_telemetry() -> None:
+    """Exports buffered telemetry without shutting down the pipeline."""
+    ...
 
-class ProsodyClient:
+def shutdown_telemetry() -> None:
+    """Exports buffered telemetry and shuts down the process-global pipeline."""
+    ...
+
+
+class _NativePublishedValue(Generic[T]):
+    async def get(self, key: str) -> Optional[T]: ...
+
+class NativeStateScan(Generic[T]):
+    def __aiter__(self) -> NativeStateScan[T]: ...
+    async def __anext__(self) -> T: ...
+    async def aclose(self) -> None: ...
+
+
+class _NativePublishedMap(Generic[V]):
+    async def get(self, key: str, map_key: str) -> Optional[V]: ...
+    async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]: ...
+    async def contains_key(self, key: str, map_key: str) -> bool: ...
+    async def scan(self, key: str, direction: str) -> NativeStateScan[tuple[str, V]]: ...
+    async def keys(self, key: str, direction: str) -> NativeStateScan[str]: ...
+
+
+class _NativePublishedDeque(Generic[T]):
+    async def get(self, key: str, index: int) -> Optional[T]: ...
+    async def len(self, key: str) -> int: ...
+    async def is_empty(self, key: str) -> bool: ...
+    async def peek_front(self, key: str) -> Optional[T]: ...
+    async def peek_back(self, key: str) -> Optional[T]: ...
+    async def scan(self, key: str, direction: str) -> NativeStateScan[T]: ...
+
+
+class _NativeProsodyClient:
     """
     A client for interacting with Kafka using the Prosody library.
 
@@ -120,7 +156,10 @@ class ProsodyClient:
             state_collections: Optional[Sequence[StateDefinition]] = None,
             state_cache_dir: Optional[str] = None,
             state_cache_size_bytes: Optional[int] = None,
+            state_read_cache_size_bytes: Optional[int] = None,
+            state_read_cache: Optional[Union[Duration, Literal[False]]] = None,
             state_recovery_delay: Optional[Duration] = None,
+            subsystem: Optional[str] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.
@@ -181,6 +220,8 @@ class ProsodyClient:
             state_collections: Keyed-state collections to register before subscribe. Pass the definition objects from `value`/`map`/`deque`/`message_value`/`message_map`/`message_deque`; each serializes into a collection config entry. Duplicate names are rejected.
             state_cache_dir: Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively). Env: PROSODY_STATE_CACHE_DIR. Defaults to a per-client temp dir.
             state_cache_size_bytes: Capacity of the in-memory keyed-state cache, in bytes. Must be greater than 0. Env: PROSODY_STATE_CACHE_SIZE_BYTES. Defaults to the storage-engine default.
+            state_read_cache_size_bytes: Capacity of the published-state read cache, in bytes. Must be greater than 0.
+            state_read_cache: Default published-read cache TTL, or `False` to bypass the cache.
             state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_STATE_RECOVERY_DELAY. Defaults to 30s.
         Raises:
             ValueError: If the configuration is invalid.
@@ -210,6 +251,16 @@ class ProsodyClient:
             Literal['unconfigured', 'configured', 'running']: The current state.
         """
         ...
+
+    async def _published_value(
+        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
+    ) -> _NativePublishedValue[JSONValue]: ...
+    async def _published_map(
+        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
+    ) -> _NativePublishedMap[JSONValue]: ...
+    async def _published_deque(
+        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
+    ) -> _NativePublishedDeque[JSONValue]: ...
 
     async def subscribe(self, handler: EventHandler[P]) -> None:
         """

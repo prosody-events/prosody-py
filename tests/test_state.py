@@ -31,6 +31,9 @@ from prosody import (
     NullValueError,
     PermanentError,
     TransientError,
+    ProsodyClient,
+    PublishedMap,
+    PublishedDeque,
 )
 
 
@@ -44,6 +47,8 @@ def test_value_to_config():
         "payload": "json",
         "ttl_seconds": None,
         "read_uncommitted": None,
+        "published": None,
+        "read_cache": None,
         "keyset_limit": None,
         "capacity": None,
     }
@@ -70,6 +75,121 @@ def test_deque_capacity_to_config():
 
 def test_read_uncommitted_passthrough():
     assert value("c", read_uncommitted=True).to_config()["read_uncommitted"] is True
+
+
+def test_publication_and_read_cache_share_the_descriptor():
+    definition = value("cart", published=True, read_cache=timedelta(seconds=2))
+    assert definition.to_config()["published"] is True
+    assert definition.read_cache == timedelta(seconds=2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("definition", "method"),
+    (
+        (value("value", read_cache=False), "_published_value"),
+        (map("map", read_cache=2.0), "_published_map"),
+        (deque("deque"), "_published_deque"),
+    ),
+)
+async def test_client_state_dispatches_by_definition_type(definition, method):
+    class StubClient:
+        def __getattr__(self, name):
+            async def open_state(*args, **kwargs):
+                return name, args, kwargs
+
+            return open_state
+
+    result = await ProsodyClient.state(StubClient(), "checkout", definition)
+    assert result._native == (
+        method,
+        ("checkout", definition.name),
+        {"read_cache": definition.read_cache},
+    )
+
+
+@pytest.mark.asyncio
+async def test_published_scans_reuse_typed_state_scan_adapter():
+    class NativeMap:
+        scan_calls = 0
+
+        async def contains_key(self, key, map_key):
+            assert (key, map_key) == ("user-1", "a")
+            return True
+
+        async def scan(self, key, direction):
+            self.scan_calls += 1
+            assert (key, direction) == ("user-1", "forward")
+            return _StubScan([("a", 1), ("b", 2)])
+
+        async def keys(self, key, direction):
+            assert (key, direction) == ("user-1", "backward")
+            return _StubScan(["b", "a"])
+
+    class NativeDeque:
+        scan_calls = 0
+
+        async def len(self, key):
+            assert key == "user-1"
+            return 2
+
+        async def is_empty(self, key):
+            assert key == "user-1"
+            return False
+
+        async def peek_front(self, key):
+            assert key == "user-1"
+            return 1
+
+        async def peek_back(self, key):
+            assert key == "user-1"
+            return 2
+
+        async def get(self, key, index):
+            assert key == "user-1"
+            return [1, 2][index] if index < 2 else None
+
+        async def scan(self, key, direction):
+            self.scan_calls += 1
+            assert (key, direction) == ("user-1", "backward")
+            return _StubScan([2, 1])
+
+    native_map = NativeMap()
+    published_map = PublishedMap(native_map)
+    item_scan = published_map.items("user-1")
+    assert native_map.scan_calls == 0
+    items = [
+        item
+        async for item in item_scan
+    ]
+    keys = [
+        key
+        async for key in published_map.keys(
+            "user-1", Direction.BACKWARD
+        )
+    ]
+    map_values = [
+        value async for value in published_map.values("user-1")
+    ]
+    native_deque = NativeDeque()
+    published_deque = PublishedDeque(native_deque)
+    deque_scan = published_deque.values("user-1", Direction.BACKWARD)
+    assert native_deque.scan_calls == 0
+    values = [
+        item
+        async for item in deque_scan
+    ]
+    assert items == [("a", 1), ("b", 2)]
+    assert keys == ["b", "a"]
+    assert map_values == [1, 2]
+    assert await published_map.contains("user-1", "a")
+    assert await published_deque.size("user-1") == 2
+    assert not await published_deque.is_empty("user-1")
+    assert await published_deque.peekleft("user-1") == 1
+    assert await published_deque.peek("user-1") == 2
+    assert await published_deque.get("user-1", -1) == 2
+    assert await published_deque.get("user-1", -3) is None
+    assert values == [2, 1]
 
 
 def test_kinds_and_payloads():
@@ -175,6 +295,8 @@ def test_exports_present():
         "PermanentStateError",
         "TransientStateError",
         "NullValueError",
+        "flush_telemetry",
+        "shutdown_telemetry",
     ):
         assert hasattr(prosody, n), n
 
