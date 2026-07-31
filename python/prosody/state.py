@@ -341,8 +341,11 @@ async def _deque_index(
 
 
 class _NativeScan(Protocol[X]):
-    async def __anext__(self) -> X: ...
-    async def aclose(self) -> None: ...
+    async def __anext__(self) -> X:
+        raise NotImplementedError
+
+    async def aclose(self) -> None:
+        raise NotImplementedError
 
 
 class _StateScan(Generic[Y]):
@@ -469,37 +472,49 @@ class PublishedDeque(Generic[T]):
 
 
 class _PublishedValueNative(Protocol[T]):
-    async def get(self, key: str) -> Optional[T]: ...
+    async def get(self, key: str) -> Optional[T]:
+        raise NotImplementedError
 
 
 class _PublishedMapNative(Protocol[V]):
-    async def get(self, key: str, map_key: str) -> Optional[V]: ...
+    async def get(self, key: str, map_key: str) -> Optional[V]:
+        raise NotImplementedError
 
     async def get_many(
         self, key: str, map_keys: List[str]
-    ) -> List[Optional[V]]: ...
+    ) -> List[Optional[V]]:
+        raise NotImplementedError
 
-    async def contains_key(self, key: str, map_key: str) -> bool: ...
+    async def contains_key(self, key: str, map_key: str) -> bool:
+        raise NotImplementedError
 
     async def scan(
         self, key: str, direction: str
-    ) -> "_NativeScan[tuple[str, V]]": ...
+    ) -> "_NativeScan[tuple[str, V]]":
+        raise NotImplementedError
 
-    async def keys(self, key: str, direction: str) -> "_NativeScan[str]": ...
+    async def keys(self, key: str, direction: str) -> "_NativeScan[str]":
+        raise NotImplementedError
 
 
 class _PublishedDequeNative(Protocol[T]):
-    async def get(self, key: str, index: int) -> Optional[T]: ...
+    async def get(self, key: str, index: int) -> Optional[T]:
+        raise NotImplementedError
 
-    async def len(self, key: str) -> int: ...
+    async def len(self, key: str) -> int:
+        raise NotImplementedError
 
-    async def is_empty(self, key: str) -> bool: ...
+    async def is_empty(self, key: str) -> bool:
+        raise NotImplementedError
 
-    async def peek_front(self, key: str) -> Optional[T]: ...
+    async def peek_front(self, key: str) -> Optional[T]:
+        raise NotImplementedError
 
-    async def peek_back(self, key: str) -> Optional[T]: ...
+    async def peek_back(self, key: str) -> Optional[T]:
+        raise NotImplementedError
 
-    async def scan(self, key: str, direction: str) -> "_NativeScan[T]": ...
+    async def scan(self, key: str, direction: str) -> "_NativeScan[T]":
+        raise NotImplementedError
 
 
 class ValueState(Generic[T]):
