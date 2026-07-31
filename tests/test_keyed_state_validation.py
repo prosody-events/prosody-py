@@ -39,16 +39,16 @@ def make_client(**overrides):
     return ProsodyClient(**BASE, **overrides)
 
 
-@pytest.mark.parametrize("state_cache_size_bytes", [False, True, 0, -1, 2**64])
-def test_invalid_state_cache_size_bytes_is_rejected(state_cache_size_bytes):
-    with pytest.raises(ValueError, match="state_cache_size_bytes"):
-        make_client(state_cache_size_bytes=state_cache_size_bytes)
+@pytest.mark.parametrize("state_owned_cache_size", ["0", "-1 MiB", "nonsense"])
+def test_invalid_state_owned_cache_size_is_rejected(state_owned_cache_size):
+    with pytest.raises(ValueError, match="state_owned_cache_size"):
+        make_client(state_owned_cache_size=state_owned_cache_size)
 
 
-@pytest.mark.parametrize("state_read_cache_size_bytes", [False, True, 0, -1, 2**64])
-def test_invalid_state_read_cache_size_bytes_is_rejected(state_read_cache_size_bytes):
-    with pytest.raises(ValueError, match="state_read_cache_size_bytes"):
-        make_client(state_read_cache_size_bytes=state_read_cache_size_bytes)
+@pytest.mark.parametrize("state_read_cache_size", ["0", "-1 MiB", "nonsense"])
+def test_invalid_state_read_cache_size_is_rejected(state_read_cache_size):
+    with pytest.raises(ValueError, match="state_read_cache_size"):
+        make_client(state_read_cache_size=state_read_cache_size)
 
 
 @pytest.mark.parametrize("state_read_cache", [True, 0, -1])

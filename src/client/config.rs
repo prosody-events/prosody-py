@@ -6,7 +6,6 @@
 
 use crate::client::ProsodyClient;
 use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
-use prosody::JsonCodec;
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
 use prosody::consumer::KeyedStateConfiguration;
@@ -32,12 +31,13 @@ use prosody::state::order_codec::Utf8KeyCodec;
 use prosody::subsystem::SubsystemName;
 use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
 use prosody::timers::duration::CompactDuration;
+use prosody::{ByteSize, JsonCodec};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
 use std::collections::HashSet;
-use std::num::{NonZeroU64, NonZeroUsize};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
@@ -1000,26 +1000,21 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
         ));
     }
 
-    if let Some(bytes) = config.get_item("state_cache_size_bytes")?
-        && !bytes.is_none()
+    if let Some(size) = config.get_item("state_owned_cache_size")?
+        && !size.is_none()
     {
-        if bytes.is_instance_of::<PyBool>() {
-            return Err(PyValueError::new_err(
-                "state_cache_size_bytes: must be a positive integer",
-            ));
-        }
-        let bytes: u64 = bytes.extract().map_err(|_| {
-            PyValueError::new_err("state_cache_size_bytes: must be a positive integer")
-        })?;
-        let bytes = NonZeroU64::new(bytes).ok_or_else(|| {
-            PyValueError::new_err("state_cache_size_bytes: must be a positive integer")
-        })?;
-        builder.cache_size_bytes(Some(bytes));
+        let size: String = size
+            .extract()
+            .map_err(|_| PyValueError::new_err("state_owned_cache_size: must be a size string"))?;
+        let size = size
+            .parse::<ByteSize>()
+            .map_err(|error| PyValueError::new_err(format!("state_owned_cache_size: {error}")))?;
+        builder.owned_cache_size(Some(size));
     }
 
     let read_cache = read_cache_config(config)?;
-    if let Some(bytes) = read_cache.size_bytes {
-        builder.read_cache_size_bytes(Some(bytes));
+    if let Some(size) = read_cache.size {
+        builder.read_cache_size(Some(size));
     }
     match read_cache.ttl {
         ReadCacheTtl::Inherit => {}
@@ -1061,7 +1056,7 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
 }
 
 struct ReadCacheConfig {
-    size_bytes: Option<NonZeroU64>,
+    size: Option<ByteSize>,
     ttl: ReadCacheTtl,
 }
 
@@ -1073,24 +1068,19 @@ enum ReadCacheTtl {
 
 fn read_cache_config(config: &Bound<PyDict>) -> PyResult<ReadCacheConfig> {
     let mut result = ReadCacheConfig {
-        size_bytes: None,
+        size: None,
         ttl: ReadCacheTtl::Inherit,
     };
-    if let Some(bytes) = config.get_item("state_read_cache_size_bytes")?
-        && !bytes.is_none()
+    if let Some(size) = config.get_item("state_read_cache_size")?
+        && !size.is_none()
     {
-        if bytes.is_instance_of::<PyBool>() {
-            return Err(PyValueError::new_err(
-                "state_read_cache_size_bytes: must be a positive integer",
-            ));
-        }
-        let bytes: u64 = bytes.extract().map_err(|_| {
-            PyValueError::new_err("state_read_cache_size_bytes: must be a positive integer")
-        })?;
-        let bytes = NonZeroU64::new(bytes).ok_or_else(|| {
-            PyValueError::new_err("state_read_cache_size_bytes: must be a positive integer")
-        })?;
-        result.size_bytes = Some(bytes);
+        let size: String = size
+            .extract()
+            .map_err(|_| PyValueError::new_err("state_read_cache_size: must be a size string"))?;
+        result.size =
+            Some(size.parse::<ByteSize>().map_err(|error| {
+                PyValueError::new_err(format!("state_read_cache_size: {error}"))
+            })?);
     }
 
     let Some(cache) = config.get_item("state_read_cache")? else {
