@@ -18,7 +18,17 @@ native layer owns all of it.
 import enum
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Callable, ClassVar, Generic, List, Optional, Protocol, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    ClassVar,
+    Generic,
+    List,
+    Optional,
+    Protocol,
+    Union,
+)
 
 from typing_extensions import Literal, TypedDict, TypeVar
 
@@ -319,6 +329,17 @@ def _identity(item: X) -> X:
     return item
 
 
+async def _deque_index(
+    index: int,
+    size: Callable[[], Awaitable[int]],
+) -> Optional[int]:
+    """Resolve a Python sequence index without reading size for non-negatives."""
+    if index >= 0:
+        return index
+    position = index + await size()
+    return position if position >= 0 else None
+
+
 class _NativeScan(Protocol[X]):
     async def __anext__(self) -> X: ...
     async def aclose(self) -> None: ...
@@ -333,16 +354,27 @@ class _StateScan(Generic[Y]):
     keys/values/pairs; deque items pass through).
 
     Iterating with ``async for`` and then ``break`` does NOT call ``aclose()``.
-    That is harmless by construction — no store permit is held between pulls, the
-    cursor is attempt-epoch fenced, and the native ``Drop`` closes it on GC. For
-    a deterministic early close use ``contextlib.aclosing(...)``.
+    That is harmless by construction — no store permit is held between pulls
+    and native ``Drop`` closes it on GC. Owned cursors are attempt-fenced;
+    published cursors follow their standalone reader. For deterministic early
+    close use ``contextlib.aclosing(...)``.
     """
 
     def __init__(
-        self, native: _NativeScan[X], transform: Callable[[X], Y]
+        self,
+        native: Union[_NativeScan[X], Callable[[], Awaitable[_NativeScan[X]]]],
+        transform: Callable[[X], Y],
     ) -> None:
-        self._native = native
+        self._native = native if not callable(native) else None
+        self._open = native if callable(native) else None
         self._transform = transform
+
+    async def _cursor(self) -> _NativeScan[X]:
+        if self._native is None:
+            assert self._open is not None
+            self._native = await self._open()
+            self._open = None
+        return self._native
 
     def __aiter__(self) -> "_StateScan[Y]":
         return self
@@ -350,10 +382,11 @@ class _StateScan(Generic[Y]):
     async def __anext__(self) -> Y:
         # Re-raises the native StopAsyncIteration at exhaustion (never coerced
         # by PEP 479 since it crosses no generator boundary here).
-        return self._transform(await self._native.__anext__())
+        return self._transform(await (await self._cursor()).__anext__())
 
     async def aclose(self) -> None:
-        await self._native.aclose()
+        if self._native is not None:
+            await self._native.aclose()
 
 
 class PublishedValue(Generic[T]):
@@ -381,19 +414,25 @@ class PublishedMap(Generic[V]):
     async def contains(self, key: str, map_key: str) -> bool:
         return await self._native.contains_key(key, map_key)
 
-    async def items(
+    def items(
         self, key: str, direction: Direction = Direction.FORWARD
     ) -> "_StateScan[tuple[str, V]]":
-        return _StateScan(await self._native.scan(key, direction.value), _identity)
+        return _StateScan(
+            lambda: self._native.scan(key, direction.value),
+            _identity,
+        )
 
-    async def keys(
+    def keys(
         self, key: str, direction: Direction = Direction.FORWARD
     ) -> "_StateScan[str]":
-        return _StateScan(await self._native.keys(key, direction.value), _identity)
-
-    async def values(self, key: str) -> "_StateScan[V]":
         return _StateScan(
-            await self._native.scan(key, Direction.FORWARD.value),
+            lambda: self._native.keys(key, direction.value),
+            _identity,
+        )
+
+    def values(self, key: str) -> "_StateScan[V]":
+        return _StateScan(
+            lambda: self._native.scan(key, Direction.FORWARD.value),
             lambda entry: entry[1],
         )
 
@@ -405,7 +444,8 @@ class PublishedDeque(Generic[T]):
         self._native = native
 
     async def get(self, key: str, index: int) -> Optional[T]:
-        return await self._native.get(key, index)
+        position = await _deque_index(index, lambda: self.size(key))
+        return None if position is None else await self._native.get(key, position)
 
     async def size(self, key: str) -> int:
         return await self._native.len(key)
@@ -419,10 +459,13 @@ class PublishedDeque(Generic[T]):
     async def peekleft(self, key: str) -> Optional[T]:
         return await self._native.peek_front(key)
 
-    async def values(
+    def values(
         self, key: str, direction: Direction = Direction.FORWARD
     ) -> "_StateScan[T]":
-        return _StateScan(await self._native.scan(key, direction.value), _identity)
+        return _StateScan(
+            lambda: self._native.scan(key, direction.value),
+            _identity,
+        )
 
 
 class _PublishedValueNative(Protocol[T]):
@@ -650,12 +693,11 @@ class DequeState(Generic[T]):
     async def get(self, index: int) -> Optional[T]:
         """Read the element at front-relative ``index``, or ``None`` past the end.
 
-        No Python-side index guard: the native ``u32`` conversion rejects a
-        float (``TypeError``) or a negative/oversized int (``OverflowError``),
-        both of which classify transient at the handler bridge — matching the
-        "invalid index is transient" rule without duplicating a guard.
+        Negative indices resolve from the back, following Python sequence
+        semantics. An index before the front returns ``None``.
         """
-        return await self._native.get(index)
+        position = await _deque_index(index, self.size)
+        return None if position is None else await self._native.get(position)
 
     async def size(self) -> int:
         """Number of live elements (named ``size`` because ``len`` cannot be async)."""

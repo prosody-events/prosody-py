@@ -1180,7 +1180,7 @@ cart_reader = await client.state("carts", CART)
 cart = await cart_reader.get("user-1")
 
 item_reader = await client.state("carts", ITEMS)
-async for map_key, item in await item_reader.items("user-1"):
+async for map_key, item in item_reader.items("user-1"):
     ...
 ```
 
