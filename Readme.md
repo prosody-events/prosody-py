@@ -295,6 +295,8 @@ Each `state_collections` entry has these fields. Prefer the definition construct
 | `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received) | (required) |
 | `ttl`              | Per-write TTL, whole seconds >= 1 (must exceed the recovery delay); `timedelta` or int seconds | (none)     |
 | `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
+| `published`        | Allow other clients to read this JSON collection without subscribing                | false      |
+| `read_cache`       | Published-read cache override: a duration, `False`, or inherit when omitted          | inherit    |
 | `keyset_limit`     | Map-only; ordered-scan bound in `0..=4096` (`0` disables ordered-scan tracking)      | 128        |
 | `capacity`         | Deque-only; positive int max slot count, enforced lazily on push (runtime-only, may change across deploys) | (unbounded) |
 
@@ -596,6 +598,43 @@ Keyed state gives every Kafka key its own durable working memory. Prosody automa
 Use keyed state for time-aware stream processing: counters, deduplication, rolling aggregates, pending work, and per-key workflows. Keep your relational database as the source of truth for business data and for work that needs joins or ad hoc queries. Reconstructing stream state with repeated database queries can be slow and expensive; keyed state is built for that job.
 
 Most collections should have a TTL. Set it comfortably beyond the longest timer or workflow that uses the state; Prosody validates the minimum supported TTL. Omit it only when keeping inactive keys forever is intentional.
+
+### Published state
+
+Published state lets another client read a JSON value, map, or deque without subscribing to the owner's topics. Use the same typed definition for the owned collection and its read-only view. The owner sets `published=True`, gives its state a `state_subsystem`, and registers the definition as usual:
+
+```python
+CART: ValueDefinition[dict[str, str]] = value(
+    "cart",
+    published=True,
+    read_cache=timedelta(seconds=2),
+)
+ITEMS: MapDefinition[dict[str, str]] = map("items", published=True)
+owner = ProsodyClient(
+    **config,
+    state_subsystem="carts",
+    state_collections=[CART, ITEMS],
+)
+
+# Inside the owner's handler, the event supplies the user key.
+cart = context.state(CART)
+await cart.set({"sku": "book"})
+```
+
+Another client opens a reader by naming the subsystem and passing that same definition. The reader is independent of subscriptions and only returns committed state:
+
+```python
+cart_reader = await client.state("carts", CART)
+cart = await cart_reader.get("user-1")
+
+item_reader = await client.state("carts", ITEMS)
+async for map_key, item in item_reader.items("user-1"):
+    ...
+```
+
+Published readers provide the owned collection's read operations without its mutations. An owned handle gets the user key from the current event; a published reader is outside a handler, so every operation takes that key explicitly. Map and deque iteration is asynchronous and reads in chunks rather than loading the entire collection.
+
+The default cache window is five seconds unless the client configuration changes it. Set `read_cache=timedelta(...)` on a definition to choose a different freshness window, or `read_cache=False` to read durable storage on every operation. To stop publishing a collection, deploy its definition with `published=False` while keeping it registered and retaining `state_subsystem` for that deployment.
 
 ### A counter for each key
 
@@ -1019,6 +1058,9 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
 - `consumer_state() -> str`: Get the current state of the consumer.
+- `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
+- `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
+- `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
 - `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
 - `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
 
@@ -1095,11 +1137,11 @@ Represents a timer that has fired, provided to the `on_timer` method:
 
 ### Keyed State
 
-Definition constructors (each returns a frozen definition object used both in `state_collections` and with `context.state()`). Each accepts `ttl` and `read_uncommitted`, plus `keyset_limit` on the map variants:
+Definition constructors return frozen objects used both in `state_collections` and with `context.state()`. JSON definitions accept `published` and `read_cache` in addition to the options below:
 
-- `value(name, *, ttl=None, read_uncommitted=None) -> ValueDefinition[T]`
-- `map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MapDefinition[V]`
-- `deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> DequeDefinition[T]`
+- `value(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None) -> ValueDefinition[T]`
+- `map(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, keyset_limit=None) -> MapDefinition[V]`
+- `deque(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, capacity=None) -> DequeDefinition[T]`
 - `message_value(name, *, ttl=None, read_uncommitted=None) -> MessageValueDefinition[P]`
 - `message_map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MessageMapDefinition[P]`
 - `message_deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> MessageDequeDefinition[P]`
@@ -1146,6 +1188,8 @@ Definition constructors (each returns a frozen definition object used both in `s
 
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
 
+Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, and `values` return async iterators directly.
+
 Errors:
 
 - `StateError`: brand mixin on every keyed-state error; catch all of them with `except StateError`.
@@ -1156,32 +1200,3 @@ Errors:
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-### Published state
-
-The same descriptor binds owned state in a handler and opens read-only published state from a client. The owner opts in on the descriptor and configures its subsystem:
-
-```python
-CART = value("cart", published=True)
-ITEMS = map("items", published=True)
-owner = ProsodyClient(
-    **config,
-    state_subsystem="carts",
-    state_collections=[CART, ITEMS],
-)
-
-# In the owner's handler:
-cart = context.state(CART)
-```
-
-Another service uses that descriptor with the client instead. Published readers observe committed state only:
-
-```python
-cart_reader = await client.state("carts", CART)
-cart = await cart_reader.get("user-1")
-
-item_reader = await client.state("carts", ITEMS)
-async for map_key, item in item_reader.items("user-1"):
-    ...
-```
-
-Published maps provide the same read operations as owned maps: `get`, `get_many`, `contains`, `items`, `keys`, and `values`. Published deques likewise provide `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. An owned handle gets its state key from the current event; a published reader is outside a handler, so each operation receives that state key explicitly. All iteration uses the same chunked cursor adapter as owned state. Set `read_cache=timedelta(...)` on the descriptor to override the inherited cache, or `read_cache=False` to read durable storage on every operation. To retire a publication, deploy the descriptor with `published=False` while retaining both its registration and `state_subsystem` for that deploy.
