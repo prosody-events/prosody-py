@@ -612,7 +612,7 @@ CART: ValueDefinition[dict[str, str]] = value(
 ITEMS: MapDefinition[dict[str, str]] = map("items", published=True)
 owner = ProsodyClient(
     **config,
-    subsystem="carts",
+    subsystem="checkout",
     state_collections=[CART, ITEMS],
 )
 
@@ -624,10 +624,10 @@ await cart.set({"sku": "book"})
 Another client opens a reader by naming the subsystem and passing that same definition. The reader is independent of subscriptions and only returns committed state:
 
 ```python
-cart_reader = await client.state("carts", CART)
+cart_reader = await client.state("checkout", CART)
 cart = await cart_reader.get("user-1")
 
-item_reader = await client.state("carts", ITEMS)
+item_reader = await client.state("checkout", ITEMS)
 async for map_key, item in item_reader.items("user-1"):
     ...
 ```
