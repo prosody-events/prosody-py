@@ -152,13 +152,14 @@ impl ProsodyClient {
     ) -> PyResult<Bound<'p, PyAny>> {
         self.check_fork()?;
         let cache = parse_read_cache(read_cache)?;
+        let env = self.published_env(py)?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
                 .value_state(subsystem, name, cache)
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedValue { inner })?.into_any()))
+            Python::attach(|py| Ok(Py::new(py, PublishedValue { inner, env })?.into_any()))
         })
     }
 

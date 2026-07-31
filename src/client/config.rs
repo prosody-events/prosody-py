@@ -98,27 +98,13 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         };
 
         let _guard = get_runtime().handle().enter();
-        let mock = consumer_builders
-            .consumer
-            .clone()
-            .build()
-            .map_err(|error| PyValueError::new_err(error.to_string()))?
-            .mock;
-        let cassandra = if mock {
-            None
-        } else {
-            Some(
-                CassandraConfigurationBuilder::default()
-                    .build()
-                    .map_err(|error| PyValueError::new_err(error.to_string()))?,
-            )
-        };
+        let cassandra = CassandraConfigurationBuilder::default();
         let mut producer = ProducerConfigurationBuilder::default();
         let client = new_erased(
             Mode::default(),
             &mut producer,
             &consumer_builders,
-            cassandra,
+            &cassandra,
         )
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
@@ -142,25 +128,10 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
 
     let mut producer_config = build_producer_config(config)?;
     let consumer_builders = build_consumer_builders(config)?;
-    let cassandra_config = build_cassandra_config(config)?;
+    let cassandra = build_cassandra_config(config)?;
 
     let _guard = get_runtime().handle().enter();
-    let mock = consumer_builders
-        .consumer
-        .clone()
-        .build()
-        .map_err(|error| PyValueError::new_err(error.to_string()))?
-        .mock;
-    let cassandra = if mock {
-        None
-    } else {
-        Some(
-            cassandra_config
-                .build()
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?,
-        )
-    };
-    let client = new_erased(mode, &mut producer_config, &consumer_builders, cassandra)
+    let client = new_erased(mode, &mut producer_config, &consumer_builders, &cassandra)
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     Ok(ProsodyClient {
