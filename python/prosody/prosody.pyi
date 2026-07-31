@@ -159,7 +159,7 @@ class _NativeProsodyClient:
             state_read_cache_size_bytes: Optional[int] = None,
             state_read_cache: Optional[Union[Duration, Literal[False]]] = None,
             state_recovery_delay: Optional[Duration] = None,
-            state_subsystem: Optional[str] = None,
+            subsystem: Optional[str] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.

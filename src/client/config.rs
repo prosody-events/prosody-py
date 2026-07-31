@@ -990,7 +990,7 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
         builder.recovery_delay(CompactDuration::new(seconds));
     }
 
-    if let Some(subsystem) = config.get_item("state_subsystem")?
+    if let Some(subsystem) = config.get_item("subsystem")?
         && !subsystem.is_none()
     {
         let subsystem: String = subsystem.extract()?;

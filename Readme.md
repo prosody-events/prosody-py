@@ -284,7 +284,7 @@ Register keyed-state collections before you subscribe. Persistence is backed by 
 | `state_read_cache_size_bytes` / `PROSODY_STATE_READ_CACHE_SIZE_BYTES` | Capacity of the published-state read cache, in bytes; must be greater than 0                                                                                      | state cache size, then 1 MiB |
 | `state_read_cache` / `PROSODY_STATE_READ_CACHE_TTL`          | Default published-read cache TTL, or `False` to bypass the cache                                                                                                         | 5s                  |
 | `state_recovery_delay` / `PROSODY_STATE_RECOVERY_DELAY` | Delay before the recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (`timedelta` or float seconds; the env var accepts a duration string like `30s`) | 30s                 |
-| `state_subsystem` / - | Subsystem name used to advertise descriptors declared with `published=True` | (none) |
+| `subsystem` / `PROSODY_SUBSYSTEM` | Subsystem name used to advertise descriptors declared with `published=True` | (none) |
 
 Each `state_collections` entry has these fields. Prefer the definition constructors (`value` / `map` / `deque` and their `message_*` variants, documented below): they serialize into `state_collections` so you declare each collection once and reuse the same object with `context.state()`.
 
@@ -601,7 +601,7 @@ Most collections should have a TTL. Set it comfortably beyond the longest timer 
 
 ### Published state
 
-Published state lets another client read a JSON value, map, or deque without subscribing to the owner's topics. Use the same typed definition for the owned collection and its read-only view. The owner sets `published=True`, gives its state a `state_subsystem`, and registers the definition as usual:
+Published state lets another client read a JSON value, map, or deque without subscribing to the owner's topics. Use the same typed definition for the owned collection and its read-only view. The owner sets `published=True`, names its `subsystem`, and registers the definition as usual:
 
 ```python
 CART: ValueDefinition[dict[str, str]] = value(
@@ -612,7 +612,7 @@ CART: ValueDefinition[dict[str, str]] = value(
 ITEMS: MapDefinition[dict[str, str]] = map("items", published=True)
 owner = ProsodyClient(
     **config,
-    state_subsystem="carts",
+    subsystem="carts",
     state_collections=[CART, ITEMS],
 )
 
@@ -634,7 +634,7 @@ async for map_key, item in item_reader.items("user-1"):
 
 Published readers provide the owned collection's read operations without its mutations. An owned handle gets the user key from the current event; a published reader is outside a handler, so every operation takes that key explicitly. Map and deque iteration is asynchronous and reads in chunks rather than loading the entire collection.
 
-The default cache window is five seconds unless the client configuration changes it. Set `read_cache=timedelta(...)` on a definition to choose a different freshness window, or `read_cache=False` to read durable storage on every operation. To stop publishing a collection, deploy its definition with `published=False` while keeping it registered and retaining `state_subsystem` for that deployment.
+The default cache window is five seconds unless the client configuration changes it. Set `read_cache=timedelta(...)` on a definition to choose a different freshness window, or `read_cache=False` to read durable storage on every operation. To stop publishing a collection, deploy its definition with `published=False` while keeping it registered and retaining `subsystem` for that deployment.
 
 ### A counter for each key
 
