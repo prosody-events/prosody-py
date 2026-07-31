@@ -3,6 +3,8 @@ import logging
 from prosody.prosody import (
     _NativeProsodyClient,
     AdminClient,
+    flush_telemetry,
+    shutdown_telemetry,
 )
 
 from prosody.context import Context

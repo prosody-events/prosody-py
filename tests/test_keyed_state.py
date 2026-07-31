@@ -29,6 +29,7 @@ from prosody import (
     ProsodyClient,
     EventHandler,
     Direction,
+    Message,
     value,
     map,
     deque,
@@ -493,6 +494,68 @@ async def test_message_deque_roundtrip(state_client):
     assert obs["head"] == obs["orig"]
     assert obs["scanned_len"] == 1
     assert obs["scanned_first_payload"] == {"marker": md}
+
+
+async def test_only_a_delivered_message_is_storable(state_client):
+    """A message collection stores where a message sits in Kafka, so only a
+    message prosody delivered can go into one.
+
+    Every delivered message qualifies, including one read back out of a
+    collection: the wrapper holds the message it came from, which is both what
+    the write needs and what keeps the loader's permit held while Python can
+    still reach it. A ``Message`` built in Python has no Kafka position behind it
+    and is rejected transiently, keeping the event visible rather than
+    discarding it.
+    """
+    client, topic, _ = state_client
+    mk = nonce()
+
+    async def cb(ctx, msg, results):
+        lm = ctx.state(STATE_DEFS["last_msg"])
+        outcomes = {}
+        try:
+            forged = Message(
+                msg.topic, msg.partition, msg.offset, msg.timestamp, msg.key, msg.payload
+            )
+            outcomes["forged"] = await _store_outcome(lm, forged)
+
+            outcomes["delivered"] = await _store_outcome(lm, msg)
+            await _wait(lm.commit())
+
+            # A message read back out of the collection is storable too, and
+            # round-trips to the same Kafka position.
+            reread = await _wait(lm.get())
+            outcomes["reread"] = await _store_outcome(lm, reread)
+            await _wait(lm.commit())
+            again = await _wait(lm.get())
+            outcomes["same_offset"] = again.offset == msg.offset
+            outcomes["same_payload"] = again.payload == msg.payload
+            await results.send(outcomes)
+        except Exception as e:  # pragma: no cover
+            await results.send({"error": str(e)})
+
+    handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, mk, {"marker": mk}))
+    obs = await _wait(handler.results.receive())
+
+    assert obs.get("error") is None
+    assert obs["forged"] == "transient"
+    assert obs["delivered"] == "stored"
+    assert obs["reread"] == "stored"
+    assert obs["same_offset"] is True
+    assert obs["same_payload"] is True
+
+
+async def _store_outcome(handle, item):
+    """Classifies what storing ``item`` did: ``"stored"`` or the error category."""
+    try:
+        await _wait(handle.set(item))
+    except TransientStateError:
+        return "transient"
+    except PermanentStateError:
+        return "permanent"
+    return "stored"
 
 
 async def test_message_map_roundtrip(state_client):

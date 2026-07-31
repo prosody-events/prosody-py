@@ -331,6 +331,8 @@ def message_value(
 
     Vends :class:`ValueState` ``[Message[P]]``. ``P`` annotates the message
     payload structurally only (no runtime validation).
+
+    Only a message prosody delivered can be stored; see :class:`Message`.
     """
     ...
 
@@ -346,6 +348,8 @@ def message_map(
 
     Vends :class:`MapState` ``[Message[P]]``. ``P`` annotates the message
     payload structurally only (no runtime validation).
+
+    Only a message prosody delivered can be stored; see :class:`Message`.
     """
     ...
 
@@ -363,6 +367,8 @@ def message_deque(
     slots, enforced lazily on push; runtime-only and freely changed across
     deploys. ``P`` annotates the message payload structurally only (no runtime
     validation).
+
+    Only a message prosody delivered can be stored; see :class:`Message`.
     """
     ...
 

@@ -17,6 +17,8 @@ from typing import TypeVar, overload
 from prosody.prosody import (
     AdminClient as AdminClient,
     _NativeProsodyClient,
+    flush_telemetry as flush_telemetry,
+    shutdown_telemetry as shutdown_telemetry,
 )
 from prosody.state import (
     DequeDefinition as DequeDefinition,

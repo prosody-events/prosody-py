@@ -29,6 +29,7 @@ mod client;
 mod context;
 mod handler;
 mod logging;
+mod message;
 mod published;
 mod state;
 mod util;

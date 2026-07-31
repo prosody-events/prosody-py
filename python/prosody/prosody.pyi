@@ -48,6 +48,14 @@ Duration: TypeAlias = Union[float, timedelta]
 # Define a StringOrList type alias for parameters that accept either a string or a list of strings
 StringOrList: TypeAlias = Union[str, List[str]]
 
+def flush_telemetry() -> None:
+    """Exports buffered telemetry without shutting down the pipeline."""
+    ...
+
+def shutdown_telemetry() -> None:
+    """Exports buffered telemetry and shuts down the process-global pipeline."""
+    ...
+
 
 class _NativePublishedValue(Generic[T]):
     async def get(self, key: str) -> Optional[T]: ...
