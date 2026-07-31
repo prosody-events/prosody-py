@@ -1141,26 +1141,20 @@ async def test_rethrown_transient_state_error_retries(state_client):
     assert state["count"] == 2  # no state error is ever terminal -> it retried
 
 
-async def test_deque_index_guard_type_and_overflow(state_client):
+async def test_deque_index_type_and_negative_index(state_client):
     client, topic, _ = state_client
 
     async def cb(ctx, msg, results):
         d = ctx.state(STATE_DEFS["backlog"])
         await _wait(d.append("x"))
-        # Live prosody-py divergence from JS: the deque index is a PyO3 u32, so a
-        # fractional index raises TypeError and a negative one raises
-        # OverflowError (both classify transient at the handler bridge) rather
-        # than TransientStateError. Documented in state.py's DequeState.get.
+        # Fractional indices remain invalid. Negative indices follow Python's
+        # sequence convention.
         frac = None
         try:
             await _wait(d.get(1.5))
         except Exception as e:
             frac = type(e).__name__
-        neg = None
-        try:
-            await _wait(d.get(-1))
-        except Exception as e:
-            neg = type(e).__name__
+        neg = await _wait(d.get(-1))
         ok = await _wait(d.get(0))
         await results.send({"frac": frac, "neg": neg, "ok": ok})
 
@@ -1170,7 +1164,7 @@ async def test_deque_index_guard_type_and_overflow(state_client):
     obs = await _wait(handler.results.receive())
 
     assert obs["frac"] == "TypeError"
-    assert obs["neg"] == "OverflowError"
+    assert obs["neg"] == "x"
     assert obs["ok"] == "x"
 
 
