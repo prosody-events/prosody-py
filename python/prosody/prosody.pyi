@@ -184,18 +184,18 @@ class _NativeProsodyClient:
             commit_interval: Time between offset commits.
             mode: Operating mode ('pipeline', 'low-latency', or 'best-effort').
             retry_base: Initial delay for exponential backoff in retries.
-            max_retries: Maximum number of retries.
+            max_retries: Low-latency retries before routing to the failure topic. Zero routes the initial failure without retrying.
             max_retry_delay: Maximum delay between retries.
             failure_topic: Topic for failed messages in low-latency mode.
             probe_port: Port for the probe server. Explicitly pass None to disable.
             slab_size: Timer slab partitioning duration. Controls how timers are grouped.
             cassandra_nodes: List of Cassandra contact nodes (hostnames or IPs with optional ports).
-            cassandra_keyspace: Keyspace to use for storing timer data. Defaults to 'prosody'.
+            cassandra_keyspace: Keyspace used for persistent Prosody data. Defaults to 'prosody'.
             cassandra_datacenter: Preferred datacenter for query routing and load balancing.
             cassandra_rack: Preferred rack identifier for topology-aware routing.
             cassandra_user: Username for authenticating with Cassandra cluster.
             cassandra_password: Password for authenticating with Cassandra cluster.
-            cassandra_retention: Retention period for failed/unprocessed timer data. Defaults to 30 days.
+            cassandra_retention: Retention period for persistent timer and deferral data. Defaults to 1 year.
             scheduler_failure_weight: Target proportion of execution time for failure/retry task processing (0.0 to 1.0).
             scheduler_max_wait: Wait duration at which urgency boost reaches maximum intensity.
             scheduler_wait_weight: Maximum urgency boost (in seconds of virtual time) for waiting tasks.
@@ -207,7 +207,7 @@ class _NativeProsodyClient:
             defer_enabled: Whether deferral is enabled for transient failures.
             defer_base: Base exponential backoff delay for deferred retries.
             defer_max_delay: Maximum delay between deferred retries.
-            defer_failure_threshold: Failure rate threshold for enabling deferral (0.0 to 1.0).
+            defer_failure_threshold: Failure rate threshold for disabling deferral (0.0 to 1.0).
             defer_failure_window: Sliding window duration for failure rate tracking.
             loader_cache_size: Maximum messages retained by the shared Kafka loader. Env: PROSODY_LOADER_CACHE_SIZE. Defaults to 1024.
             defer_store_cache_size: Maximum deferred store cache entries (default: 8192). Env: PROSODY_DEFER_STORE_CACHE_SIZE.
