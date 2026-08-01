@@ -604,11 +604,7 @@ Most collections should have a TTL. Set it comfortably beyond the longest timer 
 Published state lets another client read a JSON value, map, or deque without subscribing to the owner's topics. Use the same typed definition for the owned collection and its read-only view. The owner sets `published=True`, names its `subsystem`, and registers the definition as usual:
 
 ```python
-CURRENT_ORDER: ValueDefinition[dict[str, str]] = value(
-    "current-order",
-    published=True,
-    read_cache=timedelta(seconds=2),
-)
+CURRENT_ORDER: ValueDefinition[dict[str, str]] = value("current-order", published=True)
 owner = ProsodyClient(
     **config,
     subsystem="checkout",
