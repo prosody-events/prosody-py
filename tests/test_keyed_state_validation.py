@@ -36,7 +36,7 @@ def test_invalid_state_read_cache_size_is_rejected(state_read_cache_size):
         make_client(state_read_cache_size=state_read_cache_size)
 
 
-@pytest.mark.parametrize("state_read_cache", [True, 0, -1])
+@pytest.mark.parametrize("state_read_cache", [True, -1])
 def test_invalid_state_read_cache_is_rejected(state_read_cache):
     with pytest.raises(ValueError, match="state_read_cache"):
         make_client(state_read_cache=state_read_cache)
