@@ -140,10 +140,11 @@ class _NativeProsodyClient:
             defer_max_delay: Optional[Duration] = None,
             defer_failure_threshold: Optional[float] = None,
             defer_failure_window: Optional[Duration] = None,
-            defer_cache_size: Optional[int] = None,
             defer_store_cache_size: Optional[int] = None,
-            defer_seek_timeout: Optional[Duration] = None,
-            defer_discard_threshold: Optional[int] = None,
+            # Kafka message loader configuration
+            loader_cache_size: Optional[int] = None,
+            loader_seek_timeout: Optional[Duration] = None,
+            loader_discard_threshold: Optional[int] = None,
             # Timeout configuration
             timeout: Optional[Duration] = None,
             # Telemetry emitter configuration
@@ -170,7 +171,7 @@ class _NativeProsodyClient:
             source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
             send_timeout: Timeout for message send operations.
             group_id: Consumer group name.
-            idempotence_cache_size: Global shared cache capacity across all partitions. Set to 0 to disable deduplication entirely. Default: 8192.
+            idempotence_cache_size: Global shared cache capacity across all partitions for message deduplication. Must be at least 1. Default: 8192.
             idempotence_version: Version string for cache-busting deduplication hashes. Changing this invalidates all previously recorded entries. Default: "1".
             idempotence_ttl: TTL for deduplication records in Cassandra. Default: 7 days.
             subscribed_topics: Topics to subscribe to.
@@ -186,7 +187,7 @@ class _NativeProsodyClient:
             max_retries: Maximum number of retries.
             max_retry_delay: Maximum delay between retries.
             failure_topic: Topic for failed messages in low-latency mode.
-            probe_port: Port for the probe server. Set to None to disable.
+            probe_port: Port for the probe server. Explicitly pass None to disable.
             slab_size: Timer slab partitioning duration. Controls how timers are grouped.
             cassandra_nodes: List of Cassandra contact nodes (hostnames or IPs with optional ports).
             cassandra_keyspace: Keyspace to use for storing timer data. Defaults to 'prosody'.
@@ -208,10 +209,10 @@ class _NativeProsodyClient:
             defer_max_delay: Maximum delay between deferred retries.
             defer_failure_threshold: Failure rate threshold for enabling deferral (0.0 to 1.0).
             defer_failure_window: Sliding window duration for failure rate tracking.
-            defer_cache_size: Cache size for defer middleware.
+            loader_cache_size: Maximum messages retained by the shared Kafka loader. Env: PROSODY_LOADER_CACHE_SIZE. Defaults to 1024.
             defer_store_cache_size: Maximum deferred store cache entries (default: 8192). Env: PROSODY_DEFER_STORE_CACHE_SIZE.
-            defer_seek_timeout: Timeout for Kafka seek operations.
-            defer_discard_threshold: Messages to read sequentially before seeking.
+            loader_seek_timeout: Timeout for Kafka loader seek operations. Env: PROSODY_LOADER_SEEK_TIMEOUT. Defaults to 30 seconds.
+            loader_discard_threshold: Sequential-read distance before the loader seeks. Env: PROSODY_LOADER_DISCARD_THRESHOLD. Defaults to 100.
             timeout: Fixed timeout duration for handler execution. Defaults to 80% of stall threshold.
             telemetry_topic: Kafka topic to produce internal telemetry events to. Defaults to 'prosody.telemetry-events'.
             telemetry_enabled: Whether the telemetry emitter is enabled. Defaults to True.
@@ -219,10 +220,11 @@ class _NativeProsodyClient:
             timer_spans: Span linking for timer execution ('child' or 'follows_from'). Defaults to 'follows_from'.
             state_collections: Keyed-state collections to register before subscribe. Pass the definition objects from `value`/`map`/`deque`/`message_value`/`message_map`/`message_deque`; each serializes into a collection config entry. Duplicate names are rejected.
             state_cache_dir: Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively). Env: PROSODY_STATE_CACHE_DIR. Defaults to a per-client temp dir.
-            state_owned_cache_size: Capacity of the owning keyed-state cache, such as ``"64 MiB"``. Env: ``PROSODY_STATE_OWNED_CACHE_SIZE``.
-            state_read_cache_size: Capacity of the published-state read cache, such as ``"1 MiB"``. Env: ``PROSODY_STATE_READ_CACHE_SIZE``.
-            state_read_cache: Default published-read cache TTL, or `False` to bypass the cache.
+            state_owned_cache_size: Capacity of the owning keyed-state cache, such as ``"64 MiB"``. Env: ``PROSODY_STATE_OWNED_CACHE_SIZE``. The storage engine selects its default when neither is set.
+            state_read_cache_size: Capacity of the published-state read cache, such as ``"1 MiB"``. Env: ``PROSODY_STATE_READ_CACHE_SIZE``. Uses the owned cache size when set, or 1 MiB when both sizes are unset.
+            state_read_cache: Default published-read cache TTL, or `False` to bypass the cache. Env: ``PROSODY_STATE_READ_CACHE_TTL``. Defaults to 5 seconds.
             state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_STATE_RECOVERY_DELAY. Defaults to 30s.
+            subsystem: Name under which published JSON collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.

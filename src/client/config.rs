@@ -266,24 +266,24 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
     // Kafka message loader tuning (deferred-retry reload and keyed-state
     // message resolution). Only build a loader configuration if at least one
     // knob is provided, otherwise the consumer keeps its own defaults.
-    let defer_cache_size = config.get_item("defer_cache_size")?;
-    let defer_seek_timeout = config.get_item("defer_seek_timeout")?;
-    let defer_discard_threshold = config.get_item("defer_discard_threshold")?;
-    if defer_cache_size.is_some()
-        || defer_seek_timeout.is_some()
-        || defer_discard_threshold.is_some()
+    let loader_cache_size = config.get_item("loader_cache_size")?;
+    let loader_seek_timeout = config.get_item("loader_seek_timeout")?;
+    let loader_discard_threshold = config.get_item("loader_discard_threshold")?;
+    if loader_cache_size.is_some()
+        || loader_seek_timeout.is_some()
+        || loader_discard_threshold.is_some()
     {
         let mut loader = KafkaLoaderConfiguration::builder();
 
-        if let Some(cache_size) = defer_cache_size {
+        if let Some(cache_size) = loader_cache_size {
             loader.cache_size(cache_size.extract::<usize>()?);
         }
 
-        if let Some(seek_timeout) = defer_seek_timeout {
+        if let Some(seek_timeout) = loader_seek_timeout {
             loader.seek_timeout(decode_duration(&seek_timeout)?);
         }
 
-        if let Some(discard_threshold) = defer_discard_threshold {
+        if let Some(discard_threshold) = loader_discard_threshold {
             loader.discard_threshold(discard_threshold.extract::<i64>()?);
         }
 
