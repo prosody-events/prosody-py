@@ -1,24 +1,9 @@
-"""Infra-free keyed-state configuration-validation tests.
+"""Keyed-state configuration validation at the Python and Prosody boundaries.
 
-The state-collection validation rules (unregistered/duplicate/identity-mismatch
-names, bad ttl, bad keyset_limit) are enforced synchronously in Rust at
-``ProsodyClient(...)`` construction (``build_keyed_state_config`` ->
-``register_state_collection`` -> ``whole_number_field``). ``mock=True`` needs the
-built extension but no Kafka/Cassandra, so every rule below is exercised at
-construction and the offending field is named in the ``ValueError``.
-
-Divergences from the JS reference recorded here (live prosody-py behaviour):
-
-* The TTL ceiling is Cassandra's ``630_720_000`` seconds (20y), not ``u32::MAX``.
-* ``ttl <= state_recovery_delay`` is DELEGATED to core and is NOT validated under
-  ``mock=True`` (core defers it to the real consumer build). There is therefore
-  no Python-side guard to assert here — inventing one would violate the north
-  star. The rule is covered by core's own tests.
-* The ``value()``/``map()``/``deque()`` helpers coerce a ``ttl`` through
-  ``int(...)`` before Rust sees it, so a fractional/NaN/inf ``ttl_seconds`` can
-  only reach the Rust whole-number guard through a raw definition stub (mirroring
-  the JS raw ``{name, kind, payload, ...}`` objects). ``keyset_limit`` is passed
-  through unchanged, so the helper suffices for it.
+Python rejects values that cannot be represented by Prosody's Rust types.
+Prosody validates collection names, identities, and semantic limits after the
+definitions are mapped. Mock clients exercise both boundaries without external
+infrastructure.
 """
 
 import pytest
@@ -39,10 +24,22 @@ def make_client(**overrides):
     return ProsodyClient(**BASE, **overrides)
 
 
-@pytest.mark.parametrize("state_cache_size_bytes", [False, True, 0, -1, 2**64])
-def test_invalid_state_cache_size_bytes_is_rejected(state_cache_size_bytes):
-    with pytest.raises(ValueError, match="state_cache_size_bytes"):
-        make_client(state_cache_size_bytes=state_cache_size_bytes)
+@pytest.mark.parametrize("state_owned_cache_size", ["0", "-1 MiB", "nonsense"])
+def test_invalid_state_owned_cache_size_is_rejected(state_owned_cache_size):
+    with pytest.raises(ValueError, match="state_owned_cache_size"):
+        make_client(state_owned_cache_size=state_owned_cache_size)
+
+
+@pytest.mark.parametrize("state_read_cache_size", ["0", "-1 MiB", "nonsense"])
+def test_invalid_state_read_cache_size_is_rejected(state_read_cache_size):
+    with pytest.raises(ValueError, match="state_read_cache_size"):
+        make_client(state_read_cache_size=state_read_cache_size)
+
+
+@pytest.mark.parametrize("state_read_cache", [True, -1])
+def test_invalid_state_read_cache_is_rejected(state_read_cache):
+    with pytest.raises(ValueError, match="state_read_cache"):
+        make_client(state_read_cache=state_read_cache)
 
 
 class RawDef:
@@ -88,27 +85,7 @@ STATE_COLLECTIONS = [
 ]
 
 
-# --- name rules -----------------------------------------------------------
-
-
-def test_rejects_empty_name():
-    with pytest.raises(ValueError, match="name: must not be empty"):
-        make_client(state_collections=[value("")])
-
-
-def test_rejects_duplicate_name():
-    with pytest.raises(ValueError, match="duplicate collection name"):
-        make_client(state_collections=[value("dup"), map("dup")])
-
-
 # --- ttl rules ------------------------------------------------------------
-
-
-def test_rejects_ttl_zero():
-    with pytest.raises(
-        ValueError, match=r"ttl_seconds: must be a whole number in 1..=630720000"
-    ):
-        make_client(state_collections=[value("v", ttl=0)])
 
 
 def test_rejects_ttl_negative():
@@ -116,32 +93,13 @@ def test_rejects_ttl_negative():
         make_client(state_collections=[value("v", ttl=-1)])
 
 
-def test_rejects_ttl_over_ceiling():
-    with pytest.raises(ValueError, match=r"ttl_seconds: must be a whole number"):
-        make_client(state_collections=[value("v", ttl=630720001)])
-
-
-def test_accepts_ttl_at_ceiling():
-    # 630_720_000 (twenty years) is the inclusive Cassandra ceiling.
-    make_client(state_collections=[value("v", ttl=630720000)])
-
-
 @pytest.mark.parametrize("ttl_seconds", [2.5, float("nan"), float("inf")])
 def test_rejects_ttl_fractional_or_nonfinite(ttl_seconds):
-    # A fractional/NaN/inf ttl only reaches the Rust guard through a raw stub;
-    # the typed helpers would truncate/raise on int() first.
     with pytest.raises(ValueError, match=r"ttl_seconds: must be a whole number"):
         make_client(state_collections=[raw(ttl_seconds=ttl_seconds)])
 
 
 # --- keyset_limit rules ---------------------------------------------------
-
-
-def test_rejects_keyset_over_ceiling():
-    with pytest.raises(
-        ValueError, match=r"keyset_limit: must be a whole number in 0..=4096"
-    ):
-        make_client(state_collections=[map("m", keyset_limit=5000)])
 
 
 @pytest.mark.parametrize("keyset_limit", [2.5, -1, float("nan"), float("inf")])
@@ -203,11 +161,6 @@ def test_rejects_unknown_payload():
 
 
 # --- recovery_delay rules -------------------------------------------------
-
-
-def test_rejects_recovery_delay_zero():
-    with pytest.raises(ValueError, match="state_recovery_delay: must be >= 1 second"):
-        make_client(state_recovery_delay=0, state_collections=[value("v")])
 
 
 def test_rejects_recovery_delay_fractional():

@@ -18,9 +18,19 @@ native layer owns all of it.
 import enum
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, ClassVar, Dict, Generic, List, Optional, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    ClassVar,
+    Generic,
+    List,
+    Optional,
+    Protocol,
+    Union,
+)
 
-from typing_extensions import TypeVar
+from typing_extensions import Literal, TypedDict, TypeVar
 
 from prosody.message import JSONValue
 
@@ -28,6 +38,8 @@ from prosody.message import JSONValue
 T = TypeVar("T", default=JSONValue)  # value / deque item type
 V = TypeVar("V", default=JSONValue)  # map value type
 P = TypeVar("P", default=JSONValue)  # message payload type
+X = TypeVar("X")
+Y = TypeVar("Y")
 
 
 class Direction(enum.Enum):
@@ -41,25 +53,54 @@ class Direction(enum.Enum):
     BACKWARD = "backward"
 
 
-def _ttl_seconds(ttl: Optional[Union[timedelta, int]]) -> Optional[int]:
-    """Normalize a TTL to whole seconds, accepting a ``timedelta`` or an int."""
+def _ttl_seconds(ttl: Optional[Union[timedelta, int]]) -> Optional[Union[float, int]]:
+    """Expose a TTL in seconds without truncating invalid host values."""
     if ttl is None:
         return None
     if isinstance(ttl, timedelta):
-        return int(ttl.total_seconds())
-    return int(ttl)
+        return ttl.total_seconds()
+    return ttl
 
 
-def _config(defn: Any) -> Dict[str, Any]:
+ReadCache = Optional[Union[timedelta, float, Literal[False]]]
+
+
+class _StateConfig(TypedDict):
+    name: str
+    kind: str
+    payload: str
+    ttl_seconds: Optional[Union[float, int]]
+    read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
+    keyset_limit: Optional[int]
+    capacity: Optional[int]
+
+
+class _Definition(Protocol):
+    name: str
+    kind: str
+    payload: str
+    ttl: Optional[Union[timedelta, int]]
+    read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
+    keyset_limit: Optional[int]
+    capacity: Optional[int]
+
+
+def _config(definition: _Definition) -> _StateConfig:
     """Build the registration/vend config dict the client layer consumes."""
     return {
-        "name": defn.name,
-        "kind": defn.kind,
-        "payload": defn.payload,
-        "ttl_seconds": _ttl_seconds(defn.ttl),
-        "read_uncommitted": defn.read_uncommitted,
-        "keyset_limit": getattr(defn, "keyset_limit", None),
-        "capacity": getattr(defn, "capacity", None),
+        "name": definition.name,
+        "kind": definition.kind,
+        "payload": definition.payload,
+        "ttl_seconds": _ttl_seconds(definition.ttl),
+        "read_uncommitted": definition.read_uncommitted,
+        "published": definition.published,
+        "read_cache": definition.read_cache,
+        "keyset_limit": definition.keyset_limit,
+        "capacity": definition.capacity,
     }
 
 
@@ -70,10 +111,14 @@ class ValueDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    published: Optional[bool] = None
+    read_cache: ReadCache = None
+    keyset_limit: ClassVar[Optional[int]] = None
+    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "value"
     payload: ClassVar[str] = "json"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -85,11 +130,14 @@ class MapDefinition(Generic[V]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    published: Optional[bool] = None
+    read_cache: ReadCache = None
     keyset_limit: Optional[int] = None
+    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "map"
     payload: ClassVar[str] = "json"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -101,11 +149,14 @@ class DequeDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    published: Optional[bool] = None
+    read_cache: ReadCache = None
     capacity: Optional[int] = None
+    keyset_limit: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "json"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -117,10 +168,14 @@ class MessageValueDefinition(Generic[P]):
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
+    published: ClassVar[Optional[bool]] = None
+    read_cache: ClassVar[ReadCache] = None
+    keyset_limit: ClassVar[Optional[int]] = None
+    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "value"
     payload: ClassVar[str] = "message"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -133,10 +188,13 @@ class MessageMapDefinition(Generic[P]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     keyset_limit: Optional[int] = None
+    published: ClassVar[Optional[bool]] = None
+    read_cache: ClassVar[ReadCache] = None
+    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "map"
     payload: ClassVar[str] = "message"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -149,10 +207,13 @@ class MessageDequeDefinition(Generic[P]):
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     capacity: Optional[int] = None
+    published: ClassVar[Optional[bool]] = None
+    read_cache: ClassVar[ReadCache] = None
+    keyset_limit: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "message"
 
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         return _config(self)
 
@@ -162,9 +223,17 @@ def value(
     *,
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
+    published: Optional[bool] = None,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
 ) -> ValueDefinition[T]:
     """Define a single-value JSON collection."""
-    return ValueDefinition(name, ttl=ttl, read_uncommitted=read_uncommitted)
+    return ValueDefinition(
+        name,
+        ttl=ttl,
+        read_uncommitted=read_uncommitted,
+        published=published,
+        read_cache=read_cache,
+    )
 
 
 def map(  # this module-local name mirrors the collection kind; no builtin use here
@@ -172,6 +241,8 @@ def map(  # this module-local name mirrors the collection kind; no builtin use h
     *,
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
+    published: Optional[bool] = None,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
     keyset_limit: Optional[int] = None,
 ) -> MapDefinition[V]:
     """Define an ordered-map JSON collection (string keys)."""
@@ -179,6 +250,8 @@ def map(  # this module-local name mirrors the collection kind; no builtin use h
         name,
         ttl=ttl,
         read_uncommitted=read_uncommitted,
+        published=published,
+        read_cache=read_cache,
         keyset_limit=keyset_limit,
     )
 
@@ -188,6 +261,8 @@ def deque(
     *,
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
+    published: Optional[bool] = None,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
     capacity: Optional[int] = None,
 ) -> DequeDefinition[T]:
     """Define a double-ended-queue JSON collection.
@@ -197,7 +272,12 @@ def deque(
     changed across deploys.
     """
     return DequeDefinition(
-        name, ttl=ttl, read_uncommitted=read_uncommitted, capacity=capacity
+        name,
+        ttl=ttl,
+        read_uncommitted=read_uncommitted,
+        published=published,
+        read_cache=read_cache,
+        capacity=capacity,
     )
 
 
@@ -245,11 +325,30 @@ def message_deque(
     )
 
 
-def _identity(item: Any) -> Any:
+def _identity(item: X) -> X:
     return item
 
 
-class _StateScan:
+async def _deque_index(
+    index: int,
+    size: Callable[[], Awaitable[int]],
+) -> Optional[int]:
+    """Resolve a Python sequence index without reading size for non-negatives."""
+    if index >= 0:
+        return index
+    position = index + await size()
+    return position if position >= 0 else None
+
+
+class _NativeScan(Protocol[X]):
+    async def __anext__(self) -> X:
+        raise NotImplementedError
+
+    async def aclose(self) -> None:
+        raise NotImplementedError
+
+
+class _StateScan(Generic[Y]):
     """Async iterator over a native scan cursor, applying a per-flavour transform.
 
     The native cursor already handles retained-chunk flattening, serialization,
@@ -258,25 +357,164 @@ class _StateScan:
     keys/values/pairs; deque items pass through).
 
     Iterating with ``async for`` and then ``break`` does NOT call ``aclose()``.
-    That is harmless by construction — no store permit is held between pulls, the
-    cursor is attempt-epoch fenced, and the native ``Drop`` closes it on GC. For
-    a deterministic early close use ``contextlib.aclosing(...)``.
+    That is harmless by construction — no store permit is held between pulls
+    and native ``Drop`` closes it on GC. Owned cursors are attempt-fenced;
+    published cursors follow their standalone reader. For deterministic early
+    close use ``contextlib.aclosing(...)``.
     """
 
-    def __init__(self, native: Any, transform: Any) -> None:
-        self._native = native
+    def __init__(
+        self,
+        native: Union[_NativeScan[X], Callable[[], Awaitable[_NativeScan[X]]]],
+        transform: Callable[[X], Y],
+    ) -> None:
+        self._native = native if not callable(native) else None
+        self._open = native if callable(native) else None
         self._transform = transform
 
-    def __aiter__(self) -> "_StateScan":
+    async def _cursor(self) -> _NativeScan[X]:
+        if self._native is None:
+            assert self._open is not None
+            self._native = await self._open()
+            self._open = None
+        return self._native
+
+    def __aiter__(self) -> "_StateScan[Y]":
         return self
 
-    async def __anext__(self) -> Any:
+    async def __anext__(self) -> Y:
         # Re-raises the native StopAsyncIteration at exhaustion (never coerced
         # by PEP 479 since it crosses no generator boundary here).
-        return self._transform(await self._native.__anext__())
+        return self._transform(await (await self._cursor()).__anext__())
 
     async def aclose(self) -> None:
-        await self._native.aclose()
+        if self._native is not None:
+            await self._native.aclose()
+
+
+class PublishedValue(Generic[T]):
+    """Read-only access to a published value collection."""
+
+    def __init__(self, native: "_PublishedValueNative[T]") -> None:
+        self._native = native
+
+    async def get(self, key: str) -> Optional[T]:
+        return await self._native.get(key)
+
+
+class PublishedMap(Generic[V]):
+    """Read-only access to a published ordered-map collection."""
+
+    def __init__(self, native: "_PublishedMapNative[V]") -> None:
+        self._native = native
+
+    async def get(self, key: str, map_key: str) -> Optional[V]:
+        return await self._native.get(key, map_key)
+
+    async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]:
+        return await self._native.get_many(key, map_keys)
+
+    async def contains(self, key: str, map_key: str) -> bool:
+        return await self._native.contains_key(key, map_key)
+
+    def items(
+        self, key: str, direction: Direction = Direction.FORWARD
+    ) -> "_StateScan[tuple[str, V]]":
+        return _StateScan(
+            lambda: self._native.scan(key, direction.value),
+            _identity,
+        )
+
+    def keys(
+        self, key: str, direction: Direction = Direction.FORWARD
+    ) -> "_StateScan[str]":
+        return _StateScan(
+            lambda: self._native.keys(key, direction.value),
+            _identity,
+        )
+
+    def values(self, key: str) -> "_StateScan[V]":
+        return _StateScan(
+            lambda: self._native.scan(key, Direction.FORWARD.value),
+            lambda entry: entry[1],
+        )
+
+
+class PublishedDeque(Generic[T]):
+    """Read-only access to a published deque collection."""
+
+    def __init__(self, native: "_PublishedDequeNative[T]") -> None:
+        self._native = native
+
+    async def get(self, key: str, index: int) -> Optional[T]:
+        position = await _deque_index(index, lambda: self.size(key))
+        return None if position is None else await self._native.get(key, position)
+
+    async def size(self, key: str) -> int:
+        return await self._native.len(key)
+
+    async def is_empty(self, key: str) -> bool:
+        return await self._native.is_empty(key)
+
+    async def peek(self, key: str) -> Optional[T]:
+        return await self._native.peek_back(key)
+
+    async def peekleft(self, key: str) -> Optional[T]:
+        return await self._native.peek_front(key)
+
+    def values(
+        self, key: str, direction: Direction = Direction.FORWARD
+    ) -> "_StateScan[T]":
+        return _StateScan(
+            lambda: self._native.scan(key, direction.value),
+            _identity,
+        )
+
+
+class _PublishedValueNative(Protocol[T]):
+    async def get(self, key: str) -> Optional[T]:
+        raise NotImplementedError
+
+
+class _PublishedMapNative(Protocol[V]):
+    async def get(self, key: str, map_key: str) -> Optional[V]:
+        raise NotImplementedError
+
+    async def get_many(
+        self, key: str, map_keys: List[str]
+    ) -> List[Optional[V]]:
+        raise NotImplementedError
+
+    async def contains_key(self, key: str, map_key: str) -> bool:
+        raise NotImplementedError
+
+    async def scan(
+        self, key: str, direction: str
+    ) -> "_NativeScan[tuple[str, V]]":
+        raise NotImplementedError
+
+    async def keys(self, key: str, direction: str) -> "_NativeScan[str]":
+        raise NotImplementedError
+
+
+class _PublishedDequeNative(Protocol[T]):
+    async def get(self, key: str, index: int) -> Optional[T]:
+        raise NotImplementedError
+
+    async def len(self, key: str) -> int:
+        raise NotImplementedError
+
+    async def is_empty(self, key: str) -> bool:
+        raise NotImplementedError
+
+    async def peek_front(self, key: str) -> Optional[T]:
+        raise NotImplementedError
+
+    async def peek_back(self, key: str) -> Optional[T]:
+        raise NotImplementedError
+
+    async def scan(self, key: str, direction: str) -> "_NativeScan[T]":
+        raise NotImplementedError
 
 
 class ValueState(Generic[T]):
@@ -470,12 +708,11 @@ class DequeState(Generic[T]):
     async def get(self, index: int) -> Optional[T]:
         """Read the element at front-relative ``index``, or ``None`` past the end.
 
-        No Python-side index guard: the native ``u32`` conversion rejects a
-        float (``TypeError``) or a negative/oversized int (``OverflowError``),
-        both of which classify transient at the handler bridge — matching the
-        "invalid index is transient" rule without duplicating a guard.
+        Negative indices resolve from the back, following Python sequence
+        semantics. An index before the front returns ``None``.
         """
-        return await self._native.get(index)
+        position = await _deque_index(index, self.size)
+        return None if position is None else await self._native.get(position)
 
     async def size(self) -> int:
         """Number of live elements (named ``size`` because ``len`` cannot be async)."""

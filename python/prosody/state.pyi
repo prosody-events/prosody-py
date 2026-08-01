@@ -15,9 +15,9 @@ is future work. Map keys are always ``str``.
 
 import enum
 from datetime import timedelta
-from typing import Any, Dict, Generic, List, Optional, Tuple, Union, overload
+from typing import Generic, List, Optional, Tuple, Union, overload
 
-from typing_extensions import TypeVar
+from typing_extensions import Literal, TypedDict, TypeVar
 
 from prosody.message import JSONValue, Message
 
@@ -25,8 +25,22 @@ from prosody.message import JSONValue, Message
 T = TypeVar("T", default=JSONValue)  # value / deque item type
 V = TypeVar("V", default=JSONValue)  # map value type
 P = TypeVar("P", default=JSONValue)  # message payload type
+D_co = TypeVar("D_co", covariant=True, default=JSONValue)
 D = TypeVar("D")  # get() default's own type, preserved in the return
 _Y = TypeVar("_Y")  # yielded item type of a scan
+ReadCache = Optional[Union[timedelta, float, Literal[False]]]
+
+
+class _StateConfig(TypedDict):
+    name: str
+    kind: str
+    payload: str
+    ttl_seconds: Optional[int]
+    read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
+    keyset_limit: Optional[int]
+    capacity: Optional[int]
 
 
 class Direction(enum.Enum):
@@ -66,8 +80,33 @@ class _StateScan(Generic[_Y]):
         """Close the underlying native cursor (idempotent)."""
         ...
 
+class PublishedValue(Generic[T]):
+    async def get(self, key: str) -> Optional[T]: ...
 
-class ValueDefinition(Generic[T]):
+class PublishedMap(Generic[V]):
+    async def get(self, key: str, map_key: str) -> Optional[V]: ...
+    async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]: ...
+    async def contains(self, key: str, map_key: str) -> bool: ...
+    def items(
+        self, key: str, direction: Direction = ...
+    ) -> _StateScan[Tuple[str, V]]: ...
+    def keys(
+        self, key: str, direction: Direction = ...
+    ) -> _StateScan[str]: ...
+    def values(self, key: str) -> _StateScan[V]: ...
+
+class PublishedDeque(Generic[T]):
+    async def get(self, key: str, index: int) -> Optional[T]: ...
+    async def size(self, key: str) -> int: ...
+    async def is_empty(self, key: str) -> bool: ...
+    async def peek(self, key: str) -> Optional[T]: ...
+    async def peekleft(self, key: str) -> Optional[T]: ...
+    def values(
+        self, key: str, direction: Direction = ...
+    ) -> _StateScan[T]: ...
+
+
+class ValueDefinition(Generic[D_co]):
     """A single-value JSON collection definition.
 
     ``kind = "value"``, ``payload = "json"``. Vends :class:`ValueState` ``[T]``.
@@ -76,6 +115,8 @@ class ValueDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
     kind: str
     payload: str
 
@@ -84,13 +125,15 @@ class ValueDefinition(Generic[T]):
         name: str,
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
+        published: Optional[bool] = ...,
+        read_cache: ReadCache = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
 
-class MapDefinition(Generic[V]):
+class MapDefinition(Generic[D_co]):
     """An ordered-map JSON collection definition (string keys).
 
     ``kind = "map"``, ``payload = "json"``. Vends :class:`MapState` ``[V]``.
@@ -100,6 +143,8 @@ class MapDefinition(Generic[V]):
     name: str
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
     keyset_limit: Optional[int]
     kind: str
     payload: str
@@ -109,14 +154,16 @@ class MapDefinition(Generic[V]):
         name: str,
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
+        published: Optional[bool] = ...,
+        read_cache: ReadCache = ...,
         keyset_limit: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
 
-class DequeDefinition(Generic[T]):
+class DequeDefinition(Generic[D_co]):
     """A double-ended-queue JSON collection definition.
 
     ``kind = "deque"``, ``payload = "json"``. Vends :class:`DequeState` ``[T]``.
@@ -126,6 +173,8 @@ class DequeDefinition(Generic[T]):
     name: str
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
     capacity: Optional[int]
     kind: str
     payload: str
@@ -135,14 +184,16 @@ class DequeDefinition(Generic[T]):
         name: str,
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
+        published: Optional[bool] = ...,
+        read_cache: ReadCache = ...,
         capacity: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
 
-class MessageValueDefinition(Generic[P]):
+class MessageValueDefinition(Generic[D_co]):
     """A single-value collection storing whole Kafka messages.
 
     ``kind = "value"``, ``payload = "message"``. Vends
@@ -161,12 +212,12 @@ class MessageValueDefinition(Generic[P]):
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
 
-class MessageMapDefinition(Generic[P]):
+class MessageMapDefinition(Generic[D_co]):
     """An ordered-map collection storing whole Kafka messages.
 
     ``kind = "map"``, ``payload = "message"``. Vends
@@ -187,12 +238,12 @@ class MessageMapDefinition(Generic[P]):
         read_uncommitted: Optional[bool] = ...,
         keyset_limit: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
 
-class MessageDequeDefinition(Generic[P]):
+class MessageDequeDefinition(Generic[D_co]):
     """A double-ended-queue collection storing whole Kafka messages.
 
     ``kind = "deque"``, ``payload = "message"``. Vends
@@ -213,7 +264,7 @@ class MessageDequeDefinition(Generic[P]):
         read_uncommitted: Optional[bool] = ...,
         capacity: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> Dict[str, Any]:
+    def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""
         ...
 
@@ -223,6 +274,8 @@ def value(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
+    published: Optional[bool] = ...,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
 ) -> ValueDefinition[T]:
     """Define a single-value JSON collection (vends :class:`ValueState` ``[T]``).
 
@@ -238,6 +291,8 @@ def map(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
+    published: Optional[bool] = ...,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
     keyset_limit: Optional[int] = ...,
 ) -> MapDefinition[V]:
     """Define an ordered-map JSON collection (vends :class:`MapState` ``[V]``).
@@ -253,6 +308,8 @@ def deque(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
+    published: Optional[bool] = ...,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
     capacity: Optional[int] = ...,
 ) -> DequeDefinition[T]:
     """Define a double-ended-queue JSON collection (vends :class:`DequeState` ``[T]``).
@@ -489,11 +546,8 @@ class DequeState(Generic[T]):
     async def get(self, index: int) -> Optional[T]:
         """Read the element at front-relative ``index``, or ``None`` past the end.
 
-        ``index`` must be a non-negative integer that fits a native ``u32``. A
-        fractional value raises :class:`TypeError` and a negative or oversized
-        value raises :class:`OverflowError` at the native boundary; both
-        classify transient at the handler bridge, so the caller mistake retries
-        rather than discarding the message.
+        Negative indices resolve from the back, following Python sequence
+        semantics. An index before the front returns ``None``.
         """
         ...
     async def size(self) -> int:

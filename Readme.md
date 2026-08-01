@@ -168,132 +168,9 @@ should exit promptly. If not specified, timeout defaults to 80% of `stall_thresh
 
 ## Configuration
 
-Configure via constructor options or environment variables. Options fall back to environment variables when unset.
+For the complete configuration reference, see [CONFIGURATION.md](CONFIGURATION.md).
 
-### Core
-
-| Option / Environment Variable           | Description                                       | Default      |
-|-----------------------------------------|---------------------------------------------------|--------------|
-| `bootstrap_servers` / `PROSODY_BOOTSTRAP_SERVERS` | Kafka servers to connect to             | -            |
-| `group_id` / `PROSODY_GROUP_ID`         | Consumer group name                               | -            |
-| `subscribed_topics` / `PROSODY_SUBSCRIBED_TOPICS` | Topics to read from                     | -            |
-| `allowed_events` / `PROSODY_ALLOWED_EVENTS` | Only process events matching these prefixes   | (all)        |
-| `source_system` / `PROSODY_SOURCE_SYSTEM` | Tag for outgoing messages (prevents reprocessing)| `<group_id>` |
-| `mock` / `PROSODY_MOCK`                 | Use in-memory Kafka for testing                   | False        |
-
-### Consumer
-
-| Option / Environment Variable           | Description                                          | Default                |
-|-----------------------------------------|------------------------------------------------------|------------------------|
-| `max_concurrency` / `PROSODY_MAX_CONCURRENCY` | Max messages being processed simultaneously    | 32                     |
-| `max_uncommitted` / `PROSODY_MAX_UNCOMMITTED` | Max queued messages before pausing consumption | 64                     |
-| `timeout` / `PROSODY_TIMEOUT`           | Cancel handler if it runs longer than this           | 80% of stall threshold |
-| `commit_interval` / `PROSODY_COMMIT_INTERVAL` | How often to save progress to Kafka            | 1s                     |
-| `poll_interval` / `PROSODY_POLL_INTERVAL` | How often to fetch new messages from Kafka         | 100ms                  |
-| `shutdown_timeout` / `PROSODY_SHUTDOWN_TIMEOUT` | Shutdown budget; handlers run freely until cancellation fires near the end of the timeout | 30s |
-| `stall_threshold` / `PROSODY_STALL_THRESHOLD` | Report unhealthy if no progress for this long  | 5m                     |
-| `probe_port` / `PROSODY_PROBE_PORT`     | HTTP port for health checks (None to disable)        | 8000                   |
-| `failure_topic` / `PROSODY_FAILURE_TOPIC` | Send unprocessable messages here (dead letter queue) | -                    |
-| `idempotence_cache_size` / `PROSODY_IDEMPOTENCE_CACHE_SIZE` | Global shared cache capacity across all partitions. Set to `0` to disable the entire deduplication middleware (both in-memory and Cassandra tiers). | 8192 |
-| `idempotence_version` / `PROSODY_IDEMPOTENCE_VERSION` | Version string for cache-busting dedup hashes | `"1"` |
-| `idempotence_ttl` / `PROSODY_IDEMPOTENCE_TTL` | TTL for dedup records in Cassandra | 7d (604800 seconds) |
-| `slab_size` / `PROSODY_SLAB_SIZE`       | Timer storage granularity (rarely needs changing)    | 1h                     |
-| `message_spans` / `PROSODY_MESSAGE_SPANS` | Span linking for message execution: `child` (child-of) or `follows_from` | `child` |
-| `timer_spans` / `PROSODY_TIMER_SPANS`   | Span linking for timer execution: `child` (child-of) or `follows_from`   | `follows_from` |
-
-### Producer
-
-| Option / Environment Variable           | Description                     | Default |
-|-----------------------------------------|---------------------------------|---------|
-| `send_timeout` / `PROSODY_SEND_TIMEOUT` | Give up sending after this long | 1s      |
-
-### Retry
-
-When a handler fails, retry with exponential backoff:
-
-| Option / Environment Variable           | Description                       | Default |
-|-----------------------------------------|-----------------------------------|---------|
-| `max_retries` / `PROSODY_MAX_RETRIES`   | Give up after this many attempts  | 3       |
-| `retry_base` / `PROSODY_RETRY_BASE`     | Wait this long before first retry | 20ms    |
-| `max_retry_delay` / `PROSODY_RETRY_MAX_DELAY` | Never wait longer than this  | 5m      |
-
-### Deferral (Pipeline Mode)
-
-| Option / Environment Variable           | Description                                       | Default |
-|-----------------------------------------|---------------------------------------------------|---------|
-| `defer_enabled` / `PROSODY_DEFER_ENABLED` | Enable deferral for new messages                | true    |
-| `defer_base` / `PROSODY_DEFER_BASE`     | Wait this long before first deferred retry        | 1s      |
-| `defer_max_delay` / `PROSODY_DEFER_MAX_DELAY` | Never wait longer than this                 | 24h     |
-| `defer_failure_threshold` / `PROSODY_DEFER_FAILURE_THRESHOLD` | Disable deferral when failure rate exceeds this | 0.9 |
-| `defer_failure_window` / `PROSODY_DEFER_FAILURE_WINDOW` | Measure failure rate over this time window | 5m     |
-| `defer_cache_size` / `PROSODY_DEFER_CACHE_SIZE` | Track this many deferred keys in memory     | 1024    |
-| `defer_store_cache_size` / `PROSODY_DEFER_STORE_CACHE_SIZE` | Maximum deferred store cache entries per Cassandra defer store | 8192 |
-| `defer_seek_timeout` / `PROSODY_DEFER_SEEK_TIMEOUT` | Timeout when loading deferred messages    | 30s     |
-| `defer_discard_threshold` / `PROSODY_DEFER_DISCARD_THRESHOLD` | Read optimization (rarely needs changing) | 100  |
-
-### Monopolization Detection (Pipeline Mode)
-
-| Option / Environment Variable           | Description                             | Default |
-|-----------------------------------------|-----------------------------------------|---------|
-| `monopolization_enabled` / `PROSODY_MONOPOLIZATION_ENABLED` | Enable hot key protection   | true    |
-| `monopolization_threshold` / `PROSODY_MONOPOLIZATION_THRESHOLD` | Max handler time as fraction of window | 0.9 |
-| `monopolization_window` / `PROSODY_MONOPOLIZATION_WINDOW` | Measurement window            | 5m      |
-| `monopolization_cache_size` / `PROSODY_MONOPOLIZATION_CACHE_SIZE` | Max distinct keys to track  | 8192    |
-
-### Fair Scheduling (All Modes)
-
-| Option / Environment Variable           | Description                                                      | Default |
-|-----------------------------------------|------------------------------------------------------------------|---------|
-| `scheduler_failure_weight` / `PROSODY_SCHEDULER_FAILURE_WEIGHT` | Fraction of processing time reserved for retries | 0.3    |
-| `scheduler_max_wait` / `PROSODY_SCHEDULER_MAX_WAIT` | Messages waiting this long get maximum priority          | 2m      |
-| `scheduler_wait_weight` / `PROSODY_SCHEDULER_WAIT_WEIGHT` | Priority boost for waiting messages (higher = more aggressive) | 200.0 |
-| `scheduler_cache_size` / `PROSODY_SCHEDULER_CACHE_SIZE` | Max distinct keys to track                             | 8192    |
-
-### Telemetry Emitter
-
-Prosody emits internal lifecycle events (message dispatched/succeeded/failed, timer scheduled/fired, producer sends) to a Kafka topic for observability:
-
-| Option / Environment Variable           | Description                                            | Default                    |
-|-----------------------------------------|--------------------------------------------------------|----------------------------|
-| `telemetry_topic` / `PROSODY_TELEMETRY_TOPIC` | Kafka topic to produce telemetry events to       | prosody.telemetry-events   |
-| `telemetry_enabled` / `PROSODY_TELEMETRY_ENABLED` | Enable or disable the telemetry emitter        | true                       |
-
-### Cassandra
-
-Persistent storage for timers and deferred retries (not needed if `mock=True`):
-
-| Option / Environment Variable           | Description                        | Default |
-|-----------------------------------------|------------------------------------|---------|
-| `cassandra_nodes` / `PROSODY_CASSANDRA_NODES` | Servers to connect to (host:port) | -      |
-| `cassandra_keyspace` / `PROSODY_CASSANDRA_KEYSPACE` | Keyspace name              | prosody |
-| `cassandra_user` / `PROSODY_CASSANDRA_USER` | Username                         | -       |
-| `cassandra_password` / `PROSODY_CASSANDRA_PASSWORD` | Password                   | -       |
-| `cassandra_datacenter` / `PROSODY_CASSANDRA_DATACENTER` | Prefer this datacenter for queries | - |
-| `cassandra_rack` / `PROSODY_CASSANDRA_RACK` | Prefer this rack for queries     | -       |
-| `cassandra_retention` / `PROSODY_CASSANDRA_RETENTION` | Delete data older than this | 1y     |
-
-### Keyed State
-
-Register keyed-state collections before you subscribe. Persistence is backed by Cassandra and is not needed when `mock=True`. See the [Keyed State](#keyed-state-1) feature section for handler usage; the client-level knobs and per-collection fields are below. Where an option and an environment variable are paired, an explicitly set option wins; otherwise the environment variable applies, then the default.
-
-| Option / Environment Variable                                | Description                                                                                                                                                             | Default             |
-|--------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `state_collections` / -                                      | Keyed-state collections to register before subscribe (list of definition objects; duplicate names are rejected)                                                        | (none)              |
-| `state_cache_dir` / `PROSODY_STATE_CACHE_DIR`                | Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively)                                                    | per-client temp dir |
-| `state_cache_size_bytes` / `PROSODY_STATE_CACHE_SIZE_BYTES`  | Capacity of the in-memory keyed-state cache, in bytes; must be greater than 0. One cache is shared by all partition keyspaces                                            | engine default      |
-| `state_recovery_delay` / `PROSODY_STATE_RECOVERY_DELAY` | Delay before the recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (`timedelta` or float seconds; the env var accepts a duration string like `30s`) | 30s                 |
-
-Each `state_collections` entry has these fields. Prefer the definition constructors (`value` / `map` / `deque` and their `message_*` variants, documented below): they serialize into `state_collections` so you declare each collection once and reuse the same object with `context.state()`.
-
-| Field              | Description                                                                          | Default    |
-|--------------------|-------------------------------------------------------------------------------------|------------|
-| `name`             | Collection name; non-empty and unique within the client                             | (required) |
-| `kind`             | `"value"`, `"map"`, or `"deque"`                                                     | (required) |
-| `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received) | (required) |
-| `ttl`              | Per-write TTL, whole seconds >= 1 (must exceed the recovery delay); `timedelta` or int seconds | (none)     |
-| `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
-| `keyset_limit`     | Map-only; ordered-scan bound in `0..=4096` (`0` disables ordered-scan tracking)      | 128        |
-| `capacity`         | Deque-only; positive int max slot count, enforced lazily on push (runtime-only, may change across deploys) | (unbounded) |
+Constructor options take precedence. Unset options use environment variables, then library defaults.
 
 ## Liveness and Readiness Probes
 
@@ -312,7 +189,7 @@ Configure the probe server using either the client constructor:
 client = ProsodyClient(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
-    probe_port=8000,  # Set to None to disable
+    probe_port=8000,  # Explicitly pass None to disable
     stall_threshold=15.0  # Seconds before considering a partition stalled
 )
 ```
@@ -467,20 +344,14 @@ await client.send("my-topic", "key2", {
 })
 ```
 
-The entire deduplication middleware (both the in-memory cache and the Cassandra-backed persistent store) can be disabled by setting `idempotence_cache_size=0`:
+Consumer deduplication is required for keyed-state commits. The client rejects an `idempotence_cache_size` of zero:
 
 ```python
 client = ProsodyClient(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
-    idempotence_cache_size=0  # Disable deduplication entirely
+    idempotence_cache_size=0  # Rejected
 )
-```
-
-Or via environment variable:
-
-```bash
-PROSODY_IDEMPOTENCE_CACHE_SIZE=0
 ```
 
 To invalidate all previously recorded deduplication entries (e.g. after a data migration), change `idempotence_version`:
@@ -593,6 +464,34 @@ Keyed state gives every Kafka key its own durable working memory. Prosody automa
 Use keyed state for time-aware stream processing: counters, deduplication, rolling aggregates, pending work, and per-key workflows. Keep your relational database as the source of truth for business data and for work that needs joins or ad hoc queries. Reconstructing stream state with repeated database queries can be slow and expensive; keyed state is built for that job.
 
 Most collections should have a TTL. Set it comfortably beyond the longest timer or workflow that uses the state; Prosody validates the minimum supported TTL. Omit it only when keeping inactive keys forever is intentional.
+
+### Published state
+
+Published state lets another client read a JSON value, map, or deque without subscribing to the owner's topics. Use the same typed definition for the owned collection and its read-only view. The owner sets `published=True`, names its `subsystem`, and registers the definition as usual:
+
+```python
+CURRENT_ORDER: ValueDefinition[dict[str, str]] = value("current-order", published=True)
+owner = ProsodyClient(
+    **config,
+    subsystem="checkout",
+    state_collections=[CURRENT_ORDER],
+)
+
+# Inside the owner's handler, the event supplies the user key.
+current_order = context.state(CURRENT_ORDER)
+await current_order.set({"sku": "book"})
+```
+
+Another client opens a reader by naming the subsystem and passing that same definition. The reader is independent of subscriptions and only returns committed state:
+
+```python
+order_reader = await client.state("checkout", CURRENT_ORDER)
+current_order = await order_reader.get("customer-123")
+```
+
+Published readers provide the owned collection's read operations without its mutations. An owned handle gets the user key from the current event; a published reader is outside a handler, so every operation takes that key explicitly. Map and deque iteration is asynchronous and reads in chunks rather than loading the entire collection.
+
+The default cache window is five seconds unless the client configuration changes it. Set `read_cache=timedelta(...)` on a definition to choose a different freshness window, or `read_cache=False` to read durable storage on every operation. To stop publishing a collection, deploy its definition with `published=False` while keeping it registered and retaining `subsystem` for that deployment.
 
 ### A counter for each key
 
@@ -1016,6 +915,9 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
 - `consumer_state() -> str`: Get the current state of the consumer.
+- `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
+- `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
+- `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
 - `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
 - `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
 
@@ -1092,11 +994,11 @@ Represents a timer that has fired, provided to the `on_timer` method:
 
 ### Keyed State
 
-Definition constructors (each returns a frozen definition object used both in `state_collections` and with `context.state()`). Each accepts `ttl` and `read_uncommitted`, plus `keyset_limit` on the map variants:
+Definition constructors return frozen objects used both in `state_collections` and with `context.state()`. JSON definitions accept `published` and `read_cache` in addition to the options below:
 
-- `value(name, *, ttl=None, read_uncommitted=None) -> ValueDefinition[T]`
-- `map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MapDefinition[V]`
-- `deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> DequeDefinition[T]`
+- `value(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None) -> ValueDefinition[T]`
+- `map(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, keyset_limit=None) -> MapDefinition[V]`
+- `deque(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, capacity=None) -> DequeDefinition[T]`
 - `message_value(name, *, ttl=None, read_uncommitted=None) -> MessageValueDefinition[P]`
 - `message_map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MessageMapDefinition[P]`
 - `message_deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> MessageDequeDefinition[P]`
@@ -1142,6 +1044,8 @@ Definition constructors (each returns a frozen definition object used both in `s
 - `rollback() -> None`
 
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
+
+Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, and `values` return async iterators directly.
 
 Errors:
 

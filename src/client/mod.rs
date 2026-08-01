@@ -7,10 +7,10 @@
 
 use opentelemetry::propagation::TextMapPropagator;
 use prosody::JsonCodec;
-use prosody::high_level::HighLevelClient;
-use prosody::high_level::state::{ConsumerState, ConsumerStateView};
-use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
+use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache, SharedHighLevelClient};
+use prosody::propagator::new_propagator;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use pythonize::depythonize;
@@ -18,6 +18,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::process;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::runtime::Handle;
 use tokio::task::block_in_place;
 use tracing::{Instrument, debug, info_span};
@@ -26,6 +27,8 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 use crate::client::config::try_build_config;
 use crate::client::format::format_list;
 use crate::handler::PythonHandler;
+use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
+use crate::state::StateEnv;
 
 mod config;
 mod format;
@@ -35,9 +38,9 @@ mod format;
 /// This client provides methods for sending messages to Kafka topics and
 /// subscribing to topics for message consumption. It supports different
 /// operational modes and configuration options.
-#[pyclass]
+#[pyclass(subclass, name = "_NativeProsodyClient")]
 pub struct ProsodyClient {
-    client: Arc<HighLevelClient<PythonHandler>>,
+    client: SharedHighLevelClient<PythonHandler, JsonCodec>,
     get_context: Py<PyAny>,
     inject: Py<PyAny>,
     pid: u32,
@@ -103,7 +106,7 @@ impl ProsodyClient {
         let client = self.client.clone();
         future_into_py(py, async move {
             client
-                .send(topic.as_str().into(), &key, payload)
+                .send(topic.as_str().into(), key, payload)
                 .instrument(span)
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
@@ -129,12 +132,78 @@ impl ProsodyClient {
         let client = self.client.clone();
         future_into_py(py, async move {
             let state = client.consumer_state().await;
-            if let ConsumerState::ConfigurationFailed(err) = &*state {
+            if let ErasedConsumerState::ConfigurationFailed(error) = &state {
                 return Err(PyRuntimeError::new_err(format!(
-                    "consumer configuration failed: {err:#}"
+                    "consumer configuration failed: {error}"
                 )));
             }
-            Ok(state.to_string())
+            Ok(consumer_state_name(&state))
+        })
+    }
+
+    /// Opens a read-only published value collection.
+    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
+    fn _published_value<'p>(
+        &self,
+        py: Python<'p>,
+        subsystem: String,
+        name: String,
+        read_cache: Option<&Bound<'p, PyAny>>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let cache = parse_read_cache(read_cache)?;
+        let env = self.published_env(py)?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            let inner = client
+                .value_state(subsystem, name, cache)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| Ok(Py::new(py, PublishedValue { inner, env })?.into_any()))
+        })
+    }
+
+    /// Opens a read-only published map collection.
+    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
+    fn _published_map<'p>(
+        &self,
+        py: Python<'p>,
+        subsystem: String,
+        name: String,
+        read_cache: Option<&Bound<'p, PyAny>>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let cache = parse_read_cache(read_cache)?;
+        let env = self.published_env(py)?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            let inner = client
+                .map_state(subsystem, name, cache)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| Ok(Py::new(py, PublishedMap { inner, env })?.into_any()))
+        })
+    }
+
+    /// Opens a read-only published deque collection.
+    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
+    fn _published_deque<'p>(
+        &self,
+        py: Python<'p>,
+        subsystem: String,
+        name: String,
+        read_cache: Option<&Bound<'p, PyAny>>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let cache = parse_read_cache(read_cache)?;
+        let env = self.published_env(py)?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            let inner = client
+                .deque_state(subsystem, name, cache)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner, env })?.into_any()))
         })
     }
 
@@ -223,18 +292,18 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         slf.check_fork()?;
-        let consumer_state_ref = &*slf.consumer_state_sync();
+        let consumer_state = slf.consumer_state_sync();
 
-        let consumer_properties = match consumer_state_ref {
-            ConsumerState::Unconfigured => String::new(),
-            ConsumerState::ConfigurationFailed(err) => format!(", error=\"{err}\""),
-            ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
-                let consumer_config = config.consumer_config();
+        let consumer_properties = match &consumer_state {
+            ErasedConsumerState::Unconfigured => String::new(),
+            ErasedConsumerState::ConfigurationFailed(error) => format!(", error=\"{error}\""),
+            ErasedConsumerState::Configured(config)
+            | ErasedConsumerState::Running { config, .. } => {
                 format!(
                     ", mode='{}', topics={}, group_id={}",
-                    config.mode(),
-                    format_list(&consumer_config.subscribed_topics),
-                    consumer_config.group_id
+                    config.mode,
+                    format_list(&config.topics),
+                    config.group_id
                 )
             }
         };
@@ -242,7 +311,7 @@ impl ProsodyClient {
         Ok(format!(
             "{}(producer='running', consumer='{}', bootstrap={}{})",
             class_name,
-            consumer_state_ref,
+            consumer_state_name(&consumer_state),
             format_list(&slf.client.producer_config().bootstrap_servers),
             consumer_properties
         ))
@@ -257,18 +326,18 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         slf.check_fork()?;
-        let consumer_state_ref = &*slf.consumer_state_sync();
+        let consumer_state = slf.consumer_state_sync();
 
-        let consumer_properties = match consumer_state_ref {
-            ConsumerState::Unconfigured => String::new(),
-            ConsumerState::ConfigurationFailed(err) => format!(", error={err}"),
-            ConsumerState::Configured(config) | ConsumerState::Running { config, .. } => {
-                let consumer_config = config.consumer_config();
+        let consumer_properties = match &consumer_state {
+            ErasedConsumerState::Unconfigured => String::new(),
+            ErasedConsumerState::ConfigurationFailed(error) => format!(", error={error}"),
+            ErasedConsumerState::Configured(config)
+            | ErasedConsumerState::Running { config, .. } => {
                 format!(
                     ", mode={}, topics={}, group_id={}",
-                    config.mode(),
-                    consumer_config.subscribed_topics.join(","),
-                    consumer_config.group_id
+                    config.mode,
+                    config.topics.join(","),
+                    config.group_id
                 )
             }
         };
@@ -276,7 +345,7 @@ impl ProsodyClient {
         Ok(format!(
             "{}: producer=running, consumer={}, bootstrap={}{}",
             class_name,
-            consumer_state_ref,
+            consumer_state_name(&consumer_state),
             slf.client.producer_config().bootstrap_servers.join(","),
             consumer_properties
         ))
@@ -300,7 +369,7 @@ impl ProsodyClient {
         // holding the GIL. The handler's Python objects are released when the
         // child exits, so skipping their traversal is safe.
         if process::id() == self.pid
-            && let ConsumerState::Running { handler, .. } = &*self.consumer_state_sync()
+            && let ErasedConsumerState::Running { handler, .. } = self.consumer_state_sync()
         {
             visit.call(handler.handle_method().as_any())?;
             visit.call(handler.timer_method().as_any())?;
@@ -317,8 +386,46 @@ impl ProsodyClient {
     }
 }
 
+fn parse_read_cache(value: Option<&Bound<'_, PyAny>>) -> PyResult<ErasedReadCache> {
+    let Some(value) = value else {
+        return Ok(ErasedReadCache::Inherit);
+    };
+    if value.is_instance_of::<PyBool>() {
+        return if value.extract::<bool>()? {
+            Err(PyValueError::new_err(
+                "read_cache=True is ambiguous; pass a duration, False, or None",
+            ))
+        } else {
+            Ok(ErasedReadCache::Disabled)
+        };
+    }
+    let seconds = if let Ok(seconds) = value.extract::<f64>() {
+        seconds
+    } else if let Ok(total_seconds) = value.getattr("total_seconds") {
+        total_seconds.call0()?.extract::<f64>()?
+    } else {
+        return Err(PyTypeError::new_err(
+            "read_cache must be seconds, timedelta, False, or None",
+        ));
+    };
+    let ttl = Duration::try_from_secs_f64(seconds)
+        .map_err(|_| PyValueError::new_err("read_cache must be finite and non-negative"))?;
+    Ok(ErasedReadCache::Ttl(ttl))
+}
+
 #[allow(clippy::multiple_inherent_impl)]
 impl ProsodyClient {
+    fn published_env(&self, py: Python) -> PyResult<StateEnv> {
+        let message_class = py.import("prosody")?.getattr("Message")?.unbind();
+        StateEnv::resolve(
+            py,
+            &self.get_context,
+            &self.inject,
+            Arc::new(new_propagator()),
+            &message_class,
+        )
+    }
+
     fn check_fork(&self) -> PyResult<()> {
         if process::id() != self.pid {
             return Err(PyRuntimeError::new_err(
@@ -329,8 +436,17 @@ impl ProsodyClient {
         Ok(())
     }
 
-    fn consumer_state_sync(&self) -> ConsumerStateView<'_, PythonHandler, JsonCodec> {
+    fn consumer_state_sync(&self) -> ErasedConsumerState<PythonHandler> {
         let handle = Handle::try_current().unwrap_or_else(|_| get_runtime().handle().clone());
         block_in_place(|| handle.block_on(self.client.consumer_state()))
+    }
+}
+
+fn consumer_state_name(state: &ErasedConsumerState<PythonHandler>) -> &'static str {
+    match state {
+        ErasedConsumerState::Unconfigured => "unconfigured",
+        ErasedConsumerState::ConfigurationFailed(_) => "configuration_failed",
+        ErasedConsumerState::Configured(_) => "configured",
+        ErasedConsumerState::Running { .. } => "running",
     }
 }

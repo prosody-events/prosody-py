@@ -179,7 +179,7 @@ fn null_value_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
 ///
 /// Returns a transient error if the token is neither `"forward"` nor
 /// `"backward"` (a caller mistake — retries, not discarded).
-fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> PyResult<Direction> {
+pub(crate) fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> PyResult<Direction> {
     match direction {
         "forward" => Ok(Direction::Forward),
         "backward" => Ok(Direction::Backward),
@@ -1185,6 +1185,45 @@ pub struct NativeStateScan {
     inner: Arc<Mutex<ScanState>>,
     /// The shared per-handle environment.
     env: StateEnv,
+}
+
+pub(crate) fn published_map_scan(
+    cursor: BoxStateCursor<(String, Value)>,
+    env: StateEnv,
+) -> NativeStateScan {
+    NativeStateScan {
+        inner: Arc::new(Mutex::new(ScanState::MapJson {
+            cursor,
+            retained: VecDeque::new(),
+        })),
+        env,
+    }
+}
+
+pub(crate) fn published_map_key_scan(
+    cursor: BoxStateCursor<String>,
+    env: StateEnv,
+) -> NativeStateScan {
+    NativeStateScan {
+        inner: Arc::new(Mutex::new(ScanState::MapKeys {
+            cursor,
+            retained: VecDeque::new(),
+        })),
+        env,
+    }
+}
+
+pub(crate) fn published_deque_scan(
+    cursor: BoxStateCursor<Value>,
+    env: StateEnv,
+) -> NativeStateScan {
+    NativeStateScan {
+        inner: Arc::new(Mutex::new(ScanState::DequeJson {
+            cursor,
+            retained: VecDeque::new(),
+        })),
+        env,
+    }
 }
 
 #[pymethods]
