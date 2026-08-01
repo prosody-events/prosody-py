@@ -604,32 +604,27 @@ Most collections should have a TTL. Set it comfortably beyond the longest timer 
 Published state lets another client read a JSON value, map, or deque without subscribing to the owner's topics. Use the same typed definition for the owned collection and its read-only view. The owner sets `published=True`, names its `subsystem`, and registers the definition as usual:
 
 ```python
-CART: ValueDefinition[dict[str, str]] = value(
-    "cart",
+CURRENT_ORDER: ValueDefinition[dict[str, str]] = value(
+    "current-order",
     published=True,
     read_cache=timedelta(seconds=2),
 )
-ITEMS: MapDefinition[dict[str, str]] = map("items", published=True)
 owner = ProsodyClient(
     **config,
     subsystem="checkout",
-    state_collections=[CART, ITEMS],
+    state_collections=[CURRENT_ORDER],
 )
 
 # Inside the owner's handler, the event supplies the user key.
-cart = context.state(CART)
-await cart.set({"sku": "book"})
+current_order = context.state(CURRENT_ORDER)
+await current_order.set({"sku": "book"})
 ```
 
 Another client opens a reader by naming the subsystem and passing that same definition. The reader is independent of subscriptions and only returns committed state:
 
 ```python
-cart_reader = await client.state("checkout", CART)
-cart = await cart_reader.get("user-1")
-
-item_reader = await client.state("checkout", ITEMS)
-async for map_key, item in item_reader.items("user-1"):
-    ...
+order_reader = await client.state("checkout", CURRENT_ORDER)
+current_order = await order_reader.get("customer-123")
 ```
 
 Published readers provide the owned collection's read operations without its mutations. An owned handle gets the user key from the current event; a published reader is outside a handler, so every operation takes that key explicitly. Map and deque iteration is asynchronous and reads in chunks rather than loading the entire collection.
