@@ -408,10 +408,9 @@ fn parse_read_cache(value: Option<&Bound<'_, PyAny>>) -> PyResult<ErasedReadCach
             "read_cache must be seconds, timedelta, False, or None",
         ));
     };
-    if !seconds.is_finite() || seconds <= 0.0_f64 {
-        return Err(PyValueError::new_err("read_cache must be positive"));
-    }
-    Ok(ErasedReadCache::Ttl(Duration::from_secs_f64(seconds)))
+    let ttl = Duration::try_from_secs_f64(seconds)
+        .map_err(|_| PyValueError::new_err("read_cache must be finite and non-negative"))?;
+    Ok(ErasedReadCache::Ttl(ttl))
 }
 
 #[allow(clippy::multiple_inherent_impl)]

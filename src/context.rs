@@ -464,13 +464,6 @@ impl Context {
             .map_err(|_| {
                 transient_state_error(&prosody, "state: definition name must be a string")
             })?;
-        if name.is_empty() {
-            return Err(transient_state_error(
-                &prosody,
-                "state: definition name must be non-empty",
-            ));
-        }
-
         let cache_key = (kind, name.clone());
         {
             let cache = self

@@ -53,13 +53,13 @@ class Direction(enum.Enum):
     BACKWARD = "backward"
 
 
-def _ttl_seconds(ttl: Optional[Union[timedelta, int]]) -> Optional[int]:
-    """Normalize a TTL to whole seconds, accepting a ``timedelta`` or an int."""
+def _ttl_seconds(ttl: Optional[Union[timedelta, int]]) -> Optional[Union[float, int]]:
+    """Expose a TTL in seconds without truncating invalid host values."""
     if ttl is None:
         return None
     if isinstance(ttl, timedelta):
-        return int(ttl.total_seconds())
-    return int(ttl)
+        return ttl.total_seconds()
+    return ttl
 
 
 ReadCache = Optional[Union[timedelta, float, Literal[False]]]
@@ -69,7 +69,7 @@ class _StateConfig(TypedDict):
     name: str
     kind: str
     payload: str
-    ttl_seconds: Optional[int]
+    ttl_seconds: Optional[Union[float, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
     read_cache: ReadCache

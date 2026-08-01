@@ -36,19 +36,10 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
-use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
-
-/// The Cassandra TTL ceiling in seconds (`630_720_000`, twenty years). Core
-/// also validates this at consumer build; enforcing it here yields an earlier,
-/// field-named error.
-const TTL_CEILING_SECONDS: u32 = 630_720_000;
-
-/// The inclusive upper bound for a map keyset limit.
-const KEYSET_LIMIT_MAX: u32 = 4096;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
 /// configuration.
@@ -776,10 +767,8 @@ fn optional_f64(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<f64>> {
 /// Parses the deque-only `capacity` field into a `NonZeroUsize` push bound.
 ///
 /// Rejects a capacity on a non-deque collection and validates the value as a
-/// whole number in `1..=u32::MAX`. That ceiling is a guardrail, not a real cap:
-/// at ~100 B/slot it is ~400 GiB, far past the per-instance memory budget.
-/// Every client validates a host int against this same core `NonZeroUsize`
-/// primitive — equal power, only host-int overhead differs.
+/// whole number in `1..=u32::MAX`. These are the bounds needed to construct
+/// Prosody's `NonZeroUsize` value.
 ///
 /// # Errors
 ///
@@ -826,9 +815,8 @@ fn optional_bool(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<bool>> {
 ///
 /// The config dict is produced by the definition's `to_config()` method with
 /// keys `name`, `kind`, `payload`, `ttl_seconds`, `read_uncommitted`,
-/// `keyset_limit` (map-only), and `capacity` (deque-only). Field-level
-/// validation names the offending field; core validates the remaining rules
-/// (TTL exceeding the recovery delay, identity conflicts) at consumer build.
+/// `keyset_limit` (map-only), and `capacity` (deque-only). This function checks
+/// only whether host values map into the corresponding Prosody types.
 ///
 /// # Errors
 ///
@@ -840,12 +828,6 @@ fn register_state_collection(
     cfg: &Bound<PyDict>,
 ) -> PyResult<()> {
     let name = required_str(cfg, index, "name")?;
-    if name.is_empty() {
-        return Err(PyValueError::new_err(format!(
-            "state_collections[{index}].name: must not be empty"
-        )));
-    }
-
     let kind = parse_kind(index, &required_str(cfg, index, "kind")?)?;
     let payload = parse_payload(index, &required_str(cfg, index, "payload")?)?;
 
@@ -853,8 +835,8 @@ fn register_state_collection(
         Some(value) => Some(whole_number_field(
             value,
             &format!("state_collections[{index}].ttl_seconds"),
-            1,
-            TTL_CEILING_SECONDS,
+            0,
+            u32::MAX,
         )?),
         None => None,
     };
@@ -870,7 +852,7 @@ fn register_state_collection(
                 value,
                 &format!("state_collections[{index}].keyset_limit"),
                 0,
-                KEYSET_LIMIT_MAX,
+                u32::MAX,
             )?)
         }
         None => None,
@@ -880,11 +862,6 @@ fn register_state_collection(
 
     let read_uncommitted = optional_bool(cfg, "read_uncommitted")?;
     let published = optional_bool(cfg, "published")?;
-    if published == Some(true) && matches!(payload, CollectionPayload::Message) {
-        return Err(PyValueError::new_err(format!(
-            "state_collections[{index}].published: published readers support JSON collections only"
-        )));
-    }
     let name = name.as_str();
     match (kind, payload) {
         (CollectionKind::Value, CollectionPayload::Json) => {
@@ -946,13 +923,13 @@ fn register_state_collection(
 
 /// Builds the `KeyedStateConfiguration` from the provided Python configuration.
 ///
-/// Reads the keyed-state cache, recovery, and collection settings, registering
-/// every declared collection synchronously and rejecting duplicate names.
+/// Reads the keyed-state cache, recovery, and collection settings. It maps
+/// every definition into a Prosody descriptor. The normal Prosody construction
+/// path validates the resulting configuration.
 ///
 /// # Errors
 ///
-/// Returns a `PyValueError` if a keyed-state field is invalid or a collection
-/// name is duplicated.
+/// Returns a `PyValueError` if a host value cannot be mapped.
 fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfiguration> {
     let mut builder = KeyedStateConfiguration::builder();
 
@@ -960,11 +937,6 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
         && !dir.is_none()
     {
         let dir: String = dir.extract()?;
-        if dir.is_empty() {
-            return Err(PyValueError::new_err(
-                "state_cache_dir: must not be an empty string",
-            ));
-        }
         builder.cache_dir(PathBuf::from(dir));
     }
 
@@ -982,11 +954,6 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
         let seconds = u32::try_from(duration.as_secs()).map_err(|_| {
             PyValueError::new_err("state_recovery_delay: exceeds the u32 seconds range")
         })?;
-        if seconds < 1 {
-            return Err(PyValueError::new_err(
-                "state_recovery_delay: must be >= 1 second",
-            ));
-        }
         builder.recovery_delay(CompactDuration::new(seconds));
     }
 
@@ -1033,7 +1000,6 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
     if let Some(collections) = config.get_item("state_collections")?
         && !collections.is_none()
     {
-        let mut seen: HashSet<String> = HashSet::new();
         for (index, entry) in collections.try_iter()?.enumerate() {
             let entry = entry?;
             let cfg = entry.call_method0("to_config")?;
@@ -1042,12 +1008,6 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
                     "state_collections[{index}]: to_config() must return a dict"
                 ))
             })?;
-            let name = required_str(cfg, index, "name")?;
-            if !seen.insert(name.clone()) {
-                return Err(PyValueError::new_err(format!(
-                    "state_collections[{index}].name: duplicate collection name {name:?}"
-                )));
-            }
             register_state_collection(&mut keyed, index, cfg)?;
         }
     }
@@ -1101,11 +1061,6 @@ fn read_cache_config(config: &Bound<PyDict>) -> PyResult<ReadCacheConfig> {
     let duration = decode_duration(&cache).map_err(|error| {
         PyValueError::new_err(format!("state_read_cache: {}", error.value(cache.py())))
     })?;
-    if duration.is_zero() {
-        return Err(PyValueError::new_err(
-            "state_read_cache: duration must be greater than 0",
-        ));
-    }
     result.ttl = ReadCacheTtl::Ttl(duration);
     Ok(result)
 }
