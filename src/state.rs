@@ -255,6 +255,13 @@ fn json_write_item(
     item: &Bound<PyAny>,
     deletion_advice: &str,
 ) -> PyResult<Value> {
+    if item.is_instance(env.0.message_class.bind(py))? {
+        return Err(transient_error(
+            py,
+            env,
+            "a Kafka-message payload cannot be stored in a JSON collection",
+        ));
+    }
     let value = depythonize::<Value>(item).map_err(|error| {
         transient_error(
             py,

@@ -1025,6 +1025,33 @@ async def test_cancel_pull_then_followup(state_client):
 # ===========================================================================
 
 
+async def test_json_collection_rejects_delivered_message(state_client):
+    client, topic, _ = state_client
+
+    async def cb(ctx, msg, results):
+        cart = ctx.state(STATE_DEFS["cart"])
+        try:
+            await _wait(cart.set(msg))
+            await results.send({"threw": False})
+        except Exception as error:
+            await results.send(
+                {
+                    "threw": True,
+                    "transient": isinstance(error, TransientStateError),
+                    "message": str(error),
+                }
+            )
+
+    handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, nonce(), {"go": True}))
+    obs = await _wait(handler.results.receive())
+
+    assert obs["threw"] is True
+    assert obs["transient"] is True
+    assert "cannot be stored in a JSON collection" in obs["message"]
+
+
 async def test_unregistered_name_is_permanent(state_client):
     client, topic, _ = state_client
 
