@@ -43,10 +43,6 @@ STATE_COLLECTIONS = [value("cart"), map("totals", keyset_limit=256)]
 HANDLER_SPAN = "test.state_handler"
 # Expected core semantic spans for the fixed op set below (one message).
 EXPECTED_COUNTS = {"value.set": 1, "value.get": 1, "map.set": 2, "map.stream": 1}
-# pyclass names that must NOT appear as spans (no binding/chunk wrapper span).
-FORBIDDEN_SPAN_NAMES = {"NativeValueState", "NativeMapState", "NativeStateScan"}
-
-
 async def _wait(awaitable):
     return await asyncio.wait_for(awaitable, timeout=DEFAULT_TIMEOUT)
 
@@ -265,9 +261,10 @@ async def test_state_op_trace_graph(random_topic_and_group):
 
     # No binding/chunk wrapper span exists anywhere in the inspected traces.
     all_names = {sp.get("name") for sp in spans.values()}
-    assert not (all_names & FORBIDDEN_SPAN_NAMES), (
-        f"unexpected binding span(s): {all_names & FORBIDDEN_SPAN_NAMES}"
-    )
+    binding_spans = {
+        name for name in all_names if isinstance(name, str) and name.startswith("Native")
+    }
+    assert not binding_spans, f"unexpected binding span(s): {binding_spans}"
     # The duplicate-wrapper bug: an op span parented directly by an identically
     # named span for one call. Assert no such pair exists.
     for sp in op_spans:
@@ -283,4 +280,4 @@ async def test_state_op_trace_graph(random_topic_and_group):
     print(f"op-span counts: {counts}")
     print(f"handler span id: {handler_id}")
     print(f"all span names: {sorted(all_names)}")
-    print(f"no binding/chunk spans: {not (all_names & FORBIDDEN_SPAN_NAMES)}")
+    print(f"no binding/chunk spans: {not binding_spans}")

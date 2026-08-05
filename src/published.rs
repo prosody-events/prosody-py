@@ -1,7 +1,7 @@
 //! Python-native read-only views over published keyed state.
 
 use crate::state::{
-    StateEnv, parse_direction, published_deque_scan, published_map_key_scan, published_map_scan,
+    NativeJsonDequeScan, NativeJsonMapScan, NativeMapKeyScan, StateEnv, parse_direction,
     state_error,
 };
 use prosody::JsonCodec;
@@ -110,7 +110,7 @@ impl PublishedMap {
                 .stream(key, direction)
                 .await
                 .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(Py::new(py, published_map_scan(cursor, env))?.into_any()))
+            Python::attach(|py| Ok(Py::new(py, NativeJsonMapScan::new(cursor, env))?.into_any()))
         })
     }
 
@@ -123,7 +123,7 @@ impl PublishedMap {
                 .keys(key, direction)
                 .await
                 .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(Py::new(py, published_map_key_scan(cursor, env))?.into_any()))
+            Python::attach(|py| Ok(Py::new(py, NativeMapKeyScan::new(cursor, env))?.into_any()))
         })
     }
 }
@@ -204,7 +204,7 @@ impl PublishedDeque {
                 .stream(key, direction)
                 .await
                 .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(Py::new(py, published_deque_scan(cursor, env))?.into_any()))
+            Python::attach(|py| Ok(Py::new(py, NativeJsonDequeScan::new(cursor, env))?.into_any()))
         })
     }
 }

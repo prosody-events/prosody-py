@@ -14,7 +14,11 @@ use crate::client::ProsodyClient;
 use crate::context::Context;
 use crate::logging::PythonLoggingLayer;
 use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
-use crate::state::{NativeDequeState, NativeMapState, NativeStateScan, NativeValueState};
+use crate::state::{
+    NativeJsonDequeScan, NativeJsonDequeState, NativeJsonMapScan, NativeJsonMapState,
+    NativeJsonValueState, NativeMapKeyScan, NativeMessageDequeScan, NativeMessageDequeState,
+    NativeMessageMapScan, NativeMessageMapState, NativeMessageValueState,
+};
 use ::prosody::tracing::{
     flush_telemetry as core_flush_telemetry, initialize_tracing,
     shutdown_telemetry as core_shutdown_telemetry,
@@ -76,10 +80,17 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     // Internal erased keyed-state handles (the typed Python surface wraps
     // these); registered on the main module rather than a `prosody.state`
     // submodule to leave that name free for the typed layer.
-    prosody_module.add_class::<NativeValueState>()?;
-    prosody_module.add_class::<NativeMapState>()?;
-    prosody_module.add_class::<NativeDequeState>()?;
-    prosody_module.add_class::<NativeStateScan>()?;
+    prosody_module.add_class::<NativeJsonValueState>()?;
+    prosody_module.add_class::<NativeMessageValueState>()?;
+    prosody_module.add_class::<NativeJsonMapState>()?;
+    prosody_module.add_class::<NativeMessageMapState>()?;
+    prosody_module.add_class::<NativeJsonDequeState>()?;
+    prosody_module.add_class::<NativeMessageDequeState>()?;
+    prosody_module.add_class::<NativeJsonDequeScan>()?;
+    prosody_module.add_class::<NativeJsonMapScan>()?;
+    prosody_module.add_class::<NativeMessageDequeScan>()?;
+    prosody_module.add_class::<NativeMessageMapScan>()?;
+    prosody_module.add_class::<NativeMapKeyScan>()?;
     prosody_module.add_class::<PublishedValue>()?;
     prosody_module.add_class::<PublishedMap>()?;
     prosody_module.add_class::<PublishedDeque>()?;

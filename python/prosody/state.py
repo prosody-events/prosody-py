@@ -3,8 +3,8 @@
 A thin transport over the native handles vended by :meth:`Context.state`. The
 native layer (Rust) already owns every semantic: carrier injection, chunk
 draining, error-category classification (raising ``PermanentStateError`` /
-``TransientStateError`` / ``NullValueError`` directly), null/shape/kind guards,
-and scan flattening. These wrappers therefore only:
+``TransientStateError`` / ``NullValueError`` directly), write validation, and
+scan flattening. These wrappers therefore only:
 
 * shape and freeze typed **definitions** and turn them into the config dict the
   client consumes,
