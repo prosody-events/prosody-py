@@ -5,8 +5,8 @@
 //! information for Kafka messages.
 
 use crate::state::{
-    DequeStateVariant, MapStateVariant, NativeDequeState, NativeMapState, NativeValueState,
-    StateEnv, ValueStateVariant, state_error,
+    NativeJsonDequeState, NativeJsonMapState, NativeJsonValueState, NativeMessageDequeState,
+    NativeMessageMapState, NativeMessageValueState, StateEnv, state_error,
 };
 use chrono::{DateTime, Utc};
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
@@ -331,14 +331,14 @@ impl Context {
     ///
     /// Returns a permanent error if the name is unregistered or its registered
     /// identity mismatches.
-    fn value_state(&self, py: Python, name: &str) -> PyResult<NativeValueState> {
+    fn value_state(&self, py: Python, name: &str) -> PyResult<NativeJsonValueState> {
         let env = self.state_env(py)?;
         let handle = self
             .inner
             .value_state(name)
             .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeValueState {
-            state: Arc::new(ValueStateVariant::Json(handle)),
+        Ok(NativeJsonValueState {
+            state: Arc::new(handle),
             env,
         })
     }
@@ -349,14 +349,14 @@ impl Context {
     ///
     /// Returns a permanent error if the name is unregistered or its registered
     /// identity mismatches.
-    fn map_state(&self, py: Python, name: &str) -> PyResult<NativeMapState> {
+    fn map_state(&self, py: Python, name: &str) -> PyResult<NativeJsonMapState> {
         let env = self.state_env(py)?;
         let handle = self
             .inner
             .map_state(name)
             .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeMapState {
-            state: Arc::new(MapStateVariant::Json(handle)),
+        Ok(NativeJsonMapState {
+            state: Arc::new(handle),
             env,
         })
     }
@@ -367,14 +367,14 @@ impl Context {
     ///
     /// Returns a permanent error if the name is unregistered or its registered
     /// identity mismatches.
-    fn deque_state(&self, py: Python, name: &str) -> PyResult<NativeDequeState> {
+    fn deque_state(&self, py: Python, name: &str) -> PyResult<NativeJsonDequeState> {
         let env = self.state_env(py)?;
         let handle = self
             .inner
             .deque_state(name)
             .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeDequeState {
-            state: Arc::new(DequeStateVariant::Json(handle)),
+        Ok(NativeJsonDequeState {
+            state: Arc::new(handle),
             env,
         })
     }
@@ -388,14 +388,14 @@ impl Context {
     ///
     /// Returns a permanent error if the name is unregistered or its registered
     /// identity mismatches.
-    fn message_value_state(&self, py: Python, name: &str) -> PyResult<NativeValueState> {
+    fn message_value_state(&self, py: Python, name: &str) -> PyResult<NativeMessageValueState> {
         let env = self.state_env(py)?;
         let handle = self
             .inner
             .message_value_state(name)
             .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeValueState {
-            state: Arc::new(ValueStateVariant::Message(handle)),
+        Ok(NativeMessageValueState {
+            state: Arc::new(handle),
             env,
         })
     }
@@ -409,14 +409,14 @@ impl Context {
     ///
     /// Returns a permanent error if the name is unregistered or its registered
     /// identity mismatches.
-    fn message_map_state(&self, py: Python, name: &str) -> PyResult<NativeMapState> {
+    fn message_map_state(&self, py: Python, name: &str) -> PyResult<NativeMessageMapState> {
         let env = self.state_env(py)?;
         let handle = self
             .inner
             .message_map_state(name)
             .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeMapState {
-            state: Arc::new(MapStateVariant::Message(handle)),
+        Ok(NativeMessageMapState {
+            state: Arc::new(handle),
             env,
         })
     }
@@ -430,14 +430,14 @@ impl Context {
     ///
     /// Returns a permanent error if the name is unregistered or its registered
     /// identity mismatches.
-    fn message_deque_state(&self, py: Python, name: &str) -> PyResult<NativeDequeState> {
+    fn message_deque_state(&self, py: Python, name: &str) -> PyResult<NativeMessageDequeState> {
         let env = self.state_env(py)?;
         let handle = self
             .inner
             .message_deque_state(name)
             .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeDequeState {
-            state: Arc::new(DequeStateVariant::Message(handle)),
+        Ok(NativeMessageDequeState {
+            state: Arc::new(handle),
             env,
         })
     }

@@ -224,34 +224,6 @@ fn consumer_message(
         })
 }
 
-/// The collection's item payload kind, used to route a write and its item
-/// build.
-#[derive(Clone, Copy)]
-enum Kind {
-    /// JSON values.
-    Json,
-    /// The full Kafka message the handler received.
-    Message,
-}
-
-/// An item crossing INTO a state handle, restored to its native shape.
-enum StateItem {
-    /// A JSON value.
-    Json(Value),
-    /// A Kafka message.
-    Message(ConsumerMessage<Value>),
-}
-
-impl StateItem {
-    /// Restores the item to its Python shape (GIL held).
-    fn to_py(&self, py: Python, env: &StateEnv) -> PyResult<Py<PyAny>> {
-        match self {
-            StateItem::Json(value) => Ok(pythonize(py, value)?.unbind()),
-            StateItem::Message(message) => build_message(py, env, message),
-        }
-    }
-}
-
 /// Positionally constructs the Python `Message`, identical to `handler.rs`.
 ///
 /// Carries the resolved message as its [`MessageCore`], so a message read back
@@ -276,1042 +248,637 @@ fn build_message(
     Ok(object.unbind())
 }
 
-/// Prepares a write item, detecting the JSON/message kind mismatch and the
-/// JSON-`null` write (both transient caller mistakes).
-///
-/// `deletion_advice` names the deletion verb for the collection kind, appended
-/// to the null-rejection message.
-///
-/// # Errors
-///
-/// Returns a transient error on a kind mismatch or an unrepresentable value,
-/// and a null-value error on a JSON-`null` write.
-fn prepare_item(
+/// Prepares a JSON write.
+fn json_write_item(
     py: Python,
     env: &StateEnv,
-    kind: Kind,
     item: &Bound<PyAny>,
     deletion_advice: &str,
-) -> PyResult<StateItem> {
-    let is_message = item.is_instance(env.0.message_class.bind(py))?;
-    match kind {
-        Kind::Json => {
-            if is_message {
-                return Err(transient_error(
-                    py,
-                    env,
-                    "a Kafka-message payload cannot be stored in a JSON collection",
-                ));
-            }
-            let value: Value = depythonize::<Value>(item).map_err(|error| {
-                transient_error(
-                    py,
-                    env,
-                    &format!("value is not representable as JSON: {error}"),
-                )
-            })?;
-            if value.is_null() {
-                return Err(null_value_error(
-                    py,
-                    env,
-                    &format!("JSON null is not a storable value{deletion_advice}"),
-                ));
-            }
-            Ok(StateItem::Json(value))
-        }
-        Kind::Message => {
-            if is_message {
-                Ok(StateItem::Message(consumer_message(py, env, item)?))
-            } else {
-                Err(transient_error(py, env, "expected a Kafka message"))
-            }
-        }
-    }
-}
-
-/// The two payload flavours a value handle wraps.
-pub(crate) enum ValueStateVariant {
-    /// A JSON value collection.
-    Json(BoxValueState<Value>),
-    /// A Kafka-message collection.
-    Message(BoxValueState<ConsumerMessage<Value>>),
-}
-
-impl ValueStateVariant {
-    /// The payload kind of this variant.
-    fn kind(&self) -> Kind {
-        match self {
-            ValueStateVariant::Json(_) => Kind::Json,
-            ValueStateVariant::Message(_) => Kind::Message,
-        }
-    }
-}
-
-/// The two payload flavours a map handle wraps.
-pub(crate) enum MapStateVariant {
-    /// A JSON value collection.
-    Json(BoxMapState<Value>),
-    /// A Kafka-message collection.
-    Message(BoxMapState<ConsumerMessage<Value>>),
-}
-
-impl MapStateVariant {
-    /// The payload kind of this variant.
-    fn kind(&self) -> Kind {
-        match self {
-            MapStateVariant::Json(_) => Kind::Json,
-            MapStateVariant::Message(_) => Kind::Message,
-        }
-    }
-}
-
-/// The two payload flavours a deque handle wraps.
-pub(crate) enum DequeStateVariant {
-    /// A JSON value collection.
-    Json(BoxDequeState<Value>),
-    /// A Kafka-message collection.
-    Message(BoxDequeState<ConsumerMessage<Value>>),
-}
-
-impl DequeStateVariant {
-    /// The payload kind of this variant.
-    fn kind(&self) -> Kind {
-        match self {
-            DequeStateVariant::Json(_) => Kind::Json,
-            DequeStateVariant::Message(_) => Kind::Message,
-        }
-    }
-}
-
-/// Erased single-value state handle, vended per event.
-#[pyclass]
-pub struct NativeValueState {
-    /// The wrapped erased value handle.
-    pub(crate) state: Arc<ValueStateVariant>,
-    /// The shared per-handle environment.
-    pub(crate) env: StateEnv,
-}
-
-#[pymethods]
-impl NativeValueState {
-    /// Reads the current value, or `None` when absent/cleared.
-    fn get<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                ValueStateVariant::Json(handle) => handle
-                    .get()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Json)),
-                ValueStateVariant::Message(handle) => handle
-                    .get()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Message)),
-            };
-            Python::attach(|py| match out {
-                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Buffers a write of the value.
-    ///
-    /// A JSON `null` is rejected (transient), naming `clear()` to delete; a
-    /// kind mismatch is likewise transient.
-    fn set<'p>(&self, py: Python<'p>, item: &Bound<'p, PyAny>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let prepared = prepare_item(
+) -> PyResult<Value> {
+    if item.is_instance(env.0.message_class.bind(py))? {
+        return Err(transient_error(
             py,
-            &self.env,
-            self.state.kind(),
-            item,
-            "; use clear() to remove the value",
-        )?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match (&*state, prepared) {
-                (ValueStateVariant::Json(handle), StateItem::Json(value)) => {
-                    handle.set(value).with_context(ctx).await
-                }
-                (ValueStateVariant::Message(handle), StateItem::Message(message)) => {
-                    handle.set(message).with_context(ctx).await
-                }
-                (ValueStateVariant::Json(_), StateItem::Message(_))
-                | (ValueStateVariant::Message(_), StateItem::Json(_)) => {
-                    return Python::attach(|py| {
-                        Err(transient_error(py, &env, "item/collection kind mismatch"))
-                    });
-                }
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
+            env,
+            "a Kafka-message payload cannot be stored in a JSON collection",
+        ));
     }
-
-    /// Buffers a clear of the value.
-    fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                ValueStateVariant::Json(handle) => handle.clear().with_context(ctx).await,
-                ValueStateVariant::Message(handle) => handle.clear().with_context(ctx).await,
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
+    let value = depythonize::<Value>(item).map_err(|error| {
+        transient_error(
+            py,
+            env,
+            &format!("value is not representable as JSON: {error}"),
+        )
+    })?;
+    if value.is_null() {
+        return Err(null_value_error(
+            py,
+            env,
+            &format!("JSON null is not a storable value{deletion_advice}"),
+        ));
     }
+    Ok(value)
+}
 
-    /// Durably commits the buffered operations mid-handler.
-    fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                ValueStateVariant::Json(handle) => handle.commit().with_context(ctx).await,
-                ValueStateVariant::Message(handle) => handle.commit().with_context(ctx).await,
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Discards the buffered uncommitted operations (infallible).
-    fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        future_into_py(py, async move {
-            match &*state {
-                ValueStateVariant::Json(handle) => handle.rollback().with_context(ctx).await,
-                ValueStateVariant::Message(handle) => handle.rollback().with_context(ctx).await,
-            }
-            Ok(())
-        })
-    }
-
-    /// Traverses the Python handles this state holds for GC.
-    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.env.traverse(visit).map(|_| ())
+fn message_write_item(
+    py: Python,
+    env: &StateEnv,
+    item: &Bound<PyAny>,
+) -> PyResult<ConsumerMessage<Value>> {
+    if item.is_instance(env.0.message_class.bind(py))? {
+        consumer_message(py, env, item)
+    } else {
+        Err(transient_error(py, env, "expected a Kafka message"))
     }
 }
 
-/// Erased ordered-map state handle, keyed by `String`, vended per event.
-#[pyclass]
-pub struct NativeMapState {
-    /// The wrapped erased map handle.
-    pub(crate) state: Arc<MapStateVariant>,
-    /// The shared per-handle environment.
-    pub(crate) env: StateEnv,
-}
+macro_rules! value_state {
+    ($name:ident, $payload:ty, $prepare:expr, $restore:expr) => {
+        /// Single-value state handle with one payload type.
+        #[pyclass]
+        pub struct $name {
+            pub(crate) state: Arc<BoxValueState<$payload>>,
+            pub(crate) env: StateEnv,
+        }
 
-#[pymethods]
-impl NativeMapState {
-    /// Reads the value for `key`, or `None` when absent.
-    fn get<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                MapStateVariant::Json(handle) => handle
-                    .get(key)
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Json)),
-                MapStateVariant::Message(handle) => handle
-                    .get(key)
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Message)),
-            };
-            Python::attach(|py| match out {
-                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Reads several keys in one isolated batch, one result per input key in
-    /// order (`None` for an absent key). A straight pass-through of the erased
-    /// batch API.
-    fn get_many<'p>(&self, py: Python<'p>, keys: Vec<String>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                MapStateVariant::Json(handle) => handle
-                    .get_many(keys)
-                    .with_context(ctx)
-                    .await
-                    .map(|items| items.into_iter().map(|i| i.map(StateItem::Json)).collect()),
-                MapStateVariant::Message(handle) => {
-                    handle.get_many(keys).with_context(ctx).await.map(|items| {
-                        items
-                            .into_iter()
-                            .map(|i| i.map(StateItem::Message))
-                            .collect()
+        #[pymethods]
+        impl $name {
+            /// Reads the current value.
+            fn get<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.get().with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
+                        Err(error) => Err(state_error(py, &env, &error)),
                     })
-                }
-            };
-            Python::attach(|py| match out {
-                Ok(items) => {
-                    let items: Vec<Option<StateItem>> = items;
-                    items
-                        .into_iter()
-                        .map(|item| item.map(|item| item.to_py(py, &env)).transpose())
-                        .collect::<PyResult<Vec<Option<Py<PyAny>>>>>()
-                }
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Reports whether a stored cell exists for `key`, read through the event's
-    /// dirty overlay (read-your-writes).
-    ///
-    /// Presence only: never runs the value codec or the resolver, so a
-    /// message-backed map answers `true` even for a key whose referenced Kafka
-    /// message can no longer be fetched. Not zero-I/O — a cache miss still
-    /// reads Cassandra and surfaces errors exactly like `get`.
-    fn contains_key<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                MapStateVariant::Json(handle) => handle.contains_key(key).with_context(ctx).await,
-                MapStateVariant::Message(handle) => {
-                    handle.contains_key(key).with_context(ctx).await
-                }
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Inserts or overwrites `key`.
-    ///
-    /// A JSON `null` is rejected (transient), naming `remove(key)` to delete; a
-    /// kind mismatch is likewise transient.
-    fn set<'p>(
-        &self,
-        py: Python<'p>,
-        key: String,
-        item: &Bound<'p, PyAny>,
-    ) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let prepared = prepare_item(
-            py,
-            &self.env,
-            self.state.kind(),
-            item,
-            "; use remove(key) to remove the entry",
-        )?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match (&*state, prepared) {
-                (MapStateVariant::Json(handle), StateItem::Json(value)) => {
-                    handle.set(key, value).with_context(ctx).await
-                }
-                (MapStateVariant::Message(handle), StateItem::Message(message)) => {
-                    handle.set(key, message).with_context(ctx).await
-                }
-                (MapStateVariant::Json(_), StateItem::Message(_))
-                | (MapStateVariant::Message(_), StateItem::Json(_)) => {
-                    return Python::attach(|py| {
-                        Err(transient_error(py, &env, "item/collection kind mismatch"))
-                    });
-                }
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Removes `key`.
-    fn remove<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                MapStateVariant::Json(handle) => handle.remove(key).with_context(ctx).await,
-                MapStateVariant::Message(handle) => handle.remove(key).with_context(ctx).await,
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Removes every entry.
-    fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                MapStateVariant::Json(handle) => handle.clear().with_context(ctx).await,
-                MapStateVariant::Message(handle) => handle.clear().with_context(ctx).await,
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Opens a demand-driven cursor over the live entries in key order.
-    ///
-    /// Synchronous — no I/O. The extracted carrier is active while core builds
-    /// its stream span. Entries are yielded as `(key, value)` pairs.
-    fn scan(&self, py: Python, direction: &str) -> PyResult<NativeStateScan> {
-        let dir = parse_direction(py, &self.env, direction)?;
-        let _guard = self.env.op_context(py)?.attach();
-        let scan = match &*self.state {
-            MapStateVariant::Json(handle) => ScanState::MapJson {
-                cursor: handle.scan(dir),
-                retained: VecDeque::new(),
-            },
-            MapStateVariant::Message(handle) => ScanState::MapMessage {
-                cursor: handle.scan(dir),
-                retained: VecDeque::new(),
-            },
-        };
-        Ok(NativeStateScan {
-            inner: Arc::new(Mutex::new(scan)),
-            env: self.env.clone(),
-        })
-    }
-
-    /// Opens a demand-driven cursor over the live keys in key order.
-    ///
-    /// Synchronous — no I/O to start. The cursor yields bare `str` keys and is
-    /// presence-only: it never runs the value codec or the resolver, so a
-    /// message-backed map enumerates keys with zero Kafka fetches. Not zero-I/O
-    /// — pulling a chunk still does a presence read. The extracted carrier is
-    /// active while core builds its stream span.
-    fn keys(&self, py: Python, direction: &str) -> PyResult<NativeStateScan> {
-        let dir = parse_direction(py, &self.env, direction)?;
-        let _guard = self.env.op_context(py)?.attach();
-        // Both variants' `keys` yield `BoxStateCursor<String>` regardless of the
-        // value type — presence needs no value flavour.
-        let cursor = match &*self.state {
-            MapStateVariant::Json(handle) => handle.keys(dir),
-            MapStateVariant::Message(handle) => handle.keys(dir),
-        };
-        Ok(NativeStateScan {
-            inner: Arc::new(Mutex::new(ScanState::MapKeys {
-                cursor,
-                retained: VecDeque::new(),
-            })),
-            env: self.env.clone(),
-        })
-    }
-
-    /// Durably commits the buffered operations mid-handler.
-    fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                MapStateVariant::Json(handle) => handle.commit().with_context(ctx).await,
-                MapStateVariant::Message(handle) => handle.commit().with_context(ctx).await,
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Discards the buffered uncommitted operations (infallible).
-    fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        future_into_py(py, async move {
-            match &*state {
-                MapStateVariant::Json(handle) => handle.rollback().with_context(ctx).await,
-                MapStateVariant::Message(handle) => handle.rollback().with_context(ctx).await,
+                })
             }
-            Ok(())
-        })
-    }
 
-    /// Traverses the Python handles this state holds for GC.
-    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.env.traverse(visit).map(|_| ())
-    }
-}
-
-/// Erased deque state handle, vended per event.
-#[pyclass]
-pub struct NativeDequeState {
-    /// The wrapped erased deque handle.
-    pub(crate) state: Arc<DequeStateVariant>,
-    /// The shared per-handle environment.
-    pub(crate) env: StateEnv,
-}
-
-#[pymethods]
-impl NativeDequeState {
-    /// The number of live elements.
-    fn len<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle.len().with_context(ctx).await,
-                DequeStateVariant::Message(handle) => handle.len().with_context(ctx).await,
-            };
-            Python::attach(|py| match out {
-                Ok(len) => u32::try_from(len).map_err(|_| {
-                    transient_error(
-                        py,
-                        &env,
-                        &format!("deque length {len} exceeds the u32 range"),
-                    )
-                }),
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Whether the deque holds no live elements.
-    fn is_empty<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle.is_empty().with_context(ctx).await,
-                DequeStateVariant::Message(handle) => handle.is_empty().with_context(ctx).await,
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Reads the element at front-relative position `index`, or `None` past the
-    /// end.
-    fn get<'p>(&self, py: Python<'p>, index: u32) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let index = index as usize;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle
-                    .get(index)
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Json)),
-                DequeStateVariant::Message(handle) => handle
-                    .get(index)
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Message)),
-            };
-            Python::attach(|py| match out {
-                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Appends an element at the back.
-    ///
-    /// A JSON `null` is rejected (transient); a kind mismatch is likewise
-    /// transient.
-    fn push_back<'p>(&self, py: Python<'p>, item: &Bound<'p, PyAny>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let prepared = prepare_item(py, &self.env, self.state.kind(), item, " in a deque")?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match (&*state, prepared) {
-                (DequeStateVariant::Json(handle), StateItem::Json(value)) => {
-                    handle.push_back(value).with_context(ctx).await
-                }
-                (DequeStateVariant::Message(handle), StateItem::Message(message)) => {
-                    handle.push_back(message).with_context(ctx).await
-                }
-                (DequeStateVariant::Json(_), StateItem::Message(_))
-                | (DequeStateVariant::Message(_), StateItem::Json(_)) => {
-                    return Python::attach(|py| {
-                        Err(transient_error(py, &env, "item/collection kind mismatch"))
-                    });
-                }
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Prepends an element at the front.
-    ///
-    /// A JSON `null` is rejected (transient); a kind mismatch is likewise
-    /// transient.
-    fn push_front<'p>(
-        &self,
-        py: Python<'p>,
-        item: &Bound<'p, PyAny>,
-    ) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let prepared = prepare_item(py, &self.env, self.state.kind(), item, " in a deque")?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match (&*state, prepared) {
-                (DequeStateVariant::Json(handle), StateItem::Json(value)) => {
-                    handle.push_front(value).with_context(ctx).await
-                }
-                (DequeStateVariant::Message(handle), StateItem::Message(message)) => {
-                    handle.push_front(message).with_context(ctx).await
-                }
-                (DequeStateVariant::Json(_), StateItem::Message(_))
-                | (DequeStateVariant::Message(_), StateItem::Json(_)) => {
-                    return Python::attach(|py| {
-                        Err(transient_error(py, &env, "item/collection kind mismatch"))
-                    });
-                }
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Removes and returns the front element, or `None` when empty.
-    fn pop_front<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle
-                    .pop_front()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Json)),
-                DequeStateVariant::Message(handle) => handle
-                    .pop_front()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Message)),
-            };
-            Python::attach(|py| match out {
-                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Removes and returns the back element, or `None` when empty.
-    fn pop_back<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle
-                    .pop_back()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Json)),
-                DequeStateVariant::Message(handle) => handle
-                    .pop_back()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Message)),
-            };
-            Python::attach(|py| match out {
-                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Reads the front element without removing it, or `None` when empty.
-    ///
-    /// An endpoint-*slot* read — exactly `get(0)` minus the length round trip.
-    /// Under a TTL the window can hold holes, and an expired front slot yields
-    /// `None` even when `len() > 0` and live interior elements exist; a peek
-    /// never searches inward.
-    fn peek_front<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle
-                    .peek_front()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Json)),
-                DequeStateVariant::Message(handle) => handle
-                    .peek_front()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Message)),
-            };
-            Python::attach(|py| match out {
-                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Reads the back element without removing it, or `None` when empty.
-    ///
-    /// An endpoint-*slot* read — exactly `get(len - 1)` minus the length round
-    /// trip, and absence instead of the negative-index error the
-    /// length-then-get workaround hits on an empty deque. See
-    /// [`peek_front`](Self::peek_front) for the TTL-hole semantics.
-    fn peek_back<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle
-                    .peek_back()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Json)),
-                DequeStateVariant::Message(handle) => handle
-                    .peek_back()
-                    .with_context(ctx)
-                    .await
-                    .map(|item| item.map(StateItem::Message)),
-            };
-            Python::attach(|py| match out {
-                Ok(item) => item.map(|item| item.to_py(py, &env)).transpose(),
-                Err(error) => Err(state_error(py, &env, &error)),
-            })
-        })
-    }
-
-    /// Removes every element.
-    fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle.clear().with_context(ctx).await,
-                DequeStateVariant::Message(handle) => handle.clear().with_context(ctx).await,
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Opens a demand-driven cursor over the live elements in index order.
-    ///
-    /// Synchronous — no I/O. The extracted carrier is active while core builds
-    /// its stream span.
-    fn scan(&self, py: Python, direction: &str) -> PyResult<NativeStateScan> {
-        let dir = parse_direction(py, &self.env, direction)?;
-        let _guard = self.env.op_context(py)?.attach();
-        let scan = match &*self.state {
-            DequeStateVariant::Json(handle) => ScanState::DequeJson {
-                cursor: handle.scan(dir),
-                retained: VecDeque::new(),
-            },
-            DequeStateVariant::Message(handle) => ScanState::DequeMessage {
-                cursor: handle.scan(dir),
-                retained: VecDeque::new(),
-            },
-        };
-        Ok(NativeStateScan {
-            inner: Arc::new(Mutex::new(scan)),
-            env: self.env.clone(),
-        })
-    }
-
-    /// Durably commits the buffered operations mid-handler.
-    fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = match &*state {
-                DequeStateVariant::Json(handle) => handle.commit().with_context(ctx).await,
-                DequeStateVariant::Message(handle) => handle.commit().with_context(ctx).await,
-            };
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
-    }
-
-    /// Discards the buffered uncommitted operations (infallible).
-    fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let state = Arc::clone(&self.state);
-        future_into_py(py, async move {
-            match &*state {
-                DequeStateVariant::Json(handle) => handle.rollback().with_context(ctx).await,
-                DequeStateVariant::Message(handle) => handle.rollback().with_context(ctx).await,
+            /// Buffers a write of the value.
+            fn set<'p>(
+                &self,
+                py: Python<'p>,
+                item: &Bound<'p, PyAny>,
+            ) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let item = ($prepare)(py, &self.env, item)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.set(item).with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
             }
-            Ok(())
-        })
-    }
 
-    /// Traverses the Python handles this state holds for GC.
-    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.env.traverse(visit).map(|_| ())
-    }
-}
-
-/// The four scan flavours, each holding its cursor arm plus the retained tail
-/// of a pulled ready chunk not yet handed to Python.
-enum ScanState {
-    /// A deque JSON scan yielding values.
-    DequeJson {
-        /// The erased cursor.
-        cursor: BoxStateCursor<Value>,
-        /// Pulled-but-unyielded items.
-        retained: VecDeque<Value>,
-    },
-    /// A map JSON scan yielding `(key, value)` entries.
-    MapJson {
-        /// The erased cursor.
-        cursor: BoxStateCursor<(String, Value)>,
-        /// Pulled-but-unyielded items.
-        retained: VecDeque<(String, Value)>,
-    },
-    /// A deque message scan yielding messages.
-    DequeMessage {
-        /// The erased cursor.
-        cursor: BoxStateCursor<ConsumerMessage<Value>>,
-        /// Pulled-but-unyielded items.
-        retained: VecDeque<ConsumerMessage<Value>>,
-    },
-    /// A map message scan yielding `(key, message)` entries.
-    MapMessage {
-        /// The erased cursor.
-        cursor: BoxStateCursor<(String, ConsumerMessage<Value>)>,
-        /// Pulled-but-unyielded items.
-        retained: VecDeque<(String, ConsumerMessage<Value>)>,
-    },
-    /// A map key-only scan yielding bare keys (no value decode / no resolver).
-    MapKeys {
-        /// The erased cursor.
-        cursor: BoxStateCursor<String>,
-        /// Pulled-but-unyielded keys.
-        retained: VecDeque<String>,
-    },
-}
-
-/// Builds the Python object for the FRONT retained item without removing it.
-///
-/// Peek-then-pop: the caller only pops after this succeeds, so a conversion
-/// failure leaves the item retained for a deterministic re-attempt rather than
-/// silently dropping it. Returns `None` when nothing is retained.
-///
-/// Holds no `await`; the GIL is acquired synchronously to run only trusted,
-/// non-reentrant Python (the frozen `Message` constructor and `pythonize` of
-/// JSON primitives), so it cannot re-enter `__anext__`/`aclose`.
-fn scan_build_front(scan: &ScanState, env: &StateEnv) -> PyResult<Option<Py<PyAny>>> {
-    match scan {
-        ScanState::DequeJson { retained, .. } => match retained.front() {
-            None => Ok(None),
-            Some(value) => Python::attach(|py| Ok(Some(pythonize(py, value)?.unbind()))),
-        },
-        ScanState::MapJson { retained, .. } => match retained.front() {
-            None => Ok(None),
-            Some((key, value)) => Python::attach(|py| {
-                let value = pythonize(py, value)?;
-                let entry = PyTuple::new(py, [PyString::new(py, key).into_any(), value])?;
-                Ok(Some(entry.into_any().unbind()))
-            }),
-        },
-        ScanState::DequeMessage { retained, .. } => match retained.front() {
-            None => Ok(None),
-            Some(message) => Python::attach(|py| Ok(Some(build_message(py, env, message)?))),
-        },
-        ScanState::MapMessage { retained, .. } => match retained.front() {
-            None => Ok(None),
-            Some((key, message)) => Python::attach(|py| {
-                let value = build_message(py, env, message)?.into_bound(py);
-                let entry = PyTuple::new(py, [PyString::new(py, key).into_any(), value])?;
-                Ok(Some(entry.into_any().unbind()))
-            }),
-        },
-        ScanState::MapKeys { retained, .. } => match retained.front() {
-            None => Ok(None),
-            Some(key) => Python::attach(|py| Ok(Some(PyString::new(py, key).into_any().unbind()))),
-        },
-    }
-}
-
-/// Removes the front retained item (dropping it so it can be GC'd).
-fn scan_pop_front(scan: &mut ScanState) {
-    match scan {
-        ScanState::DequeJson { retained, .. } => {
-            retained.pop_front();
-        }
-        ScanState::MapJson { retained, .. } => {
-            retained.pop_front();
-        }
-        ScanState::DequeMessage { retained, .. } => {
-            retained.pop_front();
-        }
-        ScanState::MapMessage { retained, .. } => {
-            retained.pop_front();
-        }
-        ScanState::MapKeys { retained, .. } => {
-            retained.pop_front();
-        }
-    }
-}
-
-/// Drops every retained item (on explicit close).
-fn scan_clear_retained(scan: &mut ScanState) {
-    match scan {
-        ScanState::DequeJson { retained, .. } => retained.clear(),
-        ScanState::MapJson { retained, .. } => retained.clear(),
-        ScanState::DequeMessage { retained, .. } => retained.clear(),
-        ScanState::MapMessage { retained, .. } => retained.clear(),
-        ScanState::MapKeys { retained, .. } => retained.clear(),
-    }
-}
-
-/// Demand-driven async iterator over a map or deque collection.
-///
-/// Pulling is lazy: each `__anext__` restores the carrier without a binding
-/// span, awaits core's next ready chunk (up to 256 items), and hands them to
-/// Python one at a time. Chunking, exhaustion, deferred-error ordering,
-/// cancellation safety, and close-idempotence are core-owned; this layer owns
-/// only the retained-vector flattening and its serialization behind one mutex.
-#[pyclass]
-pub struct NativeStateScan {
-    /// The cursor arm plus its retained tail, serialized so concurrent
-    /// `__anext__`/`aclose` calls acquire in order.
-    inner: Arc<Mutex<ScanState>>,
-    /// The shared per-handle environment.
-    env: StateEnv,
-}
-
-pub(crate) fn published_map_scan(
-    cursor: BoxStateCursor<(String, Value)>,
-    env: StateEnv,
-) -> NativeStateScan {
-    NativeStateScan {
-        inner: Arc::new(Mutex::new(ScanState::MapJson {
-            cursor,
-            retained: VecDeque::new(),
-        })),
-        env,
-    }
-}
-
-pub(crate) fn published_map_key_scan(
-    cursor: BoxStateCursor<String>,
-    env: StateEnv,
-) -> NativeStateScan {
-    NativeStateScan {
-        inner: Arc::new(Mutex::new(ScanState::MapKeys {
-            cursor,
-            retained: VecDeque::new(),
-        })),
-        env,
-    }
-}
-
-pub(crate) fn published_deque_scan(
-    cursor: BoxStateCursor<Value>,
-    env: StateEnv,
-) -> NativeStateScan {
-    NativeStateScan {
-        inner: Arc::new(Mutex::new(ScanState::DequeJson {
-            cursor,
-            retained: VecDeque::new(),
-        })),
-        env,
-    }
-}
-
-#[pymethods]
-impl NativeStateScan {
-    /// Returns the iterator itself.
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    /// Yields the next scanned item, or raises `StopAsyncIteration` at
-    /// exhaustion.
-    fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
-        let inner = Arc::clone(&self.inner);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            // Drain the retained tail first (peek-then-pop).
-            if let Some(object) = scan_build_front(&guard, &env)? {
-                scan_pop_front(&mut guard);
-                return Ok(object);
+            /// Buffers a clear of the value.
+            fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.clear().with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
             }
-            // Retained empty: pull one ready chunk with the carrier active.
-            let pulled = match &mut *guard {
-                ScanState::DequeJson { cursor, retained } => cursor
-                    .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
-                    .with_context(ctx)
-                    .await
-                    .map(|chunk| chunk.map(|items| retained.extend(items))),
-                ScanState::MapJson { cursor, retained } => cursor
-                    .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
-                    .with_context(ctx)
-                    .await
-                    .map(|chunk| chunk.map(|items| retained.extend(items))),
-                ScanState::DequeMessage { cursor, retained } => cursor
-                    .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
-                    .with_context(ctx)
-                    .await
-                    .map(|chunk| chunk.map(|items| retained.extend(items))),
-                ScanState::MapMessage { cursor, retained } => cursor
-                    .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
-                    .with_context(ctx)
-                    .await
-                    .map(|chunk| chunk.map(|items| retained.extend(items))),
-                ScanState::MapKeys { cursor, retained } => cursor
-                    .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
-                    .with_context(ctx)
-                    .await
-                    .map(|chunk| chunk.map(|items| retained.extend(items))),
-            };
-            match pulled {
-                Err(error) => Python::attach(|py| Err(state_error(py, &env, &error))),
-                Ok(None) => Err(PyStopAsyncIteration::new_err(())),
-                Ok(Some(())) => {
-                    // Core guarantees `Some` is non-empty; the `None` arm is
-                    // defensive and never taken.
-                    match scan_build_front(&guard, &env)? {
-                        Some(object) => {
-                            scan_pop_front(&mut guard);
+
+            /// Durably commits the buffered operations.
+            fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.commit().with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Discards the buffered operations.
+            fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                future_into_py(py, async move {
+                    state.rollback().with_context(ctx).await;
+                    Ok(())
+                })
+            }
+
+            /// Traverses the Python handles this state holds for GC.
+            fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+                self.env.traverse(visit).map(|_| ())
+            }
+        }
+    };
+}
+
+value_state!(
+    NativeJsonValueState,
+    Value,
+    |py, env, item| json_write_item(py, env, item, "; use clear() to remove the value"),
+    |py, _env: &StateEnv, item| Ok(pythonize(py, item)?.unbind())
+);
+value_state!(
+    NativeMessageValueState,
+    ConsumerMessage<Value>,
+    message_write_item,
+    build_message
+);
+
+macro_rules! map_state {
+    ($name:ident, $payload:ty, $scan:ident, $prepare:expr, $restore:expr) => {
+        /// Ordered-map state handle with one payload type.
+        #[pyclass]
+        pub struct $name {
+            pub(crate) state: Arc<BoxMapState<$payload>>,
+            pub(crate) env: StateEnv,
+        }
+
+        #[pymethods]
+        impl $name {
+            /// Reads one entry.
+            fn get<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.get(key).with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
+                        Err(error) => Err(state_error(py, &env, &error)),
+                    })
+                })
+            }
+
+            /// Reads several entries in input order.
+            fn get_many<'p>(
+                &self,
+                py: Python<'p>,
+                keys: Vec<String>,
+            ) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.get_many(keys).with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(items) => items
+                            .into_iter()
+                            .map(|item| item.map(|item| ($restore)(py, &env, &item)).transpose())
+                            .collect::<PyResult<Vec<Option<Py<PyAny>>>>>(),
+                        Err(error) => Err(state_error(py, &env, &error)),
+                    })
+                })
+            }
+
+            /// Reports whether one entry exists.
+            fn contains_key<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.contains_key(key).with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Inserts or overwrites one entry.
+            fn set<'p>(
+                &self,
+                py: Python<'p>,
+                key: String,
+                item: &Bound<'p, PyAny>,
+            ) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let item = ($prepare)(py, &self.env, item)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.set(key, item).with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Removes one entry.
+            fn remove<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.remove(key).with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Removes every entry.
+            fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.clear().with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Opens an entry cursor.
+            fn scan(&self, py: Python, direction: &str) -> PyResult<$scan> {
+                let direction = parse_direction(py, &self.env, direction)?;
+                let _guard = self.env.op_context(py)?.attach();
+                Ok($scan::new(self.state.scan(direction), self.env.clone()))
+            }
+
+            /// Opens a key cursor.
+            fn keys(&self, py: Python, direction: &str) -> PyResult<NativeMapKeyScan> {
+                let direction = parse_direction(py, &self.env, direction)?;
+                let _guard = self.env.op_context(py)?.attach();
+                Ok(NativeMapKeyScan::new(
+                    self.state.keys(direction),
+                    self.env.clone(),
+                ))
+            }
+
+            /// Durably commits the buffered operations.
+            fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.commit().with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Discards the buffered operations.
+            fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                future_into_py(py, async move {
+                    state.rollback().with_context(ctx).await;
+                    Ok(())
+                })
+            }
+
+            /// Traverses the Python handles this state holds for GC.
+            fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+                self.env.traverse(visit).map(|_| ())
+            }
+        }
+    };
+}
+
+map_state!(
+    NativeJsonMapState,
+    Value,
+    NativeJsonMapScan,
+    |py, env, item| json_write_item(py, env, item, "; use remove(key) to remove the entry"),
+    |py, _env: &StateEnv, item| Ok(pythonize(py, item)?.unbind())
+);
+map_state!(
+    NativeMessageMapState,
+    ConsumerMessage<Value>,
+    NativeMessageMapScan,
+    message_write_item,
+    build_message
+);
+
+macro_rules! deque_state {
+    ($name:ident, $payload:ty, $scan:ident, $prepare:expr, $restore:expr) => {
+        /// Deque state handle with one payload type.
+        #[pyclass]
+        pub struct $name {
+            pub(crate) state: Arc<BoxDequeState<$payload>>,
+            pub(crate) env: StateEnv,
+        }
+
+        #[pymethods]
+        impl $name {
+            /// Returns the number of live elements.
+            fn len<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.len().with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(len) => u32::try_from(len).map_err(|_| {
+                            transient_error(
+                                py,
+                                &env,
+                                &format!("deque length {len} exceeds the u32 range"),
+                            )
+                        }),
+                        Err(error) => Err(state_error(py, &env, &error)),
+                    })
+                })
+            }
+
+            /// Reports whether the deque is empty.
+            fn is_empty<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.is_empty().with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Reads one element by its position from the front.
+            fn get<'p>(&self, py: Python<'p>, index: u32) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.get(index as usize).with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
+                        Err(error) => Err(state_error(py, &env, &error)),
+                    })
+                })
+            }
+
+            /// Appends one element.
+            fn push_back<'p>(
+                &self,
+                py: Python<'p>,
+                item: &Bound<'p, PyAny>,
+            ) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let item = ($prepare)(py, &self.env, item)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.push_back(item).with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Prepends one element.
+            fn push_front<'p>(
+                &self,
+                py: Python<'p>,
+                item: &Bound<'p, PyAny>,
+            ) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let item = ($prepare)(py, &self.env, item)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.push_front(item).with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Removes and returns the front element.
+            fn pop_front<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.pop_front().with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
+                        Err(error) => Err(state_error(py, &env, &error)),
+                    })
+                })
+            }
+
+            /// Removes and returns the back element.
+            fn pop_back<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.pop_back().with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
+                        Err(error) => Err(state_error(py, &env, &error)),
+                    })
+                })
+            }
+
+            /// Reads the front endpoint.
+            fn peek_front<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.peek_front().with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
+                        Err(error) => Err(state_error(py, &env, &error)),
+                    })
+                })
+            }
+
+            /// Reads the back endpoint.
+            fn peek_back<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.peek_back().with_context(ctx).await;
+                    Python::attach(|py| match out {
+                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
+                        Err(error) => Err(state_error(py, &env, &error)),
+                    })
+                })
+            }
+
+            /// Removes every element.
+            fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.clear().with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Opens an element cursor.
+            fn scan(&self, py: Python, direction: &str) -> PyResult<$scan> {
+                let direction = parse_direction(py, &self.env, direction)?;
+                let _guard = self.env.op_context(py)?.attach();
+                Ok($scan::new(self.state.scan(direction), self.env.clone()))
+            }
+
+            /// Durably commits the buffered operations.
+            fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.commit().with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Discards the buffered operations.
+            fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                future_into_py(py, async move {
+                    state.rollback().with_context(ctx).await;
+                    Ok(())
+                })
+            }
+
+            /// Traverses the Python handles this state holds for GC.
+            fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+                self.env.traverse(visit).map(|_| ())
+            }
+        }
+    };
+}
+
+deque_state!(
+    NativeJsonDequeState,
+    Value,
+    NativeJsonDequeScan,
+    |py, env, item| json_write_item(py, env, item, " in a deque"),
+    |py, _env: &StateEnv, item| Ok(pythonize(py, item)?.unbind())
+);
+deque_state!(
+    NativeMessageDequeState,
+    ConsumerMessage<Value>,
+    NativeMessageDequeScan,
+    message_write_item,
+    build_message
+);
+
+struct ScanInner<T> {
+    cursor: BoxStateCursor<T>,
+    retained: VecDeque<T>,
+}
+
+fn json_object(py: Python, _env: &StateEnv, value: &Value) -> PyResult<Py<PyAny>> {
+    Ok(pythonize(py, value)?.unbind())
+}
+
+fn json_map_entry(
+    py: Python,
+    _env: &StateEnv,
+    (key, value): &(String, Value),
+) -> PyResult<Py<PyAny>> {
+    let value = pythonize(py, value)?;
+    Ok(
+        PyTuple::new(py, [PyString::new(py, key).into_any(), value])?
+            .into_any()
+            .unbind(),
+    )
+}
+
+fn message_map_entry(
+    py: Python,
+    env: &StateEnv,
+    (key, message): &(String, ConsumerMessage<Value>),
+) -> PyResult<Py<PyAny>> {
+    let value = build_message(py, env, message)?.into_bound(py);
+    Ok(
+        PyTuple::new(py, [PyString::new(py, key).into_any(), value])?
+            .into_any()
+            .unbind(),
+    )
+}
+
+macro_rules! native_scan {
+    ($name:ident, $item:ty, $restore:expr) => {
+        /// Demand-driven state cursor with one element type.
+        #[pyclass]
+        pub struct $name {
+            inner: Arc<Mutex<ScanInner<$item>>>,
+            env: StateEnv,
+        }
+
+        impl $name {
+            pub(crate) fn new(cursor: BoxStateCursor<$item>, env: StateEnv) -> Self {
+                Self {
+                    inner: Arc::new(Mutex::new(ScanInner {
+                        cursor,
+                        retained: VecDeque::new(),
+                    })),
+                    env,
+                }
+            }
+        }
+
+        #[pymethods]
+        impl $name {
+            /// Returns this iterator.
+            fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+                slf
+            }
+
+            /// Yields the next item.
+            fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let inner = Arc::clone(&self.inner);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let mut guard = inner.lock().await;
+                    if let Some(item) = guard.retained.front() {
+                        let object = Python::attach(|py| ($restore)(py, &env, item))?;
+                        guard.retained.pop_front();
+                        return Ok(object);
+                    }
+                    let pulled = guard
+                        .cursor
+                        .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
+                        .with_context(ctx)
+                        .await;
+                    match pulled {
+                        Err(error) => Python::attach(|py| Err(state_error(py, &env, &error))),
+                        Ok(None) => Err(PyStopAsyncIteration::new_err(())),
+                        Ok(Some(items)) => {
+                            guard.retained.extend(items);
+                            let Some(item) = guard.retained.front() else {
+                                return Err(PyStopAsyncIteration::new_err(()));
+                            };
+                            let object = Python::attach(|py| ($restore)(py, &env, item))?;
+                            guard.retained.pop_front();
                             Ok(object)
                         }
-                        None => Err(PyStopAsyncIteration::new_err(())),
                     }
-                }
+                })
             }
-        })
-    }
 
-    /// Closes the cursor, dropping the retained tail and releasing the stream.
-    /// Idempotent; a subsequent `__anext__` raises a terminated error.
-    fn aclose<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let inner = Arc::clone(&self.inner);
-        future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            scan_clear_retained(&mut guard);
-            match &*guard {
-                ScanState::DequeJson { cursor, .. } => cursor.close().await,
-                ScanState::MapJson { cursor, .. } => cursor.close().await,
-                ScanState::DequeMessage { cursor, .. } => cursor.close().await,
-                ScanState::MapMessage { cursor, .. } => cursor.close().await,
-                ScanState::MapKeys { cursor, .. } => cursor.close().await,
+            /// Closes the cursor.
+            fn aclose<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let inner = Arc::clone(&self.inner);
+                future_into_py(py, async move {
+                    let mut guard = inner.lock().await;
+                    guard.retained.clear();
+                    guard.cursor.close().await;
+                    Ok(())
+                })
             }
-            Ok(())
-        })
-    }
 
-    /// Traverses the Python handles this scan holds for GC.
-    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.env.traverse(visit).map(|_| ())
-    }
+            /// Traverses the Python handles this cursor holds for GC.
+            fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+                self.env.traverse(visit).map(|_| ())
+            }
+        }
+    };
 }
+
+native_scan!(NativeJsonDequeScan, Value, json_object);
+native_scan!(NativeJsonMapScan, (String, Value), json_map_entry);
+native_scan!(
+    NativeMessageDequeScan,
+    ConsumerMessage<Value>,
+    build_message
+);
+native_scan!(
+    NativeMessageMapScan,
+    (String, ConsumerMessage<Value>),
+    message_map_entry
+);
+native_scan!(
+    NativeMapKeyScan,
+    String,
+    |py, _env: &StateEnv, key: &String| {
+        Ok::<Py<PyAny>, PyErr>(PyString::new(py, key).into_any().unbind())
+    }
+);
