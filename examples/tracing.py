@@ -51,6 +51,9 @@ tracer = trace.get_tracer(__name__)
 
 
 class ExampleHandler(EventHandler):
+    async def on_excise(self, context: Context, message: Message) -> None:
+        print(f"Excise {message.key}")
+
     async def on_message(self, context: Context, message: Message) -> None:
         # Start a new span for each received message
         with tracer.start_as_current_span("receive-message") as span:

@@ -39,7 +39,7 @@ use crate::context::Context;
 struct MessageExecutionContext<'a> {
     message_class: &'a Py<PyAny>,
     event_class: &'a Py<PyAny>,
-    handle_method: &'a Py<PyAny>,
+    method: &'a Py<PyAny>,
     locals: &'a TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
     otel_get_current: &'a Py<PyAny>,
@@ -82,6 +82,7 @@ pub struct PythonHandler(Arc<PythonHandlerImpl>);
 #[derive(Debug)]
 pub struct PythonHandlerImpl {
     pub handle_method: Py<PyAny>,
+    pub excise_method: Py<PyAny>,
     pub timer_method: Py<PyAny>,
     pub message_class: Py<PyAny>,
     pub timer_class: Py<PyAny>,
@@ -126,6 +127,7 @@ impl PythonHandler {
         // Wrap handler with tracing/cancellation support
         let tracing_handler = tracing_handler_class.call1((handler,))?;
         let handle_method = tracing_handler.getattr("on_message")?;
+        let excise_method = tracing_handler.getattr("on_excise")?;
         let timer_method = tracing_handler.getattr("on_timer")?;
 
         // Get a reference to the event methods
@@ -149,6 +151,7 @@ impl PythonHandler {
 
         Ok(Self(Arc::new(PythonHandlerImpl {
             handle_method: handle_method.unbind(),
+            excise_method: excise_method.unbind(),
             timer_method: timer_method.unbind(),
             message_class: message_class.unbind(),
             timer_class: timer_class.unbind(),
@@ -230,7 +233,7 @@ impl FallibleHandler for PythonHandler {
         let execution_context = MessageExecutionContext {
             message_class: &self.0.message_class,
             event_class: &self.0.event_class,
-            handle_method: &self.0.handle_method,
+            method: &self.0.handle_method,
             locals: &self.0.locals,
             propagator: self.0.propagator.clone(),
             otel_get_current: &self.0.otel_get_current,
@@ -261,6 +264,51 @@ impl FallibleHandler for PythonHandler {
             }
         }
 
+        Ok(())
+    }
+
+    #[instrument(level = "debug", skip(self, context, demand_type), err)]
+    async fn on_excise<C>(
+        &self,
+        context: C,
+        message: ConsumerMessage<Self::Payload>,
+        demand_type: DemandType,
+    ) -> Result<(), Self::Error>
+    where
+        C: EventContext<Payload = Self::Payload>,
+    {
+        let _ = demand_type;
+        let mut serialized_context = HashMap::with_capacity(2);
+        self.0
+            .propagator
+            .inject_context(&message.span().context(), &mut serialized_context);
+
+        let cancel_future = context.on_cancel();
+        let execution_context = MessageExecutionContext {
+            message_class: &self.0.message_class,
+            event_class: &self.0.event_class,
+            method: &self.0.excise_method,
+            locals: &self.0.locals,
+            propagator: self.0.propagator.clone(),
+            otel_get_current: &self.0.otel_get_current,
+            otel_inject: &self.0.otel_inject,
+        };
+        let (shutdown_event, complete_future) =
+            execute(context, message, serialized_context, execution_context)?;
+
+        pin_mut!(complete_future);
+        select! {
+            result = complete_future.as_mut() => {
+                if let Err(error) = log_exception(&result) {
+                    error!("excise handling failed but error could not be logged: {error:#}");
+                }
+                result?;
+            }
+            () = cancel_future => {
+                cancel_task(&self.0.event_set_method, shutdown_event)?;
+                complete_future.await?;
+            }
+        }
         Ok(())
     }
 
@@ -438,11 +486,15 @@ where
             message_class: execution_context.message_class.clone_ref(py),
             state_handles: Mutex::new(HashMap::new()),
         };
-        let payload = pythonize(py, message.payload())?;
-
-        // The core message rides along so a message-collection write can store
-        // the message the handler received; see `MessageCore`.
-        let core = Py::new(py, MessageCore::new(message.clone()))?;
+        let payload = match message.record().message() {
+            Some(payload) => pythonize(py, payload)?,
+            None => py.None().into_bound(py),
+        };
+        let core = message
+            .record()
+            .message()
+            .map(|_| Py::new(py, MessageCore::new(message.clone())))
+            .transpose()?;
 
         let message = execution_context.message_class.call1(
             py,
@@ -465,7 +517,7 @@ where
 
         // Create and convert handler coroutine to future
         let coroutine = execution_context
-            .handle_method
+            .method
             .call1(
                 py,
                 (message_context, message, otel_context, &shutdown_event),

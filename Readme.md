@@ -57,6 +57,9 @@ client = ProsodyClient(
 
 # Define a custom message handler
 class MyHandler(EventHandler):
+    async def on_excise(self, context: Context, message: Message) -> None:
+        print(f"Excise key: {message.key}")
+
     async def on_message(self, context: Context, message: Message) -> None:
         # Process the received message
         print(f"Received message: {message}")
@@ -76,10 +79,17 @@ client.subscribe(MyHandler())
 
 # Send a message to a topic
 await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
+await client.excise("my-topic", "obsolete-key")
 
 # Ensure proper shutdown when done
 await client.unsubscribe()
 ```
+
+## Excise records
+
+Call `excise(topic, key)` to send a Kafka record with a key and no payload. Use this record to delete the key from compacted views.
+
+Each handler must implement `on_excise`. It receives the same arguments as `on_message`. The message payload is `None`.
 
 ## Architecture
 
@@ -914,6 +924,7 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
+- `excise(topic: str, key: str) -> None`: Send an excise record for a key.
 - `consumer_state() -> str`: Get the current state of the consumer.
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
@@ -937,6 +948,10 @@ typing. Parameterizing the handler gives `on_message` the same payload type:
 P = TypeVar("P", default=JSONValue)
 
 class EventHandler(ABC, Generic[P]):
+    @abstractmethod
+    async def on_excise(self, context: Context, message: Message[P]) -> None:
+        pass
+
     @abstractmethod
     async def on_message(self, context: Context, message: Message[P]) -> None:
         # Implement your message handling logic here
@@ -966,7 +981,7 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `offset: int`: The message offset within the partition.
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
-- `payload: P`: The statically typed message payload.
+- `payload: P | None`: The typed payload, or `None` for an excise record.
 
 `Message[P]` defaults to `Message[JSONValue]`. Supplying a `TypedDict` payload
 specialization gives field-level checking without runtime model construction or

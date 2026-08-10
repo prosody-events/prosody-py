@@ -44,6 +44,9 @@ PENDING: MessageDequeDefinition[Activity] = message_deque(
 
 
 class BatchHandler(EventHandler[Activity]):
+    async def on_excise(self, context: Context, message: Message[Activity]) -> None:
+        print(f"Excise {message.key}")
+
     async def on_message(
         self, context: Context, message: Message[Activity]
     ) -> None:

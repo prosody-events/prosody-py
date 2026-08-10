@@ -35,6 +35,10 @@ tracer = trace.get_tracer("prosody-test")
 
 
 class TestHandler(EventHandler):
+    async def on_excise(self, context: Context, message: Message) -> None:
+        self.messages.append(message)
+        self.message_received.set()
+
     __test__ = False
 
     def __init__(self):
@@ -244,6 +248,18 @@ async def test_send_and_receive_message(client, random_topic_and_group):
     logger.debug("TEST test_send_and_receive_message: PASSED")
 
 
+async def test_send_and_receive_excise(client, random_topic_and_group):
+    topic, _ = random_topic_and_group
+    handler = TestHandler()
+    await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
+
+    await asyncio.wait_for(client.excise(topic, "obsolete-key"), timeout=DEFAULT_TIMEOUT)
+    await asyncio.wait_for(handler.message_received.wait(), timeout=DEFAULT_TIMEOUT)
+
+    assert handler.messages[0].key == "obsolete-key"
+    assert handler.messages[0].payload is None
+
+
 async def test_client_configuration(random_topic_and_group):
     logger.debug("=" * 40)
     logger.debug("TEST test_client_configuration: STARTING")
@@ -447,6 +463,9 @@ async def test_same_key_message_order(client, random_topic_and_group):
 
 
 class TransientErrorHandler(EventHandler):
+    async def on_excise(self, context: Context, message: Message) -> None:
+        return None
+
     def __init__(self):
         logger.debug("TransientErrorHandler.__init__() called")
         self.received_message = False
@@ -494,6 +513,9 @@ async def test_transient_error_decorator(client, random_topic_and_group):
 
 
 class PermanentErrorHandler(EventHandler):
+    async def on_excise(self, context: Context, message: Message) -> None:
+        return None
+
     def __init__(self):
         logger.debug("PermanentErrorHandler.__init__() called")
         self.error_raised = tsasync.Event()
@@ -585,6 +607,9 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
 
 
 class CallbackTimerHandler(EventHandler):
+    async def on_excise(self, context: Context, message: Message) -> None:
+        return None
+
     """Handler that executes a custom callback function for timer testing"""
     __test__ = False
 

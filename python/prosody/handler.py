@@ -84,6 +84,11 @@ class EventHandler(ABC, Generic[P]):
         pass
 
     @abstractmethod
+    async def on_excise(self, context: Context, message: Message[P]) -> None:
+        """Handle an excise record."""
+        pass
+
+    @abstractmethod
     async def on_timer(self, context: Context, timer: Timer) -> None:
         """
         Handle a timer event.
@@ -137,6 +142,31 @@ class ProsodyHandler:
                     }, exc)
                     raise
 
+            finally:
+                for task in {handler_task, shutdown_task}:
+                    if not task.done():
+                        task.cancel("task is shutting down")
+
+    async def on_excise(self, context, message, opentelemetry_context, shutdown_event):
+        otel_context = extract(carrier=opentelemetry_context)
+        with self.tracer.start_as_current_span("on_excise", context=otel_context):
+            handler_task = asyncio.create_task(self.handler.on_excise(context, message))
+            shutdown_task = asyncio.create_task(shutdown_event.wait())
+            try:
+                done, _ = await asyncio.wait(
+                    {handler_task, shutdown_task}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if shutdown_task in done:
+                    handler_task.cancel("partition has been revoked")
+                await handler_task
+            except Exception as exc:
+                _capture_handler_exception("excise", {
+                    "topic": message.topic,
+                    "partition": message.partition,
+                    "key": message.key,
+                    "offset": message.offset,
+                }, exc)
+                raise
             finally:
                 for task in {handler_task, shutdown_task}:
                     if not task.done():

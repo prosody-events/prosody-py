@@ -46,10 +46,15 @@ BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog", capacity=
 
 
 class OrderHandler(EventHandler[OrderEvent]):
+    async def on_excise(self, context: Context, message: Message[OrderEvent]) -> None:
+        print(f"Excise {message.key}")
+
     async def on_message(
         self, context: Context, message: Message[OrderEvent]
     ) -> None:
         payload = message.payload
+        if payload is None:
+            return
 
         cart = context.state(CART)  # ValueState[Cart]
         current = await cart.get() or Cart(items=[])
@@ -78,11 +83,13 @@ class OrderHandler(EventHandler[OrderEvent]):
         await backlog.append(message)
         oldest = await backlog.get(0)  # Optional[Message[OrderEvent]]
         if oldest is not None:
-            _order_id: str = oldest.payload["order_id"]
+            if oldest.payload is not None:
+                _order_id: str = oldest.payload["order_id"]
         newest = await backlog.peek()  # Optional[Message[OrderEvent]]
         front = await backlog.peekleft()  # Optional[Message[OrderEvent]]
         if newest is not None and front is not None:
-            _actions: str = newest.payload["order_id"] + front.payload["order_id"]
+            if newest.payload is not None and front.payload is not None:
+                _actions: str = newest.payload["order_id"] + front.payload["order_id"]
 
         await cart.commit()
 
@@ -90,7 +97,7 @@ class OrderHandler(EventHandler[OrderEvent]):
         _key: str = timer.key
 
 
-async def unparameterized(m: Message) -> None:
+async def unparameterized(m: Message[JSONValue]) -> None:
     """A bare ``Message`` (defaulting to ``Message[JSONValue]``) type-checks."""
     _topic: str = m.topic
     assert_type(m.payload, JSONValue)

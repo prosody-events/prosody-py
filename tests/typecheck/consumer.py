@@ -36,6 +36,9 @@ assert_type(parse_amount("1"), int)
 
 
 class DefaultHandler(EventHandler):
+    async def on_excise(self, context: Context, message: Message) -> None:
+        assert message.payload is None
+
     """An unsubscripted handler retains the JSONValue default."""
 
     async def on_message(self, context: Context, message: Message) -> None:
@@ -46,6 +49,9 @@ class DefaultHandler(EventHandler):
 
 
 class Handler(EventHandler[Event]):
+    async def on_excise(self, context: Context, message: Message[Event]) -> None:
+        assert message.payload is None
+
     async def on_message(self, context: Context, message: Message[Event]) -> None:
         totals = context.state(TOTALS)
         assert_type(await totals.get(message.key), Optional[int])

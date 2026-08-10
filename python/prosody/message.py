@@ -51,8 +51,8 @@ class Message(Generic[P]):
     key: str
     """The message key."""
 
-    payload: P
-    """The message payload (JSON-serializable by default)."""
+    payload: Optional[P]
+    """The message payload, or ``None`` for an excise record."""
 
     _core: Optional[Any] = field(default=None, compare=False, repr=False)
     """Internal handle to the message prosody delivered.

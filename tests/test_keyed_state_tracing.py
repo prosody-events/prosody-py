@@ -48,6 +48,9 @@ async def _wait(awaitable):
 
 
 class TracingStateHandler(EventHandler):
+    async def on_excise(self, context, message) -> None:
+        return None
+
     __test__ = False
 
     def __init__(self):

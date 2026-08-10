@@ -32,7 +32,7 @@ use prosody::consumer::event_context::{
 };
 use prosody::consumer::message::ConsumerMessage;
 use prosody::state::Direction;
-use pyo3::exceptions::PyStopAsyncIteration;
+use pyo3::exceptions::{PyStopAsyncIteration, PyTypeError};
 use pyo3::gc::{PyTraverseError, PyVisit};
 use pyo3::types::{PyAnyMethods, PyDict, PyString, PyTuple};
 use pyo3::{Bound, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass, pymethods};
@@ -234,7 +234,11 @@ fn build_message(
     env: &StateEnv,
     message: &ConsumerMessage<Value>,
 ) -> PyResult<Py<PyAny>> {
-    let payload = pythonize(py, message.payload())?;
+    let payload = message
+        .record()
+        .message()
+        .ok_or_else(|| PyTypeError::new_err("an excise record has no payload"))?;
+    let payload = pythonize(py, payload)?;
     let core = Py::new(py, MessageCore::new(message.clone()))?;
     let object = env.0.message_class.bind(py).call1((
         message.topic().as_ref(),

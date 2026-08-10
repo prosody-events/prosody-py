@@ -252,6 +252,10 @@ class _NativeProsodyClient:
         """
         ...
 
+    async def excise(self, topic: str, key: str) -> None:
+        """Send an excise record for a key."""
+        ...
+
     async def consumer_state(self) -> Literal['unconfigured', 'configured', 'running']:
         """
         Get the current state of the consumer.

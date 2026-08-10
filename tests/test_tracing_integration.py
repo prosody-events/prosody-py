@@ -75,6 +75,9 @@ logger = logging.getLogger(__name__)
 
 
 class TracingHandler(EventHandler):
+    async def on_excise(self, context: Context, message: Message) -> None:
+        return None
+
     """Test handler that creates spans and schedules timers with proper tracing"""
 
     def __init__(self):

@@ -115,6 +115,30 @@ impl ProsodyClient {
         })
     }
 
+    /// Sends an excise record for a key.
+    fn excise<'p>(&self, py: Python<'p>, topic: String, key: String) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let context = self.get_context.bind(py).call0()?;
+        let data = PyDict::new(py);
+        self.inject.call1(py, (&data, context))?;
+        let headers: HashMap<String, String> = data.extract()?;
+        let context = self.client.propagator().extract(&headers);
+        let span = info_span!("python-excise", %topic, %key);
+        if let Err(err) = span.set_parent(context) {
+            debug!("failed to set parent span: {err:#}");
+        }
+
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            client
+                .excise(topic.as_str().into(), key)
+                .instrument(span)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Ok(())
+        })
+    }
+
     /// Gets the current state of the consumer.
     ///
     /// # Returns
