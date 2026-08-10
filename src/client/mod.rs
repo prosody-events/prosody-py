@@ -6,9 +6,9 @@
 //! operational modes, retry mechanisms, and failure handling strategies.
 
 use opentelemetry::propagation::TextMapPropagator;
-use prosody::JsonCodec;
 use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache, SharedHighLevelClient};
 use prosody::propagator::new_propagator;
+use prosody::subsystem::SubsystemName;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
@@ -28,7 +28,9 @@ use crate::client::config::try_build_config;
 use crate::client::format::format_list;
 use crate::handler::PythonHandler;
 use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
+use crate::request::to_python;
 use crate::state::StateEnv;
+use crate::util::decode_duration;
 
 mod config;
 mod format;
@@ -40,7 +42,7 @@ mod format;
 /// operational modes and configuration options.
 #[pyclass(subclass, name = "_NativeProsodyClient")]
 pub struct ProsodyClient {
-    client: SharedHighLevelClient<PythonHandler, JsonCodec>,
+    client: SharedHighLevelClient<PythonHandler>,
     get_context: Py<PyAny>,
     inject: Py<PyAny>,
     pid: u32,
@@ -113,6 +115,62 @@ impl ProsodyClient {
 
             Ok(())
         })
+    }
+
+    /// Sends one request and returns one result per subsystem.
+    #[pyo3(signature = (topic, key, payload, subsystems, timeout, *, headers = None))]
+    fn request(
+        &self,
+        topic: String,
+        key: String,
+        payload: &Bound<'_, PyAny>,
+        subsystems: Vec<String>,
+        timeout: &Bound<'_, PyAny>,
+        headers: Option<HashMap<String, String>>,
+    ) -> PyResult<Py<PyAny>> {
+        self.check_fork()?;
+        let py = payload.py();
+        let context = self.get_context.bind(py).call0()?;
+        let data = PyDict::new(py);
+        self.inject.call1(py, (&data, context))?;
+        let trace_headers: HashMap<String, String> = data.extract()?;
+        let context = self.client.propagator().extract(&trace_headers);
+        let span = info_span!("python-request", %topic, %key);
+        if let Err(error) = span.set_parent(context) {
+            debug!("failed to set parent span: {error:#}");
+        }
+        let payload = depythonize::<Value>(payload)?;
+        let subsystems = subsystems
+            .into_iter()
+            .map(|name| {
+                SubsystemName::try_new(name)
+                    .map_err(|error| PyValueError::new_err(error.to_string()))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let timeout = decode_duration(timeout)?;
+        let client = self.client.clone();
+
+        future_into_py(py, async move {
+            let results = client
+                .request(
+                    headers.unwrap_or_default().into_iter().collect(),
+                    topic.as_str().into(),
+                    key,
+                    payload,
+                    subsystems,
+                    timeout,
+                )
+                .instrument(span)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| {
+                results
+                    .into_iter()
+                    .map(|result| to_python(py, result))
+                    .collect::<PyResult<Vec<_>>>()
+            })
+        })
+        .map(Bound::unbind)
     }
 
     /// Gets the current state of the consumer.

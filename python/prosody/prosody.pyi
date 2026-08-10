@@ -168,6 +168,11 @@ class _NativeProsodyClient:
             state_read_cache: Optional[Union[Duration, Literal[False]]] = None,
             state_recovery_delay: Optional[Duration] = None,
             subsystem: Optional[str] = None,
+            peer_bind_address: Optional[str] = None,
+            peer_advertised_connect: Optional[str] = None,
+            peer_network_name: Optional[str] = None,
+            peer_cache_capacity: Optional[int] = None,
+            peer_registration_ttl: Optional[Duration] = None,
     ) -> None:
         """
         Initialize a new ProsodyClient.
@@ -232,6 +237,11 @@ class _NativeProsodyClient:
             state_read_cache: Default published-read cache TTL, or `False` to bypass the cache. Env: ``PROSODY_STATE_READ_CACHE_TTL``. Defaults to 5 seconds.
             state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_STATE_RECOVERY_DELAY. Defaults to 30s.
             subsystem: Name under which published JSON collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
+            peer_bind_address: Socket address for the peer gRPC listener. Env: ``PROSODY_PEER_BIND_ADDRESS``.
+            peer_advertised_connect: gRPC connect URI for peers on another network. Env: ``PROSODY_PEER_ADVERTISED_CONNECT``.
+            peer_network_name: Network name used for direct routes. Env: ``PROSODY_PEER_NETWORK_NAME``.
+            peer_cache_capacity: Maximum entries in each node-keyed peer cache. Env: ``PROSODY_PEER_CACHE_CAPACITY``.
+            peer_registration_ttl: Directory registration lease duration. Env: ``PROSODY_PEER_REGISTRATION_TTL``.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.
@@ -251,6 +261,17 @@ class _NativeProsodyClient:
             RuntimeError: If there's an error sending the message.
         """
         ...
+
+    async def request(
+        self,
+        topic: str,
+        key: str,
+        payload: JSONValue,
+        subsystems: Sequence[str],
+        timeout: Duration,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Sequence[object]: ...
 
     async def consumer_state(self) -> Literal['unconfigured', 'configured', 'running']:
         """

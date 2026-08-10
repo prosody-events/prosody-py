@@ -10,7 +10,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from prosody.prosody import AdminClient
 
-from prosody import ProsodyClient, EventHandler, Message, Context, Timer, permanent, transient
+from prosody import Context, EventHandler, Message, Ok, ProsodyClient, Timer, permanent, transient
 
 
 def test_event_handler_is_runtime_subscriptable():
@@ -55,6 +55,14 @@ class TestHandler(EventHandler):
     async def on_timer(self, context: Context, timer: Timer) -> None:
         logger.debug(f"TestHandler.on_timer() called")
         pass
+
+
+class RequestHandler(EventHandler):
+    async def on_message(self, context: Context, message: Message):
+        return {"key": message.key, "accepted": True}
+
+    async def on_timer(self, context: Context, timer: Timer):
+        return None
 
 
 @pytest.fixture
@@ -242,6 +250,37 @@ async def test_send_and_receive_message(client, random_topic_and_group):
     assert received_message.key == test_key
     assert received_message.payload == test_payload
     logger.debug("TEST test_send_and_receive_message: PASSED")
+
+
+async def test_request_returns_the_local_handler_response(random_topic_and_group):
+    topic, group = random_topic_and_group
+    client = ProsodyClient(
+        bootstrap_servers="localhost:9094",
+        source_system="request-test",
+        group_id=group,
+        subscribed_topics=topic,
+        probe_port=None,
+        cassandra_nodes="localhost:9042",
+        subsystem="inventory",
+    )
+    await asyncio.wait_for(client.subscribe(RequestHandler()), timeout=DEFAULT_TIMEOUT)
+    try:
+        results = await asyncio.wait_for(
+            client.request(
+                topic,
+                "order-1",
+                {"type": "order.created"},
+                ["inventory"],
+                timedelta(seconds=10),
+            ),
+            timeout=DEFAULT_TIMEOUT,
+        )
+        assert len(results) == 1
+        result = results[0]
+        assert isinstance(result, Ok)
+        assert result.value == {"key": "order-1", "accepted": True}
+    finally:
+        await asyncio.wait_for(client.unsubscribe(), timeout=DEFAULT_TIMEOUT)
 
 
 async def test_client_configuration(random_topic_and_group):

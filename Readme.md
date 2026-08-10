@@ -850,6 +850,40 @@ While the process is automated, manual intervention may sometimes be necessary:
 Remember, all releases are automatically published to PyPI. Ensure you have thoroughly tested your changes before
 merging to `main`.
 
+## Peer Requests
+
+Peer requests collect one result from each named subsystem. The result order matches the subsystem order.
+
+Return a JSON response from each handler:
+
+```python
+class InventoryHandler(EventHandler):
+    async def on_message(self, context, message):
+        return {"accepted": message.key}
+```
+
+Send a request without a subscription on the requester:
+
+```python
+from prosody import Err, Ok
+
+results = await client.request(
+    "orders",
+    "order-1",
+    {"type": "order.created"},
+    ["inventory", "billing"],
+    2.0,
+)
+
+for result in results:
+    if isinstance(result, Ok):
+        print(result.value)
+    elif isinstance(result, Err):
+        print(result.error)
+```
+
+Each error identifies a handler failure, timeout, format mismatch, or malformed response. Handler failures also include their category and message.
+
 ## Administrative Operations
 
 **⚠️ Important Note**: Topic management in production environments should typically be handled through GitOps using Strimzi KafkaTopic manifests. The `AdminClient` is provided for testing scenarios and specific cases where the data team requires manual topic creation and deletion.
@@ -914,6 +948,7 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
+- `request(topic, key, payload, subsystems, timeout, headers=None) -> Sequence[RequestResult[JSONValue]]`: Request one response from each subsystem.
 - `consumer_state() -> str`: Get the current state of the consumer.
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.

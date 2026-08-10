@@ -6,6 +6,7 @@
 
 use crate::client::ProsodyClient;
 use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
+use prosody::PeerConfiguration;
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
 use prosody::consumer::KeyedStateConfiguration;
@@ -36,10 +37,12 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyDictMethods};
 use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
+use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
+use tonic::transport::Endpoint;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
 /// configuration.
@@ -86,18 +89,21 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
             emitter: TelemetryEmitterConfiguration::builder()
                 .build()
                 .map_err(|e| PyValueError::new_err(e.to_string()))?,
+            peer: PeerConfiguration::builder()
+                .build()
+                .map_err(|error| PyValueError::new_err(error.to_string()))?,
         };
 
-        let _guard = get_runtime().handle().enter();
         let cassandra = CassandraConfigurationBuilder::default();
         let mut producer = ProducerConfigurationBuilder::default();
-        let client = new_erased(
-            Mode::default(),
-            &mut producer,
-            &consumer_builders,
-            &cassandra,
-        )
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let client = get_runtime()
+            .block_on(new_erased(
+                Mode::default(),
+                &mut producer,
+                &consumer_builders,
+                &cassandra,
+            ))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         return Ok(ProsodyClient {
             client,
@@ -121,8 +127,13 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
     let consumer_builders = build_consumer_builders(config)?;
     let cassandra = build_cassandra_config(config)?;
 
-    let _guard = get_runtime().handle().enter();
-    let client = new_erased(mode, &mut producer_config, &consumer_builders, &cassandra)
+    let client = get_runtime()
+        .block_on(new_erased(
+            mode,
+            &mut producer_config,
+            &consumer_builders,
+            &cassandra,
+        ))
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     Ok(ProsodyClient {
@@ -1090,5 +1101,37 @@ fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders>
         timeout: build_timeout_config(config)?,
         keyed_state: build_keyed_state_config(config)?,
         emitter: build_telemetry_emitter_config(config)?,
+        peer: build_peer_config(config)?,
     })
+}
+
+fn build_peer_config(config: &Bound<PyDict>) -> PyResult<PeerConfiguration> {
+    let mut builder = PeerConfiguration::builder();
+    if let Some(value) = config.get_item("peer_bind_address")? {
+        builder.bind_address(
+            value
+                .extract::<String>()?
+                .parse::<SocketAddr>()
+                .map_err(|error| PyValueError::new_err(format!("peer_bind_address: {error}")))?,
+        );
+    }
+    if let Some(value) = config.get_item("peer_advertised_connect")? {
+        builder.advertised_connect(
+            Endpoint::from_shared(value.extract::<String>()?).map_err(|error| {
+                PyValueError::new_err(format!("peer_advertised_connect: {error}"))
+            })?,
+        );
+    }
+    if let Some(value) = config.get_item("peer_network_name")? {
+        builder.network_name(value.extract::<String>()?);
+    }
+    if let Some(value) = config.get_item("peer_cache_capacity")? {
+        builder.peer_cache_capacity(value.extract::<usize>()?);
+    }
+    if let Some(value) = config.get_item("peer_registration_ttl")? {
+        builder.registration_ttl(decode_duration(&value)?);
+    }
+    builder
+        .build()
+        .map_err(|error| PyValueError::new_err(error.to_string()))
 }

@@ -44,6 +44,18 @@ The Python client reports values it cannot convert to Prosody types. Prosody val
 |-----------------------------------------|---------------------------------|---------|
 | `send_timeout` / `PROSODY_SEND_TIMEOUT` | Give up sending after this long | 1s      |
 
+## Peer Requests
+
+Peer requests work with the defaults on one network. Set an advertised connect string only when another network cannot use the listener address.
+
+| Option / Environment Variable | Description | Default |
+|---|---|---|
+| `peer_bind_address` / `PROSODY_PEER_BIND_ADDRESS` | Socket address for the peer gRPC listener | `0.0.0.0:0` |
+| `peer_advertised_connect` / `PROSODY_PEER_ADVERTISED_CONNECT` | gRPC connect URI that peers on another network use | (none) |
+| `peer_network_name` / `PROSODY_PEER_NETWORK_NAME` | Nonempty network name, with a maximum size of 63 UTF-8 bytes | (none) |
+| `peer_cache_capacity` / `PROSODY_PEER_CACHE_CAPACITY` | Maximum channels and peer records in each node-keyed cache | 256 |
+| `peer_registration_ttl` / `PROSODY_PEER_REGISTRATION_TTL` | Directory lease duration; use 5 through 3600 seconds | 30s |
+
 ## Retry
 
 Retry backoff applies in pipeline and low-latency modes. `max_retries` controls how many retries low-latency mode performs before routing the failure to `failure_topic`. Pipeline mode uses deferral and does not use this limit.

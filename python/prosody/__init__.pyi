@@ -11,14 +11,25 @@ from prosody.errors import (
     transient as transient,
 )
 from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
-from prosody.message import Message as Message
-from typing import TypeVar, overload
+from prosody.message import JSONValue as _JSONValue, Message as Message
+from datetime import timedelta
+from typing import Mapping, Sequence, TypeVar, overload
 
 from prosody.prosody import (
     AdminClient as AdminClient,
     _NativeProsodyClient,
     flush_telemetry as flush_telemetry,
     shutdown_telemetry as shutdown_telemetry,
+)
+from prosody.request import (
+    Err as Err,
+    HandlerResponseError as HandlerResponseError,
+    MalformedResponseError as MalformedResponseError,
+    Ok as Ok,
+    RequestResult as RequestResult,
+    ResponseError as ResponseError,
+    ResponseFormatMismatchError as ResponseFormatMismatchError,
+    ResponseTimeoutError as ResponseTimeoutError,
 )
 from prosody.state import (
     DequeDefinition as DequeDefinition,
@@ -47,6 +58,17 @@ T = TypeVar("T")
 V = TypeVar("V")
 
 class ProsodyClient(_NativeProsodyClient):
+    async def request(
+        self,
+        topic: str,
+        key: str,
+        payload: _JSONValue,
+        subsystems: Sequence[str],
+        timeout: float | timedelta,
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> Sequence[RequestResult[_JSONValue]]: ...
+
     @overload
     async def state(
         self,

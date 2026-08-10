@@ -6,6 +6,14 @@ from prosody.prosody import (
     flush_telemetry,
     shutdown_telemetry,
 )
+from prosody.request import (
+    Err,
+    HandlerResponseError,
+    MalformedResponseError,
+    Ok,
+    ResponseFormatMismatchError,
+    ResponseTimeoutError,
+)
 
 from prosody.context import Context
 from prosody.errors import (

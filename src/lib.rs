@@ -35,6 +35,7 @@ mod handler;
 mod logging;
 mod message;
 mod published;
+mod request;
 mod state;
 mod util;
 
@@ -76,6 +77,12 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
         .set_item("prosody.context", context_module)?;
 
     prosody_module.add_class::<AdminClient>()?;
+    prosody_module.add_class::<request::RequestOk>()?;
+    prosody_module.add_class::<request::RequestErr>()?;
+    prosody_module.add_class::<request::HandlerResponseError>()?;
+    prosody_module.add_class::<request::ResponseTimeoutError>()?;
+    prosody_module.add_class::<request::ResponseFormatMismatchError>()?;
+    prosody_module.add_class::<request::MalformedResponseError>()?;
 
     // Internal erased keyed-state handles (the typed Python surface wraps
     // these); registered on the main module rather than a `prosody.state`
