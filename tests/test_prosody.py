@@ -11,10 +11,16 @@ from opentelemetry.sdk.trace import TracerProvider
 from prosody.prosody import AdminClient
 
 from prosody import Context, EventHandler, Message, Ok, ProsodyClient, Timer, permanent, transient
+from prosody import RequestResult, ResponseError
 
 
 def test_event_handler_is_runtime_subscriptable():
     assert EventHandler[dict] is not None
+
+
+def test_request_aliases_are_available_at_runtime():
+    assert RequestResult[dict] is not None
+    assert ResponseError is not None
 
 # Use pytest's built-in logging; logs will appear at DEBUG level
 logger = logging.getLogger(__name__)

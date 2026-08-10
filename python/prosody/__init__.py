@@ -11,6 +11,8 @@ from prosody.request import (
     HandlerResponseError,
     MalformedResponseError,
     Ok,
+    RequestResult,
+    ResponseError,
     ResponseFormatMismatchError,
     ResponseTimeoutError,
 )
