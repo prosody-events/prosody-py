@@ -210,10 +210,10 @@ async def client(random_topic_and_group):
 
     # Cleanup
     try:
-        if await client.consumer_state() == "running":
-            await client.unsubscribe()
+        if await client.consumer_state() != "shut_down":
+            await client.shutdown()
     except Exception as e:
-        logger.warning(f"Failed to unsubscribe client: {e}")
+        logger.warning(f"Failed to shut down client: {e}")
 
 
 @pytest.mark.tracing

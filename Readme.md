@@ -77,8 +77,8 @@ client.subscribe(MyHandler())
 # Send a message to a topic
 await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
 
-# Ensure proper shutdown when done
-await client.unsubscribe()
+# Shut down all client services when done
+await client.shutdown()
 ```
 
 ## Architecture
@@ -710,11 +710,10 @@ Strategies for achieving idempotence:
 
 ### Proper Shutdown
 
-Always unsubscribe from topics before exiting your application:
+Shut down the client before your application exits:
 
 ```python
-# Ensure proper shutdown
-await client.unsubscribe()
+await client.shutdown()
 ```
 
 This ensures:
@@ -753,8 +752,7 @@ async def main():
     # Wait for the shutdown event
     await shutdown_event.wait()
 
-    # Unsubscribe
-    await client.unsubscribe()
+    await client.shutdown()
 
 
 async def shutdown(event: asyncio.Event, signal: signal.Signals):
@@ -954,7 +952,8 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
 - `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
 - `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
-- `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
+- `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
+- `shutdown() -> None`: Stop the consumer and all client services.
 
 ### AdminClient
 

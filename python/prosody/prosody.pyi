@@ -273,7 +273,7 @@ class _NativeProsodyClient:
         headers: Optional[Dict[str, str]] = None,
     ) -> Sequence[object]: ...
 
-    async def consumer_state(self) -> Literal['unconfigured', 'configured', 'running']:
+    async def consumer_state(self) -> Literal['shut_down', 'unconfigured', 'configured', 'running']:
         """
         Get the current state of the consumer.
 
@@ -343,6 +343,14 @@ class _NativeProsodyClient:
             This method will wait for all tasks to complete or be cancelled
             before returning. Ensure that your message handlers respond
             promptly to cancellation to avoid delays during shutdown.
+        """
+        ...
+
+    async def shutdown(self) -> None:
+        """Shut down the consumer and all client services.
+
+        Raises:
+            RuntimeError: If shutdown fails.
         """
         ...
 

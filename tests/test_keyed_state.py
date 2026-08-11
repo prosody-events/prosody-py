@@ -151,8 +151,8 @@ async def state_client(random_topic_and_group):
     client = _make_state_client(topic, group)
     yield client, topic, group
     with contextlib.suppress(Exception):
-        if await _wait(client.consumer_state()) == "running":
-            await _wait(client.unsubscribe())
+        if await _wait(client.consumer_state()) != "shut_down":
+            await _wait(client.shutdown())
 
 
 # ===========================================================================
@@ -1336,7 +1336,7 @@ async def test_blocked_handler_does_not_block_other_key(state_client):
     probes = []
     for _ in range(5):
         probes.append(await _wait(probe_h.results.receive()))
-    await _wait(probe.unsubscribe())
+    await _wait(probe.shutdown())
 
     seen = {}
     key_a = key_b = None

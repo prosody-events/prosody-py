@@ -341,6 +341,22 @@ impl ProsodyClient {
         })
     }
 
+    /// Shuts down the client and all its services.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyRuntimeError` if shutdown fails.
+    fn shutdown<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            client
+                .shutdown()
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))
+        })
+    }
+
     /// Returns a string representation of the `ProsodyClient`.
     ///
     /// # Returns
@@ -353,7 +369,7 @@ impl ProsodyClient {
         let consumer_state = slf.consumer_state_sync();
 
         let consumer_properties = match &consumer_state {
-            ErasedConsumerState::Unconfigured => String::new(),
+            ErasedConsumerState::ShutDown | ErasedConsumerState::Unconfigured => String::new(),
             ErasedConsumerState::ConfigurationFailed(error) => format!(", error=\"{error}\""),
             ErasedConsumerState::Configured(config)
             | ErasedConsumerState::Running { config, .. } => {
@@ -387,7 +403,7 @@ impl ProsodyClient {
         let consumer_state = slf.consumer_state_sync();
 
         let consumer_properties = match &consumer_state {
-            ErasedConsumerState::Unconfigured => String::new(),
+            ErasedConsumerState::ShutDown | ErasedConsumerState::Unconfigured => String::new(),
             ErasedConsumerState::ConfigurationFailed(error) => format!(", error={error}"),
             ErasedConsumerState::Configured(config)
             | ErasedConsumerState::Running { config, .. } => {
@@ -502,6 +518,7 @@ impl ProsodyClient {
 
 fn consumer_state_name(state: &ErasedConsumerState<PythonHandler>) -> &'static str {
     match state {
+        ErasedConsumerState::ShutDown => "shut_down",
         ErasedConsumerState::Unconfigured => "unconfigured",
         ErasedConsumerState::ConfigurationFailed(_) => "configuration_failed",
         ErasedConsumerState::Configured(_) => "configured",

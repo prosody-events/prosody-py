@@ -131,10 +131,10 @@ async def client(random_topic_and_group):
     state = await asyncio.wait_for(client.consumer_state(), timeout=DEFAULT_TIMEOUT)
     logger.debug(f"FIXTURE client: consumer_state() = {state}")
 
-    if state == "running":
-        logger.debug("FIXTURE client: Calling unsubscribe()...")
-        await asyncio.wait_for(client.unsubscribe(), timeout=DEFAULT_TIMEOUT)
-        logger.debug("FIXTURE client: unsubscribe() completed")
+    if state != "shut_down":
+        logger.debug("FIXTURE client: Calling shutdown()...")
+        await asyncio.wait_for(client.shutdown(), timeout=DEFAULT_TIMEOUT)
+        logger.debug("FIXTURE client: shutdown() completed")
 
     logger.debug("FIXTURE client: TEARDOWN COMPLETED")
 
@@ -624,8 +624,8 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
 
     assert not handler.retry_event.is_set()
 
-    logger.debug("TEST: Unsubscribing...")
-    await asyncio.wait_for(client_with_best_effort.unsubscribe(), timeout=DEFAULT_TIMEOUT)
+    logger.debug("TEST: Shutting down...")
+    await asyncio.wait_for(client_with_best_effort.shutdown(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST test_best_effort_mode_does_not_retry: PASSED")
 
 
