@@ -65,7 +65,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 
-from prosody import ProsodyClient, EventHandler, Message, Context, Timer
+from prosody import EventHandler, Message, Context, Timer
 from prosody.prosody import AdminClient
 
 
@@ -195,10 +195,10 @@ async def random_topic_and_group():
 
 
 @pytest.fixture
-async def client(random_topic_and_group):
+async def client(random_topic_and_group, client_factory):
     """Create a ProsodyClient for testing"""
     topic, group = random_topic_and_group
-    client = ProsodyClient(
+    client = client_factory(
         bootstrap_servers="localhost:9094",
         source_system="test-tracing",
         group_id=group,
@@ -207,13 +207,6 @@ async def client(random_topic_and_group):
         cassandra_nodes="localhost:9042",
     )
     yield client
-
-    # Cleanup
-    try:
-        if await client.consumer_state() != "shut_down":
-            await client.shutdown()
-    except Exception as e:
-        logger.warning(f"Failed to shut down client: {e}")
 
 
 @pytest.mark.tracing

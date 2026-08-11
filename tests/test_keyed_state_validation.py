@@ -108,9 +108,9 @@ def test_rejects_keyset_non_whole(keyset_limit):
         make_client(state_collections=[map("m", keyset_limit=keyset_limit)])
 
 
-def test_accepts_keyset_zero():
+async def test_accepts_keyset_zero(client_factory):
     # 0 disables ordered-scan tracking and is a valid whole number.
-    make_client(state_collections=[map("m", keyset_limit=0)])
+    client_factory(**BASE, state_collections=[map("m", keyset_limit=0)])
 
 
 def test_rejects_keyset_on_non_map():
@@ -123,8 +123,8 @@ def test_rejects_keyset_on_non_map():
 # --- capacity rules (deque-only) ------------------------------------------
 
 
-def test_accepts_deque_capacity():
-    make_client(state_collections=[deque("d", capacity=100)])
+async def test_accepts_deque_capacity(client_factory):
+    client_factory(**BASE, state_collections=[deque("d", capacity=100)])
 
 
 def test_rejects_capacity_zero():
@@ -184,5 +184,5 @@ def test_rejects_recovery_delay_nonfinite(delay):
 # --- happy path -----------------------------------------------------------
 
 
-def test_accepts_canonical_collection_set():
-    make_client(state_collections=STATE_COLLECTIONS)
+async def test_accepts_canonical_collection_set(client_factory):
+    client_factory(**BASE, state_collections=STATE_COLLECTIONS)
