@@ -64,7 +64,7 @@ class Handler(EventHandler[Event]):
         await events.append(message)
         event = await events.peek()
         assert_type(event, Optional[Message[Event]])
-        if event is not None:
+        if event is not None and event.payload is not None:
             assert_type(event.payload["amount"], int)
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
