@@ -490,11 +490,7 @@ where
             Some(payload) => pythonize(py, payload)?,
             None => py.None().into_bound(py),
         };
-        let core = message
-            .record()
-            .message()
-            .map(|_| Py::new(py, MessageCore::new(message.clone())))
-            .transpose()?;
+        let core = Py::new(py, MessageCore::new(message.clone()))?;
 
         let message = execution_context.message_class.call1(
             py,

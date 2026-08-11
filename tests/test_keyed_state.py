@@ -100,12 +100,12 @@ def _msg_fields(m):
 
 
 class StateHandler(EventHandler):
-    async def on_excise(self, context, message) -> None:
-        return None
-
     """Injectable-callback handler. Assertions run inside ``on_message``; the
     callback reports observation dicts over ``results`` (a ``tsasync.Channel``,
     thread-safe for the Rust->Python signalling), or raises to drive retry."""
+
+    async def on_excise(self, context, message) -> None:
+        return None
 
     __test__ = False
 

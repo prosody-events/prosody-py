@@ -607,10 +607,11 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
 
 
 class CallbackTimerHandler(EventHandler):
+    """Handler that executes a custom callback function for timer testing"""
+
     async def on_excise(self, context: Context, message: Message) -> None:
         return None
 
-    """Handler that executes a custom callback function for timer testing"""
     __test__ = False
 
     def __init__(self, message_callback=None):
