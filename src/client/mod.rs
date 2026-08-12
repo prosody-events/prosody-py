@@ -369,7 +369,7 @@ impl ProsodyClient {
         let consumer_state = slf.consumer_state_sync();
 
         let consumer_properties = match &consumer_state {
-            ErasedConsumerState::ShutDown | ErasedConsumerState::Unconfigured => String::new(),
+            ErasedConsumerState::Shutdown | ErasedConsumerState::Unconfigured => String::new(),
             ErasedConsumerState::ConfigurationFailed(error) => format!(", error=\"{error}\""),
             ErasedConsumerState::Configured(config)
             | ErasedConsumerState::Running { config, .. } => {
@@ -403,7 +403,7 @@ impl ProsodyClient {
         let consumer_state = slf.consumer_state_sync();
 
         let consumer_properties = match &consumer_state {
-            ErasedConsumerState::ShutDown | ErasedConsumerState::Unconfigured => String::new(),
+            ErasedConsumerState::Shutdown | ErasedConsumerState::Unconfigured => String::new(),
             ErasedConsumerState::ConfigurationFailed(error) => format!(", error={error}"),
             ErasedConsumerState::Configured(config)
             | ErasedConsumerState::Running { config, .. } => {
@@ -518,7 +518,7 @@ impl ProsodyClient {
 
 fn consumer_state_name(state: &ErasedConsumerState<PythonHandler>) -> &'static str {
     match state {
-        ErasedConsumerState::ShutDown => "shut_down",
+        ErasedConsumerState::Shutdown => "shut_down",
         ErasedConsumerState::Unconfigured => "unconfigured",
         ErasedConsumerState::ConfigurationFailed(_) => "configuration_failed",
         ErasedConsumerState::Configured(_) => "configured",
