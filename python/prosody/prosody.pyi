@@ -9,6 +9,7 @@ from typing import AsyncIterator, Generic, List, Optional, Sequence, Union, Type
 
 from prosody import EventHandler
 from prosody.message import Message
+from prosody.request import RequestResult
 from prosody.state import (
     DequeDefinition,
     MapDefinition,
@@ -240,7 +241,7 @@ class _NativeProsodyClient:
             peer_bind_address: Socket address for the peer gRPC listener. Env: ``PROSODY_PEER_BIND_ADDRESS``.
             peer_advertised_connect: gRPC connect URI for peers on another network. Env: ``PROSODY_PEER_ADVERTISED_CONNECT``.
             peer_network_name: Network name used for direct routes. Env: ``PROSODY_PEER_NETWORK_NAME``.
-            peer_cache_capacity: Maximum entries in each node-keyed peer cache. Env: ``PROSODY_PEER_CACHE_CAPACITY``.
+            peer_cache_capacity: Maximum entries in each peer cache. Env: ``PROSODY_PEER_CACHE_CAPACITY``.
             peer_registration_ttl: Directory registration lease duration. Env: ``PROSODY_PEER_REGISTRATION_TTL``.
         Raises:
             ValueError: If the configuration is invalid.
@@ -271,7 +272,7 @@ class _NativeProsodyClient:
         timeout: Duration,
         *,
         headers: Optional[Dict[str, str]] = None,
-    ) -> Sequence[object]: ...
+    ) -> Sequence[RequestResult[JSONValue]]: ...
 
     async def consumer_state(self) -> Literal['shut_down', 'unconfigured', 'configured', 'running']:
         """

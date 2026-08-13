@@ -1,30 +1,24 @@
-from typing import Generic, Literal, Protocol, TypeAlias, TypeVar, runtime_checkable
+from typing import Generic, Literal, TypeAlias, TypeVar
 
 T = TypeVar("T", covariant=True)
 
-@runtime_checkable
-class Ok(Protocol, Generic[T]):
+class Ok(Generic[T]):
     @property
     def value(self) -> T: ...
 
-@runtime_checkable
-class Err(Protocol):
+class Err:
     @property
     def error(self) -> ResponseError: ...
 
-@runtime_checkable
-class HandlerResponseError(Protocol):
+class HandlerResponseError:
     @property
     def category(self) -> Literal["transient", "permanent", "terminal"]: ...
     @property
     def message(self) -> str: ...
 
-@runtime_checkable
-class ResponseTimeoutError(Protocol): ...
-@runtime_checkable
-class ResponseFormatMismatchError(Protocol): ...
-@runtime_checkable
-class MalformedResponseError(Protocol): ...
+class ResponseTimeoutError: ...
+class ResponseFormatMismatchError: ...
+class MalformedResponseError: ...
 
 ResponseError: TypeAlias = (
     HandlerResponseError

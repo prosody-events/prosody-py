@@ -103,9 +103,9 @@ async def main():
         # Run the example for 1 minute
         await asyncio.sleep(60)
     finally:
-        # Ensure we cancel our sending task and unsubscribe the client
+        # Cancel the send task and shut down the client.
         send_task.cancel()
-        await client.unsubscribe()
+        await client.shutdown()
 
 
 if __name__ == "__main__":
