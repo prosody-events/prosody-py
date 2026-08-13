@@ -13,11 +13,12 @@ from prosody.errors import (
 from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
 from prosody.message import JSONValue as _JSONValue, Message as Message
 from datetime import timedelta
-from typing import Mapping, Sequence, TypeVar, overload
+from typing import Sequence, TypeVar, overload
+from typing_extensions import Self
 
 from prosody.prosody import (
     AdminClient as AdminClient,
-    _NativeProsodyClient,
+    _ProsodyClientApi,
     flush_telemetry as flush_telemetry,
     shutdown_telemetry as shutdown_telemetry,
 )
@@ -57,7 +58,11 @@ from prosody.timer import Timer as Timer
 T = TypeVar("T")
 V = TypeVar("V")
 
-class ProsodyClient(_NativeProsodyClient):
+class ProsodyClient(_ProsodyClientApi):
+    def __init__(self) -> None: ...
+    @classmethod
+    async def create(cls, **configuration: object) -> Self: ...
+
     async def request(
         self,
         topic: str,
@@ -66,7 +71,7 @@ class ProsodyClient(_NativeProsodyClient):
         subsystems: Sequence[str],
         timeout: float | timedelta,
         *,
-        headers: Mapping[str, str] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Sequence[RequestResult[_JSONValue]]: ...
 
     @overload

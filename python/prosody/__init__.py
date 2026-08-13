@@ -64,17 +64,15 @@ class ProsodyClient:
     @classmethod
     def create(cls, **configuration):
         """Create a client without blocking the Python event loop."""
-        pending = _NativeProsodyClient.create(**configuration)
-
         async def finish():
             client = object.__new__(cls)
-            client._native = await pending
+            client._native = await _NativeProsodyClient.create(**configuration)
             return client
 
         return finish()
 
     def __getattr__(self, name):
-        return getattr(self._native, name)
+        return getattr(object.__getattribute__(self, "_native"), name)
 
     async def state(self, subsystem, definition):
         """Open a read-only view of a published JSON collection."""

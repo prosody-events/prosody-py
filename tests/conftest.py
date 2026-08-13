@@ -25,4 +25,5 @@ async def client_factory():
     )
     errors = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
     if errors:
-        raise ExceptionGroup("client shutdown failed", errors)
+        details = "; ".join(str(error) for error in errors)
+        raise RuntimeError(f"client shutdown failed: {details}") from errors[0]

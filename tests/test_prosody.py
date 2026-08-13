@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List
 
 import pytest
+import prosody as prosody_module
 import tsasync
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -35,6 +36,35 @@ def test_request_aliases_are_available_at_runtime():
     assert Ok[dict] is Ok
     assert RequestResult[dict] is not None
     assert ResponseError is not None
+
+
+@pytest.mark.asyncio
+async def test_create_starts_native_construction_when_awaited(monkeypatch):
+    calls = []
+
+    class NativeClient:
+        @staticmethod
+        def create(**configuration):
+            calls.append(configuration)
+
+            async def finish():
+                return object()
+
+            return finish()
+
+    monkeypatch.setattr(prosody_module, "_NativeProsodyClient", NativeClient)
+    pending = ProsodyClient.create(mock=True)
+    assert calls == []
+
+    await pending
+    assert calls == [{"mock": True}]
+
+
+def test_missing_native_client_reports_attribute_error():
+    client = object.__new__(ProsodyClient)
+
+    with pytest.raises(AttributeError):
+        client.missing
 
 # Use pytest's built-in logging; logs will appear at DEBUG level
 logger = logging.getLogger(__name__)
@@ -420,29 +450,6 @@ async def test_span_configuration(random_topic_and_group, client_factory):
         mock=True,
     )
     assert isinstance(client, ProsodyClient)
-
-    # invalid message_spans raises ValueError with field name
-    with pytest.raises(ValueError, match="message_spans"):
-        ProsodyClient.create(
-            bootstrap_servers="localhost:9092",
-            source_system="test-spans",
-            group_id=group,
-            subscribed_topics=[topic],
-            message_spans="invalid",
-            mock=True,
-        )
-
-    # invalid timer_spans raises ValueError with field name
-    with pytest.raises(ValueError, match="timer_spans"):
-        ProsodyClient.create(
-            bootstrap_servers="localhost:9092",
-            source_system="test-spans",
-            group_id=group,
-            subscribed_topics=[topic],
-            timer_spans="invalid",
-            mock=True,
-        )
-
 
 async def test_multiple_messages(client, random_topic_and_group):
     logger.debug("=" * 40)

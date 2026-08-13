@@ -342,12 +342,12 @@ impl ProsodyClient {
         let client = self.client.clone();
         let current = Arc::clone(&self.handler);
         future_into_py(py, async move {
-            client
+            let result = client
                 .unsubscribe()
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()));
             *current.write() = None;
-            Ok(())
+            result
         })
     }
 

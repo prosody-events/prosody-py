@@ -22,7 +22,7 @@ from prosody.state import (
 P = TypeVar("P")
 T = TypeVar("T")
 V = TypeVar("V")
-C = TypeVar("C", bound="_NativeProsodyClient")
+C = TypeVar("C", bound="_ProsodyClientApi")
 
 # Every keyed-state collection definition accepted by ``state_collections``.
 StateDefinition: TypeAlias = Union[
@@ -92,7 +92,7 @@ class _NativePublishedDeque(Generic[T]):
     async def scan(self, key: str, direction: str) -> NativeJsonDequeScan: ...
 
 
-class _NativeProsodyClient:
+class _ProsodyClientApi:
     """
     A client for interacting with Kafka using the Prosody library.
 
@@ -363,6 +363,8 @@ class _NativeProsodyClient:
             str: The source system identifier.
         """
         ...
+
+class _NativeProsodyClient(_ProsodyClientApi): ...
 
 
 class AdminClient:
