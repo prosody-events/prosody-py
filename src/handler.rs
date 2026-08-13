@@ -265,7 +265,7 @@ impl FallibleHandler for PythonHandler {
         };
 
         Python::attach(|py| depythonize(output.bind(py)))
-            .map_err(|error| PyTypeError::new_err(error.to_string()).into())
+            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
     }
 
     /// Processes a timer event by invoking the Python handler.
@@ -340,7 +340,7 @@ impl FallibleHandler for PythonHandler {
         };
 
         Python::attach(|py| depythonize(output.bind(py)))
-            .map_err(|error| PyTypeError::new_err(error.to_string()).into())
+            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
     }
 
     /// Shuts down the handler.
@@ -556,6 +556,10 @@ pub enum WrappedPythonError {
     /// Underlying Python exception
     #[error(transparent)]
     Python(#[from] PyErr),
+
+    /// The handler result has no JSON representation.
+    #[error("handler result is not representable as JSON: {0}")]
+    ResultConversion(String),
 }
 
 impl ClassifyError for WrappedPythonError {
@@ -572,6 +576,7 @@ impl ClassifyError for WrappedPythonError {
                     _ => ErrorCategory::Transient,
                 })
             }
+            WrappedPythonError::ResultConversion(_) => ErrorCategory::Permanent,
         }
     }
 }

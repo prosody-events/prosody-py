@@ -39,7 +39,7 @@ from prosody import ProsodyClient, EventHandler, Context, Message
 import datetime
 
 # Initialize the client with Kafka bootstrap server, consumer group, and topics
-client = ProsodyClient(
+client = await ProsodyClient.create(
     # Bootstrap servers should normally be set using the PROSODY_BOOTSTRAP_SERVERS environment variable
     bootstrap_servers="localhost:9092",
 
@@ -119,7 +119,7 @@ When the timer fires, reload the message from Kafka and retry.
 
 ```python
 # Configure defer behavior
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     defer_enabled=True,           # Enable deferral (default: True)
@@ -141,7 +141,7 @@ with a transient error, routing them through defer.
 
 ```python
 # Configure monopolization detection
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     monopolization_enabled=True,     # Enable detection (default: True)
@@ -155,7 +155,7 @@ client = ProsodyClient(
 Handlers are automatically cancelled if they exceed a deadline:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     timeout=30.0,             # Cancel after 30 seconds
@@ -172,6 +172,8 @@ For the complete configuration reference, see [CONFIGURATION.md](CONFIGURATION.m
 
 Constructor options take precedence. Unset options use environment variables, then library defaults.
 
+Client construction is asynchronous. Replace `ProsodyClient(...)` with `await ProsodyClient.create(...)`.
+
 ## Liveness and Readiness Probes
 
 Prosody includes a built-in probe server for consumer-based applications that provides health check endpoints. The probe
@@ -186,7 +188,7 @@ server is tied to the consumer's lifecycle and offers two main endpoints:
 Configure the probe server using either the client constructor:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     probe_port=8000,  # Explicitly pass None to disable
@@ -219,7 +221,7 @@ Pipeline mode is the default mode. Ensures ordered processing, retrying failed o
 
 ```python
 # Initialize client in pipeline mode
-client = ProsodyClient(
+client = await ProsodyClient.create(
     mode="pipeline",  # Explicitly set pipeline mode (this is the default)
     group_id="my-consumer-group",
     subscribed_topics="my-topic"
@@ -232,7 +234,7 @@ Prioritizes quick processing, sending persistently failing messages to a failure
 
 ```python
 # Initialize client in low-latency mode
-client = ProsodyClient(
+client = await ProsodyClient.create(
     mode="low-latency",  # Set low-latency mode
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
@@ -246,7 +248,7 @@ Optimized for development environments or services where message processing fail
 
 ```python
 # Initialize client in best-effort mode
-client = ProsodyClient(
+client = await ProsodyClient.create(
     mode="best-effort",  # Set best-effort mode
     group_id="my-consumer-group",
     subscribed_topics="my-topic"
@@ -259,7 +261,7 @@ Prosody supports filtering messages based on event type prefixes, allowing your 
 
 ```python
 # Process only events with types starting with "user." or "account."
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     allowed_events=["user.", "account."]
@@ -293,7 +295,7 @@ Prosody prevents processing loops in distributed systems by tracking the source 
 
 ```python
 # Consumer and producer in one application
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-service",
     source_system="my-service-producer",  # Must differ from group_id to allow loopbacks; defaults to group_id
     subscribed_topics="my-topic"
@@ -347,7 +349,7 @@ await client.send("my-topic", "key2", {
 Consumer deduplication is required for keyed-state commits. The client rejects an `idempotence_cache_size` of zero:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     idempotence_cache_size=0  # Rejected
@@ -357,7 +359,7 @@ client = ProsodyClient(
 To invalidate all previously recorded deduplication entries (e.g. after a data migration), change `idempotence_version`:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     idempotence_version="2"  # All entries recorded under version "1" are ignored
@@ -370,7 +372,7 @@ this to match your expected message redelivery window:
 ```python
 from datetime import timedelta
 
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     idempotence_ttl=timedelta(days=7)  # also accepts seconds as a float (e.g. 604800.0)
@@ -437,7 +439,7 @@ PROSODY_CASSANDRA_NODES=localhost:9042  # Required for timer persistence
 Or programmatically when creating the client:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     bootstrap_servers="localhost:9092",
     group_id="my-application",
     subscribed_topics="my-topic",
@@ -449,7 +451,7 @@ For testing, you can use mock mode to avoid Cassandra dependency:
 
 ```python
 # Mock mode for testing (timers work but aren't persisted)
-client = ProsodyClient(
+client = await ProsodyClient.create(
     bootstrap_servers="localhost:9092",
     group_id="my-application",
     subscribed_topics="my-topic",
@@ -471,7 +473,7 @@ Published state lets another client read a JSON value, map, or deque without sub
 
 ```python
 CURRENT_ORDER: ValueDefinition[dict[str, str]] = value("current-order", published=True)
-owner = ProsodyClient(
+owner = await ProsodyClient.create(
     **config,
     subsystem="checkout",
     state_collections=[CURRENT_ORDER],
@@ -507,7 +509,7 @@ class CountHandler(EventHandler):
         await count.set((await count.get() or 0) + 1)
 
 
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="counters",
     subscribed_topics="events",
     state_collections=[COUNTER],
@@ -740,7 +742,7 @@ async def main():
             sig, lambda s=sig: asyncio.create_task(shutdown(shutdown_event, s))
         )
 
-    client = ProsodyClient(
+    client = await ProsodyClient.create(
         bootstrap_servers="localhost:9092",
         group_id="my-consumer-group",
         subscribed_topics="my-topic"
@@ -851,6 +853,10 @@ merging to `main`.
 ## Peer Requests
 
 Peer requests collect one result from each named subsystem. The result order matches the subsystem order.
+
+Do not await a request from a handler for the same key and subsystem. The request cannot finish until that handler returns.
+
+Prosody now uses handler return values as request results. Ensure that each handler return value has a JSON representation.
 
 Return a JSON response from each message handler:
 

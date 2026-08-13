@@ -124,13 +124,12 @@ async def random_topic_and_group():
     group = f"test-group-{uuid.uuid4().hex}"
     admin = AdminClient(bootstrap_servers=BOOTSTRAP)
     await _wait(admin.create_topic(topic, partition_count=4, replication_factor=1))
-    await asyncio.sleep(1)
     yield topic, group
     await _wait(admin.delete_topic(topic))
 
 
-def _make_state_client(topic, group, client_factory):
-    return client_factory(
+async def _make_state_client(topic, group, client_factory):
+    return await client_factory(
         bootstrap_servers=BOOTSTRAP,
         source_system="test-state",
         group_id=group,
@@ -147,7 +146,7 @@ def _make_state_client(topic, group, client_factory):
 @pytest.fixture
 async def state_client(random_topic_and_group, client_factory):
     topic, group = random_topic_and_group
-    client = _make_state_client(topic, group, client_factory)
+    client = await _make_state_client(topic, group, client_factory)
     yield client, topic, group
 
 
@@ -1312,7 +1311,7 @@ async def test_blocked_handler_does_not_block_other_key(state_client, client_fac
     # Probe with a bare client on the SAME group so committed offsets keep the
     # state client from re-seeing probe messages. Five keys over four partitions
     # guarantee two distinct keys share a partition.
-    probe = client_factory(
+    probe = await client_factory(
         bootstrap_servers=BOOTSTRAP,
         source_system="probe",
         group_id=group,
@@ -1341,6 +1340,7 @@ async def test_blocked_handler_does_not_block_other_key(state_client, client_fac
             break
         seen[p["partition"]] = p["key"]
     assert key_a is not None and key_b is not None
+    await _wait(probe.unsubscribe())
 
     gate = tsasync.Event()
     events = tsasync.Channel()

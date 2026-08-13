@@ -198,7 +198,7 @@ async def random_topic_and_group():
 async def client(random_topic_and_group, client_factory):
     """Create a ProsodyClient for testing"""
     topic, group = random_topic_and_group
-    client = client_factory(
+    client = await client_factory(
         bootstrap_servers="localhost:9094",
         source_system="test-tracing",
         group_id=group,

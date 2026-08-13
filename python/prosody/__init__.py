@@ -55,8 +55,26 @@ from prosody.state import (
 from prosody.timer import Timer
 
 
-class ProsodyClient(_NativeProsodyClient):
+class ProsodyClient:
     """Prosody client with typed published-state composition."""
+
+    def __init__(self):
+        raise TypeError("Use await ProsodyClient.create(**configuration)")
+
+    @classmethod
+    def create(cls, **configuration):
+        """Create a client without blocking the Python event loop."""
+        pending = _NativeProsodyClient.create(**configuration)
+
+        async def finish():
+            client = object.__new__(cls)
+            client._native = await pending
+            return client
+
+        return finish()
+
+    def __getattr__(self, name):
+        return getattr(self._native, name)
 
     async def state(self, subsystem, definition):
         """Open a read-only view of a published JSON collection."""

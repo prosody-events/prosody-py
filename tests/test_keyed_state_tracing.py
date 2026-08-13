@@ -158,7 +158,7 @@ async def test_state_op_trace_graph(random_topic_and_group):
     )
     trace.set_tracer_provider(provider)
 
-    client = ProsodyClient(
+    client = await ProsodyClient.create(
         bootstrap_servers=BOOTSTRAP,
         source_system="test-state-trace",
         group_id=group,

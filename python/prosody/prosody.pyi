@@ -22,6 +22,7 @@ from prosody.state import (
 P = TypeVar("P")
 T = TypeVar("T")
 V = TypeVar("V")
+C = TypeVar("C", bound="_NativeProsodyClient")
 
 # Every keyed-state collection definition accepted by ``state_collections``.
 StateDefinition: TypeAlias = Union[
@@ -99,8 +100,9 @@ class _NativeProsodyClient:
     subscribing to topics for message consumption.
     """
 
-    def __init__(
-            self,
+    @classmethod
+    async def create(
+            cls: type[C],
             *,
             bootstrap_servers: Optional[StringOrList] = None,
             mock: Optional[bool] = None,
@@ -174,9 +176,9 @@ class _NativeProsodyClient:
             peer_network_name: Optional[str] = None,
             peer_cache_capacity: Optional[int] = None,
             peer_registration_ttl: Optional[Duration] = None,
-    ) -> None:
+    ) -> C:
         """
-        Initialize a new ProsodyClient.
+        Create a Prosody client without blocking the Python event loop.
 
         Args:
             bootstrap_servers: Kafka servers for initial connection.
@@ -279,7 +281,8 @@ class _NativeProsodyClient:
         Get the current state of the consumer.
 
         Returns:
-            Literal['unconfigured', 'configured', 'running']: The current state.
+            Literal['shut_down', 'unconfigured', 'configured', 'running']:
+            The current state.
         """
         ...
 
@@ -331,19 +334,11 @@ class _NativeProsodyClient:
 
     async def unsubscribe(self) -> None:
         """
-        Unsubscribe from messages and shut down the consumer.
-
-        This method initiates a graceful shutdown of the consumer, cancelling
-        any in-flight message handling tasks. It ensures that all resources
-        are properly cleaned up before returning.
+        Stop the consumer. You can subscribe again later.
 
         Raises:
             RuntimeError: If the consumer is not configured or not subscribed.
 
-        Note:
-            This method will wait for all tasks to complete or be cancelled
-            before returning. Ensure that your message handlers respond
-            promptly to cancellation to avoid delays during shutdown.
         """
         ...
 

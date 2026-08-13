@@ -86,7 +86,7 @@ async def send_messages(client: ProsodyClient):
 
 async def main():
     # Initialize the Prosody client
-    client = ProsodyClient(
+    client = await ProsodyClient.create(
         bootstrap_servers="localhost:9094",
         group_id="example-group",
         subscribed_topics="example-topic"

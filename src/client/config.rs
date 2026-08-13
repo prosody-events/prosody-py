@@ -35,12 +35,12 @@ use prosody::timers::duration::CompactDuration;
 use prosody::{ByteSize, JsonCodec};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyDictMethods};
-use pyo3::{Bound, IntoPyObjectExt, PyResult, Python};
-use pyo3_async_runtimes::tokio::get_runtime;
+use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process;
+use std::sync::Arc;
 use std::time::Duration;
 use tonic::transport::Endpoint;
 
@@ -60,7 +60,37 @@ use tonic::transport::Endpoint;
 ///
 /// Returns a `PyValueError` if the configuration is invalid or parsing fails.
 /// Returns a `PyRuntimeError` if client initialization fails.
-pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<ProsodyClient> {
+pub struct PreparedClient {
+    mode: Mode,
+    producer: ProducerConfigurationBuilder,
+    consumer: ConsumerBuilders,
+    cassandra: CassandraConfigurationBuilder,
+    get_context: Py<PyAny>,
+    inject: Py<PyAny>,
+}
+
+impl PreparedClient {
+    pub async fn connect(mut self) -> PyResult<ProsodyClient> {
+        let client = new_erased(
+            self.mode,
+            &mut self.producer,
+            &self.consumer,
+            &self.cassandra,
+        )
+        .await
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+
+        Ok(ProsodyClient {
+            client,
+            get_context: self.get_context,
+            inject: self.inject,
+            handler: Arc::new(parking_lot::RwLock::new(None)),
+            pid: process::id(),
+        })
+    }
+}
+
+pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<PreparedClient> {
     // Get handles to OpenTelemetry functions
     let get_context = py
         .import("opentelemetry.context")?
@@ -94,22 +124,13 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
                 .map_err(|error| PyValueError::new_err(error.to_string()))?,
         };
 
-        let cassandra = CassandraConfigurationBuilder::default();
-        let mut producer = ProducerConfigurationBuilder::default();
-        let client = get_runtime()
-            .block_on(new_erased(
-                Mode::default(),
-                &mut producer,
-                &consumer_builders,
-                &cassandra,
-            ))
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
-        return Ok(ProsodyClient {
-            client,
+        return Ok(PreparedClient {
+            mode: Mode::default(),
+            producer: ProducerConfigurationBuilder::default(),
+            consumer: consumer_builders,
+            cassandra: CassandraConfigurationBuilder::default(),
             get_context,
             inject,
-            pid: process::id(),
         });
     };
 
@@ -123,24 +144,13 @@ pub fn try_build_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<
         None => Mode::default(),
     };
 
-    let mut producer_config = build_producer_config(config)?;
-    let consumer_builders = build_consumer_builders(config)?;
-    let cassandra = build_cassandra_config(config)?;
-
-    let client = get_runtime()
-        .block_on(new_erased(
-            mode,
-            &mut producer_config,
-            &consumer_builders,
-            &cassandra,
-        ))
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-
-    Ok(ProsodyClient {
-        client,
+    Ok(PreparedClient {
+        mode,
+        producer: build_producer_config(config)?,
+        consumer: build_consumer_builders(config)?,
+        cassandra: build_cassandra_config(config)?,
         get_context,
         inject,
-        pid: process::id(),
     })
 }
 

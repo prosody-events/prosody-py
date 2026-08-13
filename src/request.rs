@@ -2,8 +2,8 @@
 
 use prosody::error::ErrorCategory;
 use prosody::requester::ResponseError;
-use pyo3::types::PyAnyMethods;
-use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3::types::{PyAnyMethods, PyType};
+use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pythonize::pythonize;
 use serde_json::Value;
 
@@ -16,6 +16,11 @@ pub struct RequestOk {
 
 #[pymethods]
 impl RequestOk {
+    #[classmethod]
+    fn __class_getitem__(class: &Bound<'_, PyType>, _item: &Bound<'_, PyAny>) -> Py<PyAny> {
+        class.clone().into_any().unbind()
+    }
+
     fn __repr__(&self, py: Python) -> PyResult<String> {
         Ok(format!("Ok({})", self.value.bind(py).repr()?))
     }

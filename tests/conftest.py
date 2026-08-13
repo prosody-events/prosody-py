@@ -13,11 +13,16 @@ async def client_factory():
 
     clients = []
 
-    def create(**configuration):
-        client = ProsodyClient(**configuration)
+    async def create(**configuration):
+        client = await ProsodyClient.create(**configuration)
         clients.append(client)
         return client
 
     yield create
 
-    await asyncio.gather(*(client.shutdown() for client in clients))
+    outcomes = await asyncio.gather(
+        *(client.shutdown() for client in clients), return_exceptions=True
+    )
+    errors = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+    if errors:
+        raise ExceptionGroup("client shutdown failed", errors)

@@ -21,7 +21,7 @@ BASE = dict(
 
 
 def make_client(**overrides):
-    return ProsodyClient(**BASE, **overrides)
+    return ProsodyClient.create(**BASE, **overrides)
 
 
 @pytest.mark.parametrize("state_owned_cache_size", ["0", "-1 MiB", "nonsense"])
@@ -110,7 +110,7 @@ def test_rejects_keyset_non_whole(keyset_limit):
 
 async def test_accepts_keyset_zero(client_factory):
     # 0 disables ordered-scan tracking and is a valid whole number.
-    client_factory(**BASE, state_collections=[map("m", keyset_limit=0)])
+    await client_factory(**BASE, state_collections=[map("m", keyset_limit=0)])
 
 
 def test_rejects_keyset_on_non_map():
@@ -124,7 +124,7 @@ def test_rejects_keyset_on_non_map():
 
 
 async def test_accepts_deque_capacity(client_factory):
-    client_factory(**BASE, state_collections=[deque("d", capacity=100)])
+    await client_factory(**BASE, state_collections=[deque("d", capacity=100)])
 
 
 def test_rejects_capacity_zero():
@@ -185,4 +185,4 @@ def test_rejects_recovery_delay_nonfinite(delay):
 
 
 async def test_accepts_canonical_collection_set(client_factory):
-    client_factory(**BASE, state_collections=STATE_COLLECTIONS)
+    await client_factory(**BASE, state_collections=STATE_COLLECTIONS)

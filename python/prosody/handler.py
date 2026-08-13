@@ -71,6 +71,9 @@ class EventHandler(ABC, Generic[P]):
             context (Context): The context of the message.
             message (Message[P]): The Kafka message to be processed.
 
+        Returns:
+            JSONValue: The response for peer requests.
+
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
             - Use `try/finally` blocks or context managers for proper resource cleanup.
@@ -89,6 +92,9 @@ class EventHandler(ABC, Generic[P]):
         Args:
             context (Context): The context of the timer event.
             timer (Timer): The timer event to be processed.
+
+        Returns:
+            JSONValue: The handler result.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.

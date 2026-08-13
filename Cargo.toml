@@ -20,7 +20,8 @@ futures = "0.3"
 mimalloc = { version = "0.1", features = ["local_dynamic_tls", "v2"] }
 opentelemetry = "0.32"
 # TODO: Use the released version after Prosody publishes peer requests.
-prosody = { git = "https://github.com/prosody-events/prosody", rev = "d7daf54ed7dcd4f0a6032528c29c0d89000988de", features = [
+parking_lot = "0.12"
+prosody = { git = "https://github.com/prosody-events/prosody", rev = "955110209d22691ae6a287a7d50655cad951c535", features = [
     "libz-static",
 ] }
 pyo3 = { version = "0.29", features = ["chrono"] }
