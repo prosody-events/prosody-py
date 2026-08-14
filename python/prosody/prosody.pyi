@@ -6,6 +6,7 @@ which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
 from typing import AsyncIterator, Generic, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
+from typing_extensions import Self
 
 from prosody import EventHandler
 from prosody.message import Message
@@ -22,7 +23,6 @@ from prosody.state import (
 P = TypeVar("P")
 T = TypeVar("T")
 V = TypeVar("V")
-C = TypeVar("C", bound="_ProsodyClientApi")
 
 # Every keyed-state collection definition accepted by ``state_collections``.
 StateDefinition: TypeAlias = Union[
@@ -102,7 +102,7 @@ class _ProsodyClientApi:
 
     @classmethod
     async def create(
-            cls: type[C],
+            cls,
             *,
             bootstrap_servers: Optional[StringOrList] = None,
             mock: Optional[bool] = None,
@@ -176,7 +176,7 @@ class _ProsodyClientApi:
             peer_network_name: Optional[str] = None,
             peer_cache_capacity: Optional[int] = None,
             peer_registration_ttl: Optional[Duration] = None,
-    ) -> C:
+    ) -> Self:
         """
         Create a Prosody client without blocking the Python event loop.
 
@@ -274,7 +274,7 @@ class _ProsodyClientApi:
         timeout: Duration,
         *,
         headers: Optional[Dict[str, str]] = None,
-    ) -> Sequence[RequestResult[JSONValue]]:
+    ) -> list[RequestResult[JSONValue]]:
         """Request one response from each subsystem.
 
         Cancel the task to cancel this request before it completes.

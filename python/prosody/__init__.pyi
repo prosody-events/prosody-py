@@ -11,10 +11,8 @@ from prosody.errors import (
     transient as transient,
 )
 from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
-from prosody.message import JSONValue as _JSONValue, Message as Message
-from datetime import timedelta
-from typing import Sequence, TypeVar, overload
-from typing_extensions import Self
+from prosody.message import Message as Message
+from typing import TypeVar, overload
 
 from prosody.prosody import (
     AdminClient as AdminClient,
@@ -58,19 +56,6 @@ V = TypeVar("V")
 
 class ProsodyClient(_ProsodyClientApi):
     def __init__(self) -> None: ...
-    @classmethod
-    async def create(cls, **configuration: object) -> Self: ...
-
-    async def request(
-        self,
-        topic: str,
-        key: str,
-        payload: _JSONValue,
-        subsystems: Sequence[str],
-        timeout: float | timedelta,
-        *,
-        headers: dict[str, str] | None = None,
-    ) -> Sequence[RequestResult[_JSONValue]]: ...
 
     @overload
     async def state(
