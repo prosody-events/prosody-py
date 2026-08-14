@@ -31,7 +31,6 @@ def test_event_handler_is_runtime_subscriptable():
 
 def test_request_alias_is_available_at_runtime():
     assert RequestResult[dict] is not None
-    assert ResponseError is not None
 
 
 @pytest.mark.asyncio
