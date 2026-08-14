@@ -869,7 +869,9 @@ class InventoryHandler(EventHandler):
 Send a request without a subscription on the requester:
 
 ```python
-from prosody import HandlerResponseError, ResponseError, ResponseTimeoutError
+import sys
+
+from prosody import ResponseError
 
 subsystems = ["inventory", "billing"]
 results = await client.request(
@@ -881,18 +883,18 @@ results = await client.request(
 )
 
 for subsystem, result in zip(subsystems, results, strict=True):
-    match result:
-        case ResponseTimeoutError():
-            print(f"{subsystem}: timed out")
-        case HandlerResponseError(category=category, handler_message=message):
-            print(f"{subsystem}: {category}: {message}")
-        case ResponseError() as error:
-            print(f"{subsystem}: {error}")
-        case value:
-            print(f"{subsystem}: {value}")
+    if isinstance(result, ResponseError):
+        print(f"{subsystem}: {result}", file=sys.stderr)
+    else:
+        print(f"{subsystem}: {result}")
 ```
 
-For example, a successful inventory handler prints `inventory: {'accepted': 'order-1'}`.
+The example can print these results:
+
+```text
+inventory: {'accepted': 'order-1'}
+billing: no response arrived before the deadline
+```
 
 Each array element is a JSON response or a Python exception. Its type identifies the failure.
 
