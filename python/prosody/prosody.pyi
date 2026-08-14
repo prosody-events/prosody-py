@@ -274,7 +274,12 @@ class _ProsodyClientApi:
         timeout: Duration,
         *,
         headers: Optional[Dict[str, str]] = None,
-    ) -> Sequence[RequestResult[JSONValue]]: ...
+    ) -> Sequence[RequestResult[JSONValue]]:
+        """Request one response from each subsystem.
+
+        Cancel the task to cancel this request before it completes.
+        """
+        ...
 
     async def consumer_state(self) -> Literal['shut_down', 'unconfigured', 'configured', 'running']:
         """
