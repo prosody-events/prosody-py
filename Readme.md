@@ -971,7 +971,7 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
 - `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
 - `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
-- `shutdown() -> None`: Stop the consumer and all client services.
+- `shutdown() -> None`: Stop all client services. Concurrent and repeated calls await the same operation.
 
 ### AdminClient
 

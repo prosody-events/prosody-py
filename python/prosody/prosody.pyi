@@ -348,7 +348,9 @@ class _ProsodyClientApi:
         ...
 
     async def shutdown(self) -> None:
-        """Shut down the consumer and all client services.
+        """Shut down all client services.
+
+        Concurrent and repeated calls await the same shutdown operation.
 
         Raises:
             RuntimeError: If shutdown fails.

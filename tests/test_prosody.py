@@ -184,6 +184,10 @@ async def test_client_initialization(client):
     logger.debug("TEST test_client_initialization: PASSED")
 
 
+async def test_shutdown_is_idempotent(client):
+    await asyncio.gather(client.shutdown(), client.shutdown())
+
+
 async def test_client_source_system(client):
     logger.debug("=" * 40)
     logger.debug("TEST test_client_source_system: STARTING")

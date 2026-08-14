@@ -5,6 +5,8 @@
 //! supporting both message production and consumption. It offers configurable
 //! operational modes, retry mechanisms, and failure handling strategies.
 
+use futures::FutureExt;
+use futures::future::{BoxFuture, Shared};
 use opentelemetry::propagation::TextMapPropagator;
 use parking_lot::RwLock;
 use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache, SharedHighLevelClient};
@@ -32,6 +34,8 @@ use crate::util::decode_duration;
 
 mod config;
 
+type Shutdown = Shared<BoxFuture<'static, Result<(), Arc<str>>>>;
+
 /// A client for interacting with Kafka using the Prosody library.
 ///
 /// This client provides methods for sending messages to Kafka topics and
@@ -40,6 +44,7 @@ mod config;
 #[pyclass(subclass, name = "_NativeProsodyClient")]
 pub struct ProsodyClient {
     client: SharedHighLevelClient<PythonHandler>,
+    shutdown: Shutdown,
     get_context: Py<PyAny>,
     inject: Py<PyAny>,
     handler: Arc<RwLock<Option<PythonHandler>>>,
@@ -352,17 +357,17 @@ impl ProsodyClient {
     }
 
     /// Shuts down the client and all its services.
+    /// Concurrent and repeated calls await the same operation.
     ///
     /// # Errors
     ///
     /// Returns a `PyRuntimeError` if shutdown fails.
     fn shutdown<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         self.check_fork()?;
-        let client = self.client.clone();
+        let shutdown = self.shutdown.clone();
         let current = Arc::clone(&self.handler);
         future_into_py(py, async move {
-            let result = client
-                .shutdown()
+            let result = shutdown
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()));
             *current.write() = None;
@@ -432,6 +437,18 @@ impl ProsodyClient {
 
         Ok(())
     }
+}
+
+fn shutdown(client: &SharedHighLevelClient<PythonHandler>) -> Shutdown {
+    let client = client.clone();
+    async move {
+        client
+            .shutdown()
+            .await
+            .map_err(|error| Arc::from(error.to_string()))
+    }
+    .boxed()
+    .shared()
 }
 
 fn parse_read_cache(value: Option<&Bound<'_, PyAny>>) -> PyResult<ErasedReadCache> {

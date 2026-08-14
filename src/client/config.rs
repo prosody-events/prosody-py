@@ -81,6 +81,7 @@ impl PreparedClient {
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
         Ok(ProsodyClient {
+            shutdown: super::shutdown(&client),
             client,
             get_context: self.get_context,
             inject: self.inject,
