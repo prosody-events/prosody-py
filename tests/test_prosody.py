@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from typing import List
 
 import pytest
-import prosody as prosody_module
 import tsasync
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -49,7 +48,7 @@ async def test_create_starts_native_construction_when_awaited(monkeypatch):
 
             return finish()
 
-    monkeypatch.setattr(prosody_module, "_NativeProsodyClient", NativeClient)
+    monkeypatch.setattr("prosody._NativeProsodyClient", NativeClient)
     pending = ProsodyClient.create(mock=True)
     assert calls == []
 
@@ -61,7 +60,7 @@ def test_missing_native_client_reports_attribute_error():
     client = object.__new__(ProsodyClient)
 
     with pytest.raises(AttributeError):
-        client.missing
+        getattr(client, "missing")
 
 # Use pytest's built-in logging; logs will appear at DEBUG level
 logger = logging.getLogger(__name__)
