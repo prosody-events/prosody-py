@@ -240,11 +240,11 @@ class _ProsodyClientApi:
             state_read_cache: Default published-read cache TTL, or `False` to bypass the cache. Env: ``PROSODY_STATE_READ_CACHE_TTL``. Defaults to 5 seconds.
             state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_STATE_RECOVERY_DELAY. Defaults to 30s.
             subsystem: Name under which published JSON collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
-            peer_bind_address: Socket address for the peer gRPC listener. Env: ``PROSODY_PEER_BIND_ADDRESS``.
-            peer_advertised_connect: gRPC connect URI for peers on another network. Env: ``PROSODY_PEER_ADVERTISED_CONNECT``.
-            peer_network_name: Network name used for direct routes. Env: ``PROSODY_PEER_NETWORK_NAME``.
-            peer_cache_capacity: Maximum entries in each peer cache. Env: ``PROSODY_PEER_CACHE_CAPACITY``.
-            peer_registration_ttl: Directory registration lease duration. Env: ``PROSODY_PEER_REGISTRATION_TTL``.
+            peer_bind_address: Socket address for the peer listener. Prosody reads ``PROSODY_PEER_BIND_ADDRESS`` when absent.
+            peer_advertised_connect: Connect URI for remote peers. Prosody reads ``PROSODY_PEER_ADVERTISED_CONNECT`` when absent.
+            peer_network_name: Network name for direct routes. Prosody reads ``PROSODY_PEER_NETWORK_NAME`` when absent.
+            peer_cache_capacity: Maximum entries in each peer cache. Prosody reads ``PROSODY_PEER_CACHE_CAPACITY`` when absent.
+            peer_registration_ttl: Peer registration lease. Prosody reads ``PROSODY_PEER_REGISTRATION_TTL`` when absent.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.
