@@ -2,32 +2,20 @@ from typing import TypeVar, Union
 from typing_extensions import TypeAliasType
 
 from prosody.prosody import (
-    Err,
     HandlerResponseError,
     MalformedResponseError,
-    Ok,
+    ResponseError,
     ResponseFormatMismatchError,
     ResponseTimeoutError,
 )
 
 T = TypeVar("T")
 
-ResponseError = TypeAliasType(
-    "ResponseError",
-    Union[
-        HandlerResponseError,
-        ResponseTimeoutError,
-        ResponseFormatMismatchError,
-        MalformedResponseError,
-    ],
-)
-RequestResult = TypeAliasType("RequestResult", Union[Ok, Err], type_params=(T,))
+RequestResult = TypeAliasType("RequestResult", Union[T, ResponseError], type_params=(T,))
 
 __all__ = [
-    "Err",
     "HandlerResponseError",
     "MalformedResponseError",
-    "Ok",
     "RequestResult",
     "ResponseError",
     "ResponseFormatMismatchError",

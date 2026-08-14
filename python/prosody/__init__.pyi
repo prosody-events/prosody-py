@@ -23,10 +23,8 @@ from prosody.prosody import (
     shutdown_telemetry as shutdown_telemetry,
 )
 from prosody.request import (
-    Err as Err,
     HandlerResponseError as HandlerResponseError,
     MalformedResponseError as MalformedResponseError,
-    Ok as Ok,
     RequestResult as RequestResult,
     ResponseError as ResponseError,
     ResponseFormatMismatchError as ResponseFormatMismatchError,

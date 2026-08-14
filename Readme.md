@@ -852,11 +852,11 @@ merging to `main`.
 
 ## Peer Requests
 
-Peer requests collect one result from each named subsystem. The result order matches the subsystem order.
+Peer requests collect one result from each named subsystem. Results follow the subsystem order.
 
-Do not await a request from a handler for the same key and subsystem. The request cannot finish until that handler returns.
+Do not await a request from a handler for the same key and subsystem. The request cannot finish before that handler returns.
 
-Prosody now uses handler return values as request results. Ensure that each handler return value has a JSON representation.
+Message handler return values become request results. Each return value must have a JSON representation.
 
 Return a JSON response from each message handler:
 
@@ -869,24 +869,34 @@ class InventoryHandler(EventHandler):
 Send a request without a subscription on the requester:
 
 ```python
-from prosody import Err, Ok
+from prosody import HandlerResponseError, ResponseError, ResponseTimeoutError
 
+subsystems = ["inventory", "billing"]
 results = await client.request(
     "orders",
     "order-1",
     {"type": "order.created"},
-    ["inventory", "billing"],
+    subsystems,
     2.0,
 )
 
-for result in results:
-    if isinstance(result, Ok):
-        print(result.value)
-    elif isinstance(result, Err):
-        print(result.error)
+for subsystem, result in zip(subsystems, results, strict=True):
+    match result:
+        case ResponseTimeoutError():
+            print(f"{subsystem}: timed out")
+        case HandlerResponseError(category=category, handler_message=message):
+            print(f"{subsystem}: {category}: {message}")
+        case ResponseError() as error:
+            print(f"{subsystem}: {error}")
+        case value:
+            print(f"{subsystem}: {value}")
 ```
 
-Each error identifies a handler failure, timeout, format mismatch, or malformed response. Handler failures also include their category and message.
+For example, a successful inventory handler prints `inventory: {'accepted': 'order-1'}`.
+
+Each array element is a JSON response or a Python exception. Its type identifies the failure.
+
+Handler exceptions keep their category and original handler text. Every exception uses Prosody's message.
 
 ## Administrative Operations
 

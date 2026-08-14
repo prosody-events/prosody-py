@@ -77,8 +77,7 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
         .set_item("prosody.context", context_module)?;
 
     prosody_module.add_class::<AdminClient>()?;
-    prosody_module.add_class::<request::RequestOk>()?;
-    prosody_module.add_class::<request::RequestErr>()?;
+    prosody_module.add_class::<request::PythonResponseError>()?;
     prosody_module.add_class::<request::HandlerResponseError>()?;
     prosody_module.add_class::<request::ResponseTimeoutError>()?;
     prosody_module.add_class::<request::ResponseFormatMismatchError>()?;

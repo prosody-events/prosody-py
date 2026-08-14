@@ -7,10 +7,8 @@ from prosody.prosody import (
     shutdown_telemetry,
 )
 from prosody.request import (
-    Err,
     HandlerResponseError,
     MalformedResponseError,
-    Ok,
     RequestResult,
     ResponseError,
     ResponseFormatMismatchError,

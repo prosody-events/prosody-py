@@ -1,6 +1,7 @@
 """Representative downstream code, checked only against the installed wheel."""
 
-from typing import Optional
+from datetime import timedelta
+from typing import Optional, Sequence
 
 from typing_extensions import TypedDict, assert_type
 
@@ -11,6 +12,8 @@ from prosody import (
     Message,
     MessageDequeDefinition,
     ProsodyClient,
+    RequestResult,
+    ResponseError,
     Timer,
     map,
     message_deque,
@@ -67,3 +70,13 @@ class Handler(EventHandler[Event]):
 
 async def subscribe_specialized(client: ProsodyClient) -> None:
     await client.subscribe(Handler())
+
+
+async def request_typed(client: ProsodyClient) -> None:
+    results = await client.request("orders", "order-1", {}, ["inventory"], timedelta(seconds=2))
+    assert_type(results, Sequence[RequestResult[JSONValue]])
+    for result in results:
+        if isinstance(result, ResponseError):
+            assert_type(result, ResponseError)
+        else:
+            assert_type(result, JSONValue)

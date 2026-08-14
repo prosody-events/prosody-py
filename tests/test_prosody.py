@@ -13,11 +13,9 @@ from prosody.prosody import AdminClient
 
 from prosody import (
     Context,
-    Err,
     EventHandler,
     HandlerResponseError,
     Message,
-    Ok,
     PermanentError,
     ProsodyClient,
     RequestResult,
@@ -32,8 +30,7 @@ def test_event_handler_is_runtime_subscriptable():
     assert EventHandler[dict] is not None
 
 
-def test_request_aliases_are_available_at_runtime():
-    assert Ok[dict] is Ok
+def test_request_alias_is_available_at_runtime():
     assert RequestResult[dict] is not None
     assert ResponseError is not None
 
@@ -321,9 +318,7 @@ async def test_request_returns_the_local_handler_response(random_topic_and_group
         timeout=DEFAULT_TIMEOUT,
     )
     assert len(results) == 1
-    result = results[0]
-    assert isinstance(result, Ok)
-    assert result.value == {"key": "order-1", "accepted": True}
+    assert results[0] == {"key": "order-1", "accepted": True}
 
 
 async def test_request_returns_permanent_handler_failure(random_topic_and_group, client_factory):
@@ -352,10 +347,11 @@ async def test_request_returns_permanent_handler_failure(random_topic_and_group,
     )
 
     result = results[0]
-    assert isinstance(result, Err)
-    assert isinstance(result.error, HandlerResponseError)
-    assert result.error.category == "permanent"
-    assert "request rejected" in result.error.message
+    assert isinstance(result, HandlerResponseError)
+    assert isinstance(result, ResponseError)
+    assert result.category == "permanent"
+    assert "request rejected" in result.handler_message
+    assert str(result) == f"handler failed: {result.handler_message}"
 
 
 async def test_client_configuration(random_topic_and_group, client_factory):
