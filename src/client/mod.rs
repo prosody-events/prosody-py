@@ -5,33 +5,36 @@
 //! supporting both message production and consumption. It offers configurable
 //! operational modes, retry mechanisms, and failure handling strategies.
 
+use futures::FutureExt;
+use futures::future::{BoxFuture, Shared};
 use opentelemetry::propagation::TextMapPropagator;
-use prosody::JsonCodec;
+use parking_lot::Mutex;
 use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache, SharedHighLevelClient};
 use prosody::propagator::new_propagator;
+use prosody::subsystem::SubsystemName;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyTypeMethods};
+use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyDictMethods, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
-use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
+use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::process;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::runtime::Handle;
-use tokio::task::block_in_place;
 use tracing::{Instrument, debug, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::client::config::try_build_config;
-use crate::client::format::format_list;
+use crate::client::config::prepare_config;
 use crate::handler::PythonHandler;
 use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
+use crate::request::to_python;
 use crate::state::StateEnv;
+use crate::util::decode_duration;
 
 mod config;
-mod format;
+
+type Shutdown = Shared<BoxFuture<'static, Result<(), Arc<str>>>>;
 
 /// A client for interacting with Kafka using the Prosody library.
 ///
@@ -40,15 +43,17 @@ mod format;
 /// operational modes and configuration options.
 #[pyclass(subclass, name = "_NativeProsodyClient")]
 pub struct ProsodyClient {
-    client: SharedHighLevelClient<PythonHandler, JsonCodec>,
+    client: SharedHighLevelClient<PythonHandler>,
+    shutdown: Shutdown,
     get_context: Py<PyAny>,
     inject: Py<PyAny>,
+    handler: Arc<Mutex<Option<PythonHandler>>>,
     pid: u32,
 }
 
 #[pymethods]
 impl ProsodyClient {
-    /// Creates a new `ProsodyClient` with the given configuration.
+    /// Creates a client without blocking the Python event loop.
     ///
     /// # Arguments
     ///
@@ -62,10 +67,15 @@ impl ProsodyClient {
     ///
     /// Returns a `PyValueError` if the configuration is invalid.
     /// Returns a `PyRuntimeError` if the client fails to initialize.
-    #[new]
+    #[staticmethod]
     #[pyo3(signature = (**config))]
-    fn new(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Self> {
-        try_build_config(py, config)
+    fn create(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Py<PyAny>> {
+        let config = prepare_config(py, config)?;
+        future_into_py(py, async move {
+            let client = config.connect().await?;
+            Python::attach(|py| Py::new(py, client))
+        })
+        .map(Bound::unbind)
     }
 
     /// Sends a message to a specified topic.
@@ -139,12 +149,70 @@ impl ProsodyClient {
         })
     }
 
+    /// Sends one request and returns one outcome per subsystem.
+    #[pyo3(signature = (topic, key, payload, *, subsystems, timeout, headers = None))]
+    fn request(
+        &self,
+        topic: String,
+        key: String,
+        payload: &Bound<'_, PyAny>,
+        subsystems: Vec<String>,
+        timeout: &Bound<'_, PyAny>,
+        headers: Option<HashMap<String, String>>,
+    ) -> PyResult<Py<PyAny>> {
+        self.check_fork()?;
+        let py = payload.py();
+        let context = self.get_context.bind(py).call0()?;
+        let data = PyDict::new(py);
+        self.inject.call1(py, (&data, context))?;
+        let trace_headers: HashMap<String, String> = data.extract()?;
+        let context = self.client.propagator().extract(&trace_headers);
+        let span = info_span!("python-request", %topic, %key);
+        if let Err(error) = span.set_parent(context) {
+            debug!("failed to set parent span: {error:#}");
+        }
+        let payload = depythonize::<Value>(payload)?;
+        let subsystems = subsystems
+            .into_iter()
+            .map(|name| {
+                SubsystemName::try_new(name)
+                    .map_err(|error| PyValueError::new_err(error.to_string()))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let timeout = decode_duration(timeout)?;
+        let client = self.client.clone();
+
+        future_into_py(py, async move {
+            let results = client
+                .request(
+                    headers.unwrap_or_default().into_iter().collect(),
+                    topic.as_str().into(),
+                    key,
+                    payload,
+                    subsystems,
+                    timeout,
+                )
+                .instrument(span)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| {
+                let module = py.import("prosody.request")?;
+                let outcomes = PyDict::new(py);
+                for (subsystem, result) in results {
+                    outcomes.set_item(subsystem.as_str(), to_python(py, &module, result)?)?;
+                }
+                Ok(outcomes.into_any().unbind())
+            })
+        })
+        .map(Bound::unbind)
+    }
+
     /// Gets the current state of the consumer.
     ///
     /// # Returns
     ///
-    /// A string representing the current state ('unconfigured', 'configured',
-    /// or 'running').
+    /// A string that contains the current state: `unconfigured`, `configured`,
+    /// `running`, or `shut_down`.
     ///
     /// # Errors
     ///
@@ -248,13 +316,17 @@ impl ProsodyClient {
     ) -> PyResult<Bound<'p, PyAny>> {
         self.check_fork()?;
         let handler = PythonHandler::new(handler)?;
+        let retained = handler.clone();
+        let current = Arc::clone(&self.handler);
         let client = self.client.clone();
 
         future_into_py(py, async move {
             client
                 .subscribe(handler)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+            *current.lock() = Some(retained);
+            Ok(())
         })
     }
 
@@ -299,11 +371,33 @@ impl ProsodyClient {
     fn unsubscribe<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         self.check_fork()?;
         let client = self.client.clone();
+        let current = Arc::clone(&self.handler);
         future_into_py(py, async move {
-            client
+            let result = client
                 .unsubscribe()
                 .await
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()));
+            *current.lock() = None;
+            result
+        })
+    }
+
+    /// Shuts down the client and all its services.
+    /// Concurrent and repeated calls await the same operation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyRuntimeError` if shutdown fails.
+    fn shutdown<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let shutdown = self.shutdown.clone();
+        let current = Arc::clone(&self.handler);
+        future_into_py(py, async move {
+            let result = shutdown
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()));
+            *current.lock() = None;
+            result
         })
     }
 
@@ -316,28 +410,10 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         slf.check_fork()?;
-        let consumer_state = slf.consumer_state_sync();
-
-        let consumer_properties = match &consumer_state {
-            ErasedConsumerState::Unconfigured => String::new(),
-            ErasedConsumerState::ConfigurationFailed(error) => format!(", error=\"{error}\""),
-            ErasedConsumerState::Configured(config)
-            | ErasedConsumerState::Running { config, .. } => {
-                format!(
-                    ", mode='{}', topics={}, group_id={}",
-                    config.mode,
-                    format_list(&config.topics),
-                    config.group_id
-                )
-            }
-        };
-
         Ok(format!(
-            "{}(producer='running', consumer='{}', bootstrap={}{})",
+            "{}(producer='running', bootstrap={:?})",
             class_name,
-            consumer_state_name(&consumer_state),
-            format_list(&slf.client.producer_config().bootstrap_servers),
-            consumer_properties
+            slf.client.producer_config().bootstrap_servers,
         ))
     }
 
@@ -350,28 +426,10 @@ impl ProsodyClient {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
         slf.check_fork()?;
-        let consumer_state = slf.consumer_state_sync();
-
-        let consumer_properties = match &consumer_state {
-            ErasedConsumerState::Unconfigured => String::new(),
-            ErasedConsumerState::ConfigurationFailed(error) => format!(", error={error}"),
-            ErasedConsumerState::Configured(config)
-            | ErasedConsumerState::Running { config, .. } => {
-                format!(
-                    ", mode={}, topics={}, group_id={}",
-                    config.mode,
-                    config.topics.join(","),
-                    config.group_id
-                )
-            }
-        };
-
         Ok(format!(
-            "{}: producer=running, consumer={}, bootstrap={}{}",
+            "{}: producer=running, bootstrap={}",
             class_name,
-            consumer_state_name(&consumer_state),
             slf.client.producer_config().bootstrap_servers.join(","),
-            consumer_properties
         ))
     }
 
@@ -388,12 +446,9 @@ impl ProsodyClient {
     /// such as when the `PyVisit::call` method fails.
     #[allow(clippy::needless_pass_by_value)]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        // Skip consumer_state_sync() in a forked child: the tokio runtime is
-        // dead after fork and block_on would deadlock the interpreter while
-        // holding the GIL. The handler's Python objects are released when the
-        // child exits, so skipping their traversal is safe.
+        // Never lock synchronization state inherited from another process.
         if process::id() == self.pid
-            && let ErasedConsumerState::Running { handler, .. } = self.consumer_state_sync()
+            && let Some(handler) = self.handler.lock().as_ref()
         {
             visit.call(handler.handle_method().as_any())?;
             visit.call(handler.timer_method().as_any())?;
@@ -408,6 +463,18 @@ impl ProsodyClient {
 
         Ok(())
     }
+}
+
+fn shutdown(client: &SharedHighLevelClient<PythonHandler>) -> Shutdown {
+    let client = client.clone();
+    async move {
+        client
+            .shutdown()
+            .await
+            .map_err(|error| Arc::from(error.to_string()))
+    }
+    .boxed()
+    .shared()
 }
 
 fn parse_read_cache(value: Option<&Bound<'_, PyAny>>) -> PyResult<ErasedReadCache> {
@@ -459,15 +526,11 @@ impl ProsodyClient {
         }
         Ok(())
     }
-
-    fn consumer_state_sync(&self) -> ErasedConsumerState<PythonHandler> {
-        let handle = Handle::try_current().unwrap_or_else(|_| get_runtime().handle().clone());
-        block_in_place(|| handle.block_on(self.client.consumer_state()))
-    }
 }
 
 fn consumer_state_name(state: &ErasedConsumerState<PythonHandler>) -> &'static str {
     match state {
+        ErasedConsumerState::Shutdown => "shut_down",
         ErasedConsumerState::Unconfigured => "unconfigured",
         ErasedConsumerState::ConfigurationFailed(_) => "configuration_failed",
         ErasedConsumerState::Configured(_) => "configured",

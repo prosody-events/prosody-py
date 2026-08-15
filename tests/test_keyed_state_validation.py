@@ -21,25 +21,25 @@ BASE = dict(
 
 
 def make_client(**overrides):
-    return ProsodyClient(**BASE, **overrides)
+    return ProsodyClient.create(**BASE, **overrides)
 
 
 @pytest.mark.parametrize("state_owned_cache_size", ["0", "-1 MiB", "nonsense"])
-def test_invalid_state_owned_cache_size_is_rejected(state_owned_cache_size):
+async def test_invalid_state_owned_cache_size_is_rejected(state_owned_cache_size):
     with pytest.raises(ValueError, match="state_owned_cache_size"):
-        make_client(state_owned_cache_size=state_owned_cache_size)
+        await make_client(state_owned_cache_size=state_owned_cache_size)
 
 
 @pytest.mark.parametrize("state_read_cache_size", ["0", "-1 MiB", "nonsense"])
-def test_invalid_state_read_cache_size_is_rejected(state_read_cache_size):
+async def test_invalid_state_read_cache_size_is_rejected(state_read_cache_size):
     with pytest.raises(ValueError, match="state_read_cache_size"):
-        make_client(state_read_cache_size=state_read_cache_size)
+        await make_client(state_read_cache_size=state_read_cache_size)
 
 
 @pytest.mark.parametrize("state_read_cache", [True, -1])
-def test_invalid_state_read_cache_is_rejected(state_read_cache):
+async def test_invalid_state_read_cache_is_rejected(state_read_cache):
     with pytest.raises(ValueError, match="state_read_cache"):
-        make_client(state_read_cache=state_read_cache)
+        await make_client(state_read_cache=state_read_cache)
 
 
 class RawDef:
@@ -88,101 +88,101 @@ STATE_COLLECTIONS = [
 # --- ttl rules ------------------------------------------------------------
 
 
-def test_rejects_ttl_negative():
+async def test_rejects_ttl_negative():
     with pytest.raises(ValueError, match=r"ttl_seconds: must be a whole number"):
-        make_client(state_collections=[value("v", ttl=-1)])
+        await make_client(state_collections=[value("v", ttl=-1)])
 
 
 @pytest.mark.parametrize("ttl_seconds", [2.5, float("nan"), float("inf")])
-def test_rejects_ttl_fractional_or_nonfinite(ttl_seconds):
+async def test_rejects_ttl_fractional_or_nonfinite(ttl_seconds):
     with pytest.raises(ValueError, match=r"ttl_seconds: must be a whole number"):
-        make_client(state_collections=[raw(ttl_seconds=ttl_seconds)])
+        await make_client(state_collections=[raw(ttl_seconds=ttl_seconds)])
 
 
 # --- keyset_limit rules ---------------------------------------------------
 
 
 @pytest.mark.parametrize("keyset_limit", [2.5, -1, float("nan"), float("inf")])
-def test_rejects_keyset_non_whole(keyset_limit):
+async def test_rejects_keyset_non_whole(keyset_limit):
     with pytest.raises(ValueError, match=r"keyset_limit: must be a whole number"):
-        make_client(state_collections=[map("m", keyset_limit=keyset_limit)])
+        await make_client(state_collections=[map("m", keyset_limit=keyset_limit)])
 
 
-def test_accepts_keyset_zero():
+async def test_accepts_keyset_zero(client_factory):
     # 0 disables ordered-scan tracking and is a valid whole number.
-    make_client(state_collections=[map("m", keyset_limit=0)])
+    await client_factory(**BASE, state_collections=[map("m", keyset_limit=0)])
 
 
-def test_rejects_keyset_on_non_map():
+async def test_rejects_keyset_on_non_map():
     # The value() helper has no keyset param, so a raw stub carries it onto a
     # value collection to reach the map-only guard.
     with pytest.raises(ValueError, match=r"keyset_limit: only valid for map"):
-        make_client(state_collections=[raw(kind="value", keyset_limit=5)])
+        await make_client(state_collections=[raw(kind="value", keyset_limit=5)])
 
 
 # --- capacity rules (deque-only) ------------------------------------------
 
 
-def test_accepts_deque_capacity():
-    make_client(state_collections=[deque("d", capacity=100)])
+async def test_accepts_deque_capacity(client_factory):
+    await client_factory(**BASE, state_collections=[deque("d", capacity=100)])
 
 
-def test_rejects_capacity_zero():
+async def test_rejects_capacity_zero():
     with pytest.raises(
         ValueError, match=r"capacity: must be a whole number in 1..=4294967295"
     ):
-        make_client(state_collections=[deque("d", capacity=0)])
+        await make_client(state_collections=[deque("d", capacity=0)])
 
 
 @pytest.mark.parametrize("capacity", [2.5, -1, float("nan"), float("inf")])
-def test_rejects_capacity_non_whole(capacity):
+async def test_rejects_capacity_non_whole(capacity):
     # The deque() helper passes capacity through unchanged, so it reaches the
     # Rust whole-number guard directly.
     with pytest.raises(ValueError, match=r"capacity: must be a whole number"):
-        make_client(state_collections=[deque("d", capacity=capacity)])
+        await make_client(state_collections=[deque("d", capacity=capacity)])
 
 
-def test_rejects_capacity_on_non_deque():
+async def test_rejects_capacity_on_non_deque():
     with pytest.raises(ValueError, match=r"capacity: only valid for deque"):
-        make_client(state_collections=[raw(kind="value", capacity=5)])
+        await make_client(state_collections=[raw(kind="value", capacity=5)])
 
 
 # --- kind / payload tokens ------------------------------------------------
 
 
-def test_rejects_unknown_kind():
+async def test_rejects_unknown_kind():
     with pytest.raises(ValueError, match=r"kind: expected"):
-        make_client(state_collections=[raw(kind="bogus")])
+        await make_client(state_collections=[raw(kind="bogus")])
 
 
-def test_rejects_unknown_payload():
+async def test_rejects_unknown_payload():
     with pytest.raises(ValueError, match=r"payload: expected"):
-        make_client(state_collections=[raw(payload="bogus")])
+        await make_client(state_collections=[raw(payload="bogus")])
 
 
 # --- recovery_delay rules -------------------------------------------------
 
 
-def test_rejects_recovery_delay_fractional():
+async def test_rejects_recovery_delay_fractional():
     with pytest.raises(
         ValueError, match="state_recovery_delay: must be a whole number of seconds"
     ):
-        make_client(state_recovery_delay=2.5, state_collections=[value("v")])
+        await make_client(state_recovery_delay=2.5, state_collections=[value("v")])
 
 
-def test_rejects_recovery_delay_negative():
+async def test_rejects_recovery_delay_negative():
     with pytest.raises(ValueError, match=r"state_recovery_delay"):
-        make_client(state_recovery_delay=-5, state_collections=[value("v")])
+        await make_client(state_recovery_delay=-5, state_collections=[value("v")])
 
 
 @pytest.mark.parametrize("delay", [float("nan"), float("inf")])
-def test_rejects_recovery_delay_nonfinite(delay):
+async def test_rejects_recovery_delay_nonfinite(delay):
     with pytest.raises(ValueError, match=r"state_recovery_delay"):
-        make_client(state_recovery_delay=delay, state_collections=[value("v")])
+        await make_client(state_recovery_delay=delay, state_collections=[value("v")])
 
 
 # --- happy path -----------------------------------------------------------
 
 
-def test_accepts_canonical_collection_set():
-    make_client(state_collections=STATE_COLLECTIONS)
+async def test_accepts_canonical_collection_set(client_factory):
+    await client_factory(**BASE, state_collections=STATE_COLLECTIONS)

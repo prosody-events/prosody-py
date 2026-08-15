@@ -36,3 +36,5 @@ async def expected_errors(
 
     events = context.state(EVENTS)
     await events.append(message.payload)  # type: ignore[arg-type]
+
+    await ProsodyClient.create(unknown_option=True)  # type: ignore[call-arg]

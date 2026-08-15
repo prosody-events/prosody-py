@@ -5,10 +5,12 @@ This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
-from typing import AsyncIterator, Generic, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
+from typing import AsyncIterator, Dict, Generic, List, Literal, Mapping, Optional, Sequence, TypeAlias, TypeVar, Union
+from typing_extensions import Self
 
 from prosody import EventHandler
 from prosody.message import Message
+from prosody.request import Outcome
 from prosody.state import (
     DequeDefinition,
     MapDefinition,
@@ -90,7 +92,7 @@ class _NativePublishedDeque(Generic[T]):
     async def scan(self, key: str, direction: str) -> NativeJsonDequeScan: ...
 
 
-class _NativeProsodyClient:
+class _ProsodyClientApi:
     """
     A client for interacting with Kafka using the Prosody library.
 
@@ -98,8 +100,9 @@ class _NativeProsodyClient:
     subscribing to topics for message consumption.
     """
 
-    def __init__(
-            self,
+    @classmethod
+    async def create(
+            cls,
             *,
             bootstrap_servers: Optional[StringOrList] = None,
             mock: Optional[bool] = None,
@@ -168,9 +171,14 @@ class _NativeProsodyClient:
             state_read_cache: Optional[Union[Duration, Literal[False]]] = None,
             state_recovery_delay: Optional[Duration] = None,
             subsystem: Optional[str] = None,
-    ) -> None:
+            peer_bind_address: Optional[str] = None,
+            peer_advertised_connect: Optional[str] = None,
+            peer_network_name: Optional[str] = None,
+            peer_cache_capacity: Optional[int] = None,
+            peer_registration_ttl: Optional[Duration] = None,
+    ) -> Self:
         """
-        Initialize a new ProsodyClient.
+        Create a Prosody client without blocking the Python event loop.
 
         Args:
             bootstrap_servers: Kafka servers for initial connection.
@@ -232,6 +240,11 @@ class _NativeProsodyClient:
             state_read_cache: Default published-read cache TTL, or `False` to bypass the cache. Env: ``PROSODY_STATE_READ_CACHE_TTL``. Defaults to 5 seconds.
             state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_STATE_RECOVERY_DELAY. Defaults to 30s.
             subsystem: Name under which published JSON collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
+            peer_bind_address: Socket address for the peer listener. Prosody reads ``PROSODY_PEER_BIND_ADDRESS`` when absent.
+            peer_advertised_connect: Connect URI for remote peers. Prosody reads ``PROSODY_PEER_ADVERTISED_CONNECT`` when absent.
+            peer_network_name: Network name for direct routes. Prosody reads ``PROSODY_PEER_NETWORK_NAME`` when absent.
+            peer_cache_capacity: Maximum entries in each peer cache. Prosody reads ``PROSODY_PEER_CACHE_CAPACITY`` when absent.
+            peer_registration_ttl: Peer registration lease. Prosody reads ``PROSODY_PEER_REGISTRATION_TTL`` when absent.
         Raises:
             ValueError: If the configuration is invalid.
             RuntimeError: If the client fails to initialize.
@@ -256,12 +269,33 @@ class _NativeProsodyClient:
         """Send an excise record for a key."""
         ...
 
-    async def consumer_state(self) -> Literal['unconfigured', 'configured', 'running']:
+    async def request(
+        self,
+        topic: str,
+        key: str,
+        payload: JSONValue,
+        *,
+        subsystems: Sequence[str],
+        timeout: timedelta,
+        headers: Mapping[str, str] | None = None,
+    ) -> dict[str, Outcome[JSONValue]]:
+        """Request one response from each subsystem.
+
+        Cancel the task to cancel this request before it completes.
+
+        Raises:
+            ValueError: If a subsystem name is invalid.
+            RuntimeError: If the request cannot produce the complete result dictionary.
+        """
+        ...
+
+    async def consumer_state(self) -> Literal['shut_down', 'unconfigured', 'configured', 'running']:
         """
         Get the current state of the consumer.
 
         Returns:
-            Literal['unconfigured', 'configured', 'running']: The current state.
+            Literal['shut_down', 'unconfigured', 'configured', 'running']:
+            The current state.
         """
         ...
 
@@ -313,19 +347,21 @@ class _NativeProsodyClient:
 
     async def unsubscribe(self) -> None:
         """
-        Unsubscribe from messages and shut down the consumer.
-
-        This method initiates a graceful shutdown of the consumer, cancelling
-        any in-flight message handling tasks. It ensures that all resources
-        are properly cleaned up before returning.
+        Stop the consumer. You can subscribe again later.
 
         Raises:
             RuntimeError: If the consumer is not configured or not subscribed.
 
-        Note:
-            This method will wait for all tasks to complete or be cancelled
-            before returning. Ensure that your message handlers respond
-            promptly to cancellation to avoid delays during shutdown.
+        """
+        ...
+
+    async def shutdown(self) -> None:
+        """Shut down all client services.
+
+        Concurrent and repeated calls await the same shutdown operation.
+
+        Raises:
+            RuntimeError: If shutdown fails.
         """
         ...
 
@@ -342,6 +378,8 @@ class _NativeProsodyClient:
             str: The source system identifier.
         """
         ...
+
+class _NativeProsodyClient(_ProsodyClientApi): ...
 
 
 class AdminClient:

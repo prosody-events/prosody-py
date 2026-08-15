@@ -161,7 +161,7 @@ async def test_state_op_trace_graph(random_topic_and_group):
     )
     trace.set_tracer_provider(provider)
 
-    client = ProsodyClient(
+    client = await ProsodyClient.create(
         bootstrap_servers=BOOTSTRAP,
         source_system="test-state-trace",
         group_id=group,
@@ -178,9 +178,9 @@ async def test_state_op_trace_graph(random_topic_and_group):
     assert handler.error is None, handler.error
     with_suppress = getattr(asyncio, "TimeoutError", Exception)
     try:
-        await _wait(client.unsubscribe())
+        await _wait(client.shutdown())
     except with_suppress:
-        # Best-effort teardown: swallow unsubscribe timeout/errors so they don't
+        # Best-effort teardown: swallow shutdown timeout/errors so they don't
         # mask the flush/shutdown and span-graph assertions that follow.
         pass
 

@@ -40,7 +40,7 @@ check-watch:
 # makes the gate fail if a public signature accidentally permits one.
 # mypy_path resolves prosody from source, so no maturin build is required.
 mypy:
-	mypy
+	.venv/bin/mypy
 
 # Run Clippy for linting
 lint:

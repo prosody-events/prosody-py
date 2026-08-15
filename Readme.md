@@ -39,7 +39,7 @@ from prosody import ProsodyClient, EventHandler, Context, Message
 import datetime
 
 # Initialize the client with Kafka bootstrap server, consumer group, and topics
-client = ProsodyClient(
+client = await ProsodyClient.create(
     # Bootstrap servers should normally be set using the PROSODY_BOOTSTRAP_SERVERS environment variable
     bootstrap_servers="localhost:9092",
 
@@ -57,7 +57,7 @@ client = ProsodyClient(
 
 # Define a custom message handler
 class MyHandler(EventHandler):
-    async def on_excise(self, context: Context, message: Message) -> None:
+    async def on_excise(self, context: Context, message: Message) -> JSONValue:
         print(f"Excise key: {message.key}")
 
     async def on_message(self, context: Context, message: Message) -> None:
@@ -81,8 +81,8 @@ client.subscribe(MyHandler())
 await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
 await client.excise("my-topic", "obsolete-key")
 
-# Ensure proper shutdown when done
-await client.unsubscribe()
+# Shut down all client services when done
+await client.shutdown()
 ```
 
 ## Excise records
@@ -90,6 +90,8 @@ await client.unsubscribe()
 Call `excise(topic, key)` to send a Kafka record with a key and no payload. Use this record to delete the key from compacted views.
 
 Each handler must implement `on_excise`. It receives the same arguments as `on_message`. The message payload is `None`.
+
+Return a JSON value from `on_excise`. Prosody sends this value when the excise record is a subsystem request.
 
 ## Architecture
 
@@ -129,7 +131,7 @@ When the timer fires, reload the message from Kafka and retry.
 
 ```python
 # Configure defer behavior
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     defer_enabled=True,           # Enable deferral (default: True)
@@ -151,7 +153,7 @@ with a transient error, routing them through defer.
 
 ```python
 # Configure monopolization detection
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     monopolization_enabled=True,     # Enable detection (default: True)
@@ -165,7 +167,7 @@ client = ProsodyClient(
 Handlers are automatically cancelled if they exceed a deadline:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     timeout=30.0,             # Cancel after 30 seconds
@@ -182,6 +184,8 @@ For the complete configuration reference, see [CONFIGURATION.md](CONFIGURATION.m
 
 Constructor options take precedence. Unset options use environment variables, then library defaults.
 
+Client construction is asynchronous. Replace `ProsodyClient(...)` with `await ProsodyClient.create(...)`.
+
 ## Liveness and Readiness Probes
 
 Prosody includes a built-in probe server for consumer-based applications that provides health check endpoints. The probe
@@ -196,7 +200,7 @@ server is tied to the consumer's lifecycle and offers two main endpoints:
 Configure the probe server using either the client constructor:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     probe_port=8000,  # Explicitly pass None to disable
@@ -221,6 +225,61 @@ PROSODY_STALL_THRESHOLD=15s  # Default stall detection threshold
    issues.
 5. The probe server is only active when consuming messages (not for producer-only usage).
 
+## Subsystem Requests
+
+Requests return one outcome for each named subsystem. The result dictionary uses canonical subsystem names as keys.
+
+Do not rely on dictionary iteration order.
+
+Prosody raises an exception if the request cannot produce the complete result dictionary.
+
+Do not await a request from a handler for the same key and subsystem. The request cannot finish before that handler returns.
+
+Message handler return values become successful request outcomes. Each return value must have a JSON representation.
+
+Return a JSON response from each message handler:
+
+```python
+class InventoryHandler(EventHandler):
+    async def on_message(self, context, message):
+        return {"accepted": message.key}
+```
+
+Send a request without a subscription on the requester:
+
+```python
+import sys
+from datetime import timedelta
+
+from prosody import Failure
+
+subsystems = ["inventory", "billing"]
+results = await client.request(
+    "orders",
+    "order-1",
+    {"type": "order.created"},
+    subsystems=subsystems,
+    timeout=timedelta(seconds=2),
+)
+
+for subsystem, outcome in results.items():
+    if isinstance(outcome, Failure):
+        print(f"{subsystem}: {outcome.error.message}", file=sys.stderr)
+    else:
+        print(f"{subsystem}: {outcome.value}")
+```
+
+The example can print these results:
+
+```text
+inventory: {'accepted': 'order-1'}
+billing: no response arrived before the deadline
+```
+
+Each value is a `Success` or `Failure`. Each failure contains one typed response error.
+
+Each response error has one message.
+
 ## Advanced Usage
 
 ### Pipeline Mode
@@ -229,7 +288,7 @@ Pipeline mode is the default mode. Ensures ordered processing, retrying failed o
 
 ```python
 # Initialize client in pipeline mode
-client = ProsodyClient(
+client = await ProsodyClient.create(
     mode="pipeline",  # Explicitly set pipeline mode (this is the default)
     group_id="my-consumer-group",
     subscribed_topics="my-topic"
@@ -242,7 +301,7 @@ Prioritizes quick processing, sending persistently failing messages to a failure
 
 ```python
 # Initialize client in low-latency mode
-client = ProsodyClient(
+client = await ProsodyClient.create(
     mode="low-latency",  # Set low-latency mode
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
@@ -256,7 +315,7 @@ Optimized for development environments or services where message processing fail
 
 ```python
 # Initialize client in best-effort mode
-client = ProsodyClient(
+client = await ProsodyClient.create(
     mode="best-effort",  # Set best-effort mode
     group_id="my-consumer-group",
     subscribed_topics="my-topic"
@@ -269,7 +328,7 @@ Prosody supports filtering messages based on event type prefixes, allowing your 
 
 ```python
 # Process only events with types starting with "user." or "account."
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     allowed_events=["user.", "account."]
@@ -303,7 +362,7 @@ Prosody prevents processing loops in distributed systems by tracking the source 
 
 ```python
 # Consumer and producer in one application
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-service",
     source_system="my-service-producer",  # Must differ from group_id to allow loopbacks; defaults to group_id
     subscribed_topics="my-topic"
@@ -357,7 +416,7 @@ await client.send("my-topic", "key2", {
 Consumer deduplication is required for keyed-state commits. The client rejects an `idempotence_cache_size` of zero:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     idempotence_cache_size=0  # Rejected
@@ -367,7 +426,7 @@ client = ProsodyClient(
 To invalidate all previously recorded deduplication entries (e.g. after a data migration), change `idempotence_version`:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     idempotence_version="2"  # All entries recorded under version "1" are ignored
@@ -380,7 +439,7 @@ this to match your expected message redelivery window:
 ```python
 from datetime import timedelta
 
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="my-consumer-group",
     subscribed_topics="my-topic",
     idempotence_ttl=timedelta(days=7)  # also accepts seconds as a float (e.g. 604800.0)
@@ -447,7 +506,7 @@ PROSODY_CASSANDRA_NODES=localhost:9042  # Required for timer persistence
 Or programmatically when creating the client:
 
 ```python
-client = ProsodyClient(
+client = await ProsodyClient.create(
     bootstrap_servers="localhost:9092",
     group_id="my-application",
     subscribed_topics="my-topic",
@@ -459,7 +518,7 @@ For testing, you can use mock mode to avoid Cassandra dependency:
 
 ```python
 # Mock mode for testing (timers work but aren't persisted)
-client = ProsodyClient(
+client = await ProsodyClient.create(
     bootstrap_servers="localhost:9092",
     group_id="my-application",
     subscribed_topics="my-topic",
@@ -481,7 +540,7 @@ Published state lets another client read a JSON value, map, or deque without sub
 
 ```python
 CURRENT_ORDER: ValueDefinition[dict[str, str]] = value("current-order", published=True)
-owner = ProsodyClient(
+owner = await ProsodyClient.create(
     **config,
     subsystem="checkout",
     state_collections=[CURRENT_ORDER],
@@ -517,7 +576,7 @@ class CountHandler(EventHandler):
         await count.set((await count.get() or 0) + 1)
 
 
-client = ProsodyClient(
+client = await ProsodyClient.create(
     group_id="counters",
     subscribed_topics="events",
     state_collections=[COUNTER],
@@ -720,11 +779,10 @@ Strategies for achieving idempotence:
 
 ### Proper Shutdown
 
-Always unsubscribe from topics before exiting your application:
+Shut down the client before your application exits:
 
 ```python
-# Ensure proper shutdown
-await client.unsubscribe()
+await client.shutdown()
 ```
 
 This ensures:
@@ -751,7 +809,7 @@ async def main():
             sig, lambda s=sig: asyncio.create_task(shutdown(shutdown_event, s))
         )
 
-    client = ProsodyClient(
+    client = await ProsodyClient.create(
         bootstrap_servers="localhost:9092",
         group_id="my-consumer-group",
         subscribed_topics="my-topic"
@@ -763,8 +821,7 @@ async def main():
     # Wait for the shutdown event
     await shutdown_event.wait()
 
-    # Unsubscribe
-    await client.unsubscribe()
+    await client.shutdown()
 
 
 async def shutdown(event: asyncio.Event, signal: signal.Signals):
@@ -925,12 +982,14 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
 - `excise(topic: str, key: str) -> None`: Send an excise record for a key.
+- `request(topic, key, payload, *, subsystems, timeout, headers=None) -> dict[str, Outcome[JSONValue]]`: Request one response from each subsystem.
 - `consumer_state() -> str`: Get the current state of the consumer.
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
 - `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
 - `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
-- `unsubscribe() -> None`: Unsubscribe from messages and shut down the consumer.
+- `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
+- `shutdown() -> None`: Stop all client services. Concurrent and repeated calls await the same operation.
 
 ### AdminClient
 
@@ -949,16 +1008,16 @@ P = TypeVar("P", default=JSONValue)
 
 class EventHandler(ABC, Generic[P]):
     @abstractmethod
-    async def on_excise(self, context: Context, message: Message[P]) -> None:
+    async def on_excise(self, context: Context, message: Message[P]) -> JSONValue:
         pass
 
     @abstractmethod
-    async def on_message(self, context: Context, message: Message[P]) -> None:
+    async def on_message(self, context: Context, message: Message[P]) -> JSONValue:
         # Implement your message handling logic here
         pass
     
     @abstractmethod
-    async def on_timer(self, context: Context, timer: Timer) -> None:
+    async def on_timer(self, context: Context, timer: Timer) -> JSONValue:
         # Implement your timer handling logic here
         pass
 ```
