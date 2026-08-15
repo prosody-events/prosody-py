@@ -5,12 +5,12 @@ This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
-from typing import AsyncIterator, Generic, List, Optional, Sequence, Union, TypeAlias, Dict, Literal, TypeVar
+from typing import AsyncIterator, Dict, Generic, List, Literal, Mapping, Optional, Sequence, TypeAlias, TypeVar, Union
 from typing_extensions import Self
 
 from prosody import EventHandler
 from prosody.message import Message
-from prosody.request import RequestResult
+from prosody.request import Outcome
 from prosody.state import (
     DequeDefinition,
     MapDefinition,
@@ -270,11 +270,11 @@ class _ProsodyClientApi:
         topic: str,
         key: str,
         payload: JSONValue,
-        subsystems: Sequence[str],
-        timeout: Duration,
         *,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> list[RequestResult[JSONValue]]:
+        subsystems: Sequence[str],
+        timeout: timedelta,
+        headers: Mapping[str, str] | None = None,
+    ) -> dict[str, Outcome[JSONValue]]:
         """Request one response from each subsystem.
 
         Cancel the task to cancel this request before it completes.

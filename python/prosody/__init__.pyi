@@ -21,12 +21,14 @@ from prosody.prosody import (
     shutdown_telemetry as shutdown_telemetry,
 )
 from prosody.request import (
-    HandlerResponseError as HandlerResponseError,
-    MalformedResponseError as MalformedResponseError,
-    RequestResult as RequestResult,
+    Failure as Failure,
+    FormatMismatch as FormatMismatch,
+    HandlerError as HandlerError,
+    MalformedResponse as MalformedResponse,
+    Outcome as Outcome,
     ResponseError as ResponseError,
-    ResponseFormatMismatchError as ResponseFormatMismatchError,
-    ResponseTimeoutError as ResponseTimeoutError,
+    Success as Success,
+    Timeout as Timeout,
 )
 from prosody.state import (
     DequeDefinition as DequeDefinition,

@@ -850,13 +850,13 @@ While the process is automated, manual intervention may sometimes be necessary:
 Remember, all releases are automatically published to PyPI. Ensure you have thoroughly tested your changes before
 merging to `main`.
 
-## Peer Requests
+## Subsystem Requests
 
-Peer requests collect one result from each named subsystem. Results follow the subsystem order.
+Requests return one outcome for each named subsystem. The result dictionary uses canonical subsystem names as keys.
 
 Do not await a request from a handler for the same key and subsystem. The request cannot finish before that handler returns.
 
-Message handler return values become request results. Each return value must have a JSON representation.
+Message handler return values become successful request outcomes. Each return value must have a JSON representation.
 
 Return a JSON response from each message handler:
 
@@ -870,23 +870,24 @@ Send a request without a subscription on the requester:
 
 ```python
 import sys
+from datetime import timedelta
 
-from prosody import ResponseError
+from prosody import Failure
 
 subsystems = ["inventory", "billing"]
 results = await client.request(
     "orders",
     "order-1",
     {"type": "order.created"},
-    subsystems,
-    2.0,
+    subsystems=subsystems,
+    timeout=timedelta(seconds=2),
 )
 
-for subsystem, result in zip(subsystems, results, strict=True):
-    if isinstance(result, ResponseError):
-        print(f"{subsystem}: {result}", file=sys.stderr)
+for subsystem, outcome in results.items():
+    if isinstance(outcome, Failure):
+        print(f"{subsystem}: {outcome.error.message}", file=sys.stderr)
     else:
-        print(f"{subsystem}: {result}")
+        print(f"{subsystem}: {outcome.value}")
 ```
 
 The example can print these results:
@@ -896,9 +897,9 @@ inventory: {'accepted': 'order-1'}
 billing: no response arrived before the deadline
 ```
 
-Each array element is a JSON response or a Python exception. Its type identifies the failure.
+Each value is a `Success` or `Failure`. Each failure contains one typed response error.
 
-Core exceptions use Prosody's message. Handler exceptions also keep their category and original text.
+Each response error has one message.
 
 ## Administrative Operations
 
@@ -964,7 +965,7 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
-- `request(topic, key, payload, subsystems, timeout, headers=None) -> Sequence[RequestResult[JSONValue]]`: Request one response from each subsystem.
+- `request(topic, key, payload, *, subsystems, timeout, headers=None) -> dict[str, Outcome[JSONValue]]`: Request one response from each subsystem.
 - `consumer_state() -> str`: Get the current state of the consumer.
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.

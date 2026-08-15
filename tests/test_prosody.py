@@ -13,12 +13,13 @@ from prosody.prosody import AdminClient
 from prosody import (
     Context,
     EventHandler,
-    HandlerResponseError,
+    Failure,
+    HandlerError,
     Message,
+    Outcome,
     PermanentError,
     ProsodyClient,
-    RequestResult,
-    ResponseError,
+    Success,
     Timer,
     permanent,
     transient,
@@ -29,8 +30,8 @@ def test_event_handler_is_runtime_subscriptable():
     assert EventHandler[dict] is not None
 
 
-def test_request_alias_is_available_at_runtime():
-    assert RequestResult[dict] is not None
+def test_outcome_alias_is_available_at_runtime():
+    assert Outcome[dict] is not None
 
 
 @pytest.mark.asyncio
@@ -314,16 +315,16 @@ async def test_request_returns_the_local_handler_response(random_topic_and_group
             topic,
             "order-1",
             {"type": "order.created"},
-            ["inventory"],
-            timedelta(seconds=DEFAULT_TIMEOUT),
+            subsystems=["inventory"],
+            timeout=timedelta(seconds=DEFAULT_TIMEOUT),
         ),
         timeout=DEFAULT_TIMEOUT,
     )
     assert len(results) == 1
-    assert results[0] == {"key": "order-1", "accepted": True}
+    assert results["inventory"] == Success({"key": "order-1", "accepted": True})
 
 
-async def test_request_returns_permanent_handler_failure(random_topic_and_group, client_factory):
+async def test_request_returns_handler_failure(random_topic_and_group, client_factory):
     topic, group = random_topic_and_group
     client = await client_factory(
         bootstrap_servers="localhost:9094",
@@ -342,18 +343,16 @@ async def test_request_returns_permanent_handler_failure(random_topic_and_group,
             topic,
             "order-1",
             {"type": "order.created"},
-            ["inventory"],
-            timedelta(seconds=DEFAULT_TIMEOUT),
+            subsystems=["inventory"],
+            timeout=timedelta(seconds=DEFAULT_TIMEOUT),
         ),
         timeout=DEFAULT_TIMEOUT,
     )
 
-    result = results[0]
-    assert isinstance(result, HandlerResponseError)
-    assert isinstance(result, ResponseError)
-    assert result.category == "permanent"
-    assert "request rejected" in result.handler_message
-    assert str(result) == f"handler failed: {result.handler_message}"
+    outcome = results["inventory"]
+    assert isinstance(outcome, Failure)
+    assert isinstance(outcome.error, HandlerError)
+    assert "request rejected" in outcome.error.message
 
 
 async def test_client_configuration(random_topic_and_group, client_factory):

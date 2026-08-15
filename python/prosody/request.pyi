@@ -1,17 +1,32 @@
-from typing import Literal, TypeAlias, TypeVar
+from dataclasses import dataclass
+from typing import ClassVar, Generic, TypeAlias, TypeVar
 
 T = TypeVar("T", covariant=True)
 
-class ResponseError(Exception): ...
+@dataclass(frozen=True, slots=True)
+class HandlerError:
+    message: str
 
-class HandlerResponseError(ResponseError):
-    @property
-    def category(self) -> Literal["transient", "permanent", "terminal"]: ...
-    @property
-    def handler_message(self) -> str: ...
+@dataclass(frozen=True, slots=True)
+class Timeout:
+    message: ClassVar[str]
 
-class ResponseTimeoutError(ResponseError): ...
-class ResponseFormatMismatchError(ResponseError): ...
-class MalformedResponseError(ResponseError): ...
+@dataclass(frozen=True, slots=True)
+class FormatMismatch:
+    message: ClassVar[str]
 
-RequestResult: TypeAlias = T | ResponseError
+@dataclass(frozen=True, slots=True)
+class MalformedResponse:
+    message: ClassVar[str]
+
+ResponseError: TypeAlias = HandlerError | Timeout | FormatMismatch | MalformedResponse
+
+@dataclass(frozen=True, slots=True)
+class Success(Generic[T]):
+    value: T
+
+@dataclass(frozen=True, slots=True)
+class Failure:
+    error: ResponseError
+
+Outcome: TypeAlias = Success[T] | Failure

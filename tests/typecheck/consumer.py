@@ -8,12 +8,13 @@ from typing_extensions import TypedDict, assert_type
 from prosody import (
     Context,
     EventHandler,
+    Failure,
     MapDefinition,
     Message,
     MessageDequeDefinition,
+    Outcome,
     ProsodyClient,
-    RequestResult,
-    ResponseError,
+    Success,
     Timer,
     map,
     message_deque,
@@ -73,10 +74,16 @@ async def subscribe_specialized(client: ProsodyClient) -> None:
 
 
 async def request_typed(client: ProsodyClient) -> None:
-    results = await client.request("orders", "order-1", {}, ["inventory"], timedelta(seconds=2))
-    assert_type(results, list[RequestResult[JSONValue]])
-    for result in results:
-        if isinstance(result, ResponseError):
-            assert_type(result, ResponseError)
-        else:
-            assert_type(result, JSONValue)
+    results = await client.request(
+        "orders",
+        "order-1",
+        {},
+        subsystems=["inventory"],
+        timeout=timedelta(seconds=2),
+    )
+    assert_type(results, dict[str, Outcome[JSONValue]])
+    for outcome in results.values():
+        if isinstance(outcome, Success):
+            assert_type(outcome.value, JSONValue)
+        elif isinstance(outcome, Failure):
+            assert_type(outcome, Failure)

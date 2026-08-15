@@ -7,12 +7,14 @@ from prosody.prosody import (
     shutdown_telemetry,
 )
 from prosody.request import (
-    HandlerResponseError,
-    MalformedResponseError,
-    RequestResult,
+    Failure,
+    FormatMismatch,
+    HandlerError,
+    MalformedResponse,
+    Outcome,
     ResponseError,
-    ResponseFormatMismatchError,
-    ResponseTimeoutError,
+    Success,
+    Timeout,
 )
 
 from prosody.context import Context

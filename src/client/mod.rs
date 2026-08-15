@@ -13,7 +13,7 @@ use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache, SharedHi
 use prosody::propagator::new_propagator;
 use prosody::subsystem::SubsystemName;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyTypeMethods};
+use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyDictMethods, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
@@ -125,8 +125,8 @@ impl ProsodyClient {
         })
     }
 
-    /// Sends one request and returns one result per subsystem.
-    #[pyo3(signature = (topic, key, payload, subsystems, timeout, *, headers = None))]
+    /// Sends one request and returns one outcome per subsystem.
+    #[pyo3(signature = (topic, key, payload, *, subsystems, timeout, headers = None))]
     fn request(
         &self,
         topic: String,
@@ -172,10 +172,12 @@ impl ProsodyClient {
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
             Python::attach(|py| {
-                results
-                    .into_iter()
-                    .map(|result| to_python(py, result))
-                    .collect::<PyResult<Vec<_>>>()
+                let module = py.import("prosody.request")?;
+                let outcomes = PyDict::new(py);
+                for (subsystem, result) in results {
+                    outcomes.set_item(subsystem.as_str(), to_python(py, &module, result)?)?;
+                }
+                Ok(outcomes.into_any().unbind())
             })
         })
         .map(Bound::unbind)
