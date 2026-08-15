@@ -1017,7 +1017,7 @@ class EventHandler(ABC, Generic[P]):
         pass
     
     @abstractmethod
-    async def on_timer(self, context: Context, timer: Timer) -> JSONValue:
+    async def on_timer(self, context: Context, timer: Timer) -> None:
         # Implement your timer handling logic here
         pass
 ```

@@ -90,7 +90,7 @@ class EventHandler(ABC, Generic[P]):
         pass
 
     @abstractmethod
-    async def on_timer(self, context: Context, timer: Timer) -> JSONValue:
+    async def on_timer(self, context: Context, timer: Timer) -> None:
         """
         Handle a timer event.
 
@@ -193,7 +193,7 @@ class ProsodyHandler:
                     handler_task.cancel("partition has been revoked")
 
                 try:
-                    return await handler_task
+                    await handler_task
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
