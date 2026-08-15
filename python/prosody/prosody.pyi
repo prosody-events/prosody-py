@@ -278,6 +278,10 @@ class _ProsodyClientApi:
         """Request one response from each subsystem.
 
         Cancel the task to cancel this request before it completes.
+
+        Raises:
+            ValueError: If a subsystem name is invalid.
+            RuntimeError: If the request cannot produce the complete result dictionary.
         """
         ...
 
