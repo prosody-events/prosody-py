@@ -213,9 +213,7 @@ PROSODY_STALL_THRESHOLD=15s  # Default stall detection threshold
    issues.
 5. The probe server is only active when consuming messages (not for producer-only usage).
 
-## Advanced Usage
-
-### Subsystem Requests
+## Subsystem Requests
 
 Requests return one outcome for each named subsystem. The result dictionary uses canonical subsystem names as keys.
 
@@ -269,6 +267,8 @@ billing: no response arrived before the deadline
 Each value is a `Success` or `Failure`. Each failure contains one typed response error.
 
 Each response error has one message.
+
+## Advanced Usage
 
 ### Pipeline Mode
 
