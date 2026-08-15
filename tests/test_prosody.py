@@ -52,7 +52,7 @@ async def test_create_starts_native_construction_when_awaited(monkeypatch):
     pending = ProsodyClient.create(mock=True)
     assert calls == []
 
-    await pending
+    assert isinstance(await pending, ProsodyClient)
     assert calls == [{"mock": True}]
 
 
