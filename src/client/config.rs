@@ -7,6 +7,7 @@
 use crate::client::ProsodyClient;
 use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
 use prosody::PeerConfiguration;
+use prosody::PeerEndpoint;
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
 use prosody::consumer::KeyedStateConfiguration;
@@ -42,7 +43,6 @@ use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 use std::time::Duration;
-use tonic::transport::Endpoint;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
 /// configuration.
@@ -1128,7 +1128,7 @@ fn build_peer_config(config: &Bound<PyDict>) -> PyResult<PeerConfiguration> {
     }
     if let Some(value) = config.get_item("peer_advertised_connect")? {
         builder.advertised_connect(
-            Endpoint::from_shared(value.extract::<String>()?).map_err(|error| {
+            PeerEndpoint::try_from(value.extract::<String>()?).map_err(|error| {
                 PyValueError::new_err(format!("peer_advertised_connect: {error}"))
             })?,
         );
