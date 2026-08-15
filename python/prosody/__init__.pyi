@@ -16,9 +16,19 @@ from typing import TypeVar, overload
 
 from prosody.prosody import (
     AdminClient as AdminClient,
-    _NativeProsodyClient,
+    _ProsodyClientApi,
     flush_telemetry as flush_telemetry,
     shutdown_telemetry as shutdown_telemetry,
+)
+from prosody.request import (
+    Failure as Failure,
+    FormatMismatch as FormatMismatch,
+    HandlerError as HandlerError,
+    MalformedResponse as MalformedResponse,
+    Outcome as Outcome,
+    ResponseError as ResponseError,
+    Success as Success,
+    Timeout as Timeout,
 )
 from prosody.state import (
     DequeDefinition as DequeDefinition,
@@ -46,7 +56,9 @@ from prosody.timer import Timer as Timer
 T = TypeVar("T")
 V = TypeVar("V")
 
-class ProsodyClient(_NativeProsodyClient):
+class ProsodyClient(_ProsodyClientApi):
+    def __init__(self) -> None: ...
+
     @overload
     async def state(
         self,

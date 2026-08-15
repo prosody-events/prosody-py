@@ -26,7 +26,6 @@ import pytest
 import tsasync
 
 from prosody import (
-    ProsodyClient,
     EventHandler,
     Direction,
     Message,
@@ -125,13 +124,12 @@ async def random_topic_and_group():
     group = f"test-group-{uuid.uuid4().hex}"
     admin = AdminClient(bootstrap_servers=BOOTSTRAP)
     await _wait(admin.create_topic(topic, partition_count=4, replication_factor=1))
-    await asyncio.sleep(1)
     yield topic, group
     await _wait(admin.delete_topic(topic))
 
 
-def _make_state_client(topic, group):
-    return ProsodyClient(
+async def _make_state_client(topic, group, client_factory):
+    return await client_factory(
         bootstrap_servers=BOOTSTRAP,
         source_system="test-state",
         group_id=group,
@@ -146,13 +144,10 @@ def _make_state_client(topic, group):
 
 
 @pytest.fixture
-async def state_client(random_topic_and_group):
+async def state_client(random_topic_and_group, client_factory):
     topic, group = random_topic_and_group
-    client = _make_state_client(topic, group)
+    client = await _make_state_client(topic, group, client_factory)
     yield client, topic, group
-    with contextlib.suppress(Exception):
-        if await _wait(client.consumer_state()) == "running":
-            await _wait(client.unsubscribe())
 
 
 # ===========================================================================
@@ -1310,13 +1305,13 @@ async def test_unrepresentable_write_rejects_transient(state_client, bad):
 # ===========================================================================
 
 
-async def test_blocked_handler_does_not_block_other_key(state_client):
+async def test_blocked_handler_does_not_block_other_key(state_client, client_factory):
     client, topic, group = state_client
 
     # Probe with a bare client on the SAME group so committed offsets keep the
     # state client from re-seeing probe messages. Five keys over four partitions
     # guarantee two distinct keys share a partition.
-    probe = ProsodyClient(
+    probe = await client_factory(
         bootstrap_servers=BOOTSTRAP,
         source_system="probe",
         group_id=group,
@@ -1336,8 +1331,6 @@ async def test_blocked_handler_does_not_block_other_key(state_client):
     probes = []
     for _ in range(5):
         probes.append(await _wait(probe_h.results.receive()))
-    await _wait(probe.unsubscribe())
-
     seen = {}
     key_a = key_b = None
     for p in probes:
@@ -1347,6 +1340,7 @@ async def test_blocked_handler_does_not_block_other_key(state_client):
             break
         seen[p["partition"]] = p["key"]
     assert key_a is not None and key_b is not None
+    await _wait(probe.unsubscribe())
 
     gate = tsasync.Event()
     events = tsasync.Channel()

@@ -12,6 +12,7 @@ REQUIRED = {
     "prosody/handler.pyi",
     "prosody/prosody.pyi",
     "prosody/py.typed",
+    "prosody/request.pyi",
     "prosody/state.pyi",
 }
 

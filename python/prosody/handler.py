@@ -50,8 +50,6 @@ def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -
 
 
 P = TypeVar("P", default=JSONValue)
-
-
 class EventHandler(ABC, Generic[P]):
     """
     Abstract base class for event handlers, generic over the message payload.
@@ -65,13 +63,16 @@ class EventHandler(ABC, Generic[P]):
     """
 
     @abstractmethod
-    async def on_message(self, context: Context, message: Message[P]) -> None:
+    async def on_message(self, context: Context, message: Message[P]) -> JSONValue:
         """
         Handle a Kafka message.
 
         Args:
             context (Context): The context of the message.
             message (Message[P]): The Kafka message to be processed.
+
+        Returns:
+            JSONValue: The response for subsystem requests.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
@@ -84,13 +85,16 @@ class EventHandler(ABC, Generic[P]):
         pass
 
     @abstractmethod
-    async def on_timer(self, context: Context, timer: Timer) -> None:
+    async def on_timer(self, context: Context, timer: Timer) -> JSONValue:
         """
         Handle a timer event.
 
         Args:
             context (Context): The context of the timer event.
             timer (Timer): The timer event to be processed.
+
+        Returns:
+            JSONValue: The handler result.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
@@ -125,7 +129,7 @@ class ProsodyHandler:
                     handler_task.cancel("partition has been revoked")
 
                 try:
-                    await handler_task
+                    return await handler_task
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -159,7 +163,7 @@ class ProsodyHandler:
                     handler_task.cancel("partition has been revoked")
 
                 try:
-                    await handler_task
+                    return await handler_task
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:

@@ -87,7 +87,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: cmake libcurl4-openssl-dev
+          packages: cmake libcurl4-openssl-dev protobuf-compiler
           version: 1.0
       - name: Install Maturin from crates.io
         uses: baptiste0928/cargo-install@v3
@@ -147,7 +147,7 @@ jobs:
       - name: Install native build dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: cmake libcurl4-openssl-dev
+          packages: cmake libcurl4-openssl-dev protobuf-compiler
           version: 1.0
       - name: Install type-check dependencies
         run: pip install "maturin>=1.14,<2.0" "mypy>=1.11" "opentelemetry-api>=1.44.0,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.12.0"
@@ -181,7 +181,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: cmake libcurl4-openssl-dev
+          packages: cmake libcurl4-openssl-dev protobuf-compiler
           version: 1.0
       - name: Install udeps from crates.io
         uses: baptiste0928/cargo-install@v3
@@ -208,7 +208,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: cmake libcurl4-openssl-dev
+          packages: cmake libcurl4-openssl-dev protobuf-compiler
           version: 1.0
       - name: Check documentation
         run: RUSTDOCFLAGS="-D warnings" cargo doc

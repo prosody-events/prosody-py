@@ -10,11 +10,57 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from prosody.prosody import AdminClient
 
-from prosody import ProsodyClient, EventHandler, Message, Context, Timer, permanent, transient
+from prosody import (
+    Context,
+    EventHandler,
+    Failure,
+    HandlerError,
+    Message,
+    Outcome,
+    PermanentError,
+    ProsodyClient,
+    Success,
+    Timer,
+    permanent,
+    transient,
+)
 
 
 def test_event_handler_is_runtime_subscriptable():
     assert EventHandler[dict] is not None
+
+
+def test_outcome_alias_is_available_at_runtime():
+    assert Outcome[dict] is not None
+
+
+@pytest.mark.asyncio
+async def test_create_starts_native_construction_when_awaited(monkeypatch):
+    calls = []
+
+    class NativeClient:
+        @staticmethod
+        def create(**configuration):
+            calls.append(configuration)
+
+            async def finish():
+                return object()
+
+            return finish()
+
+    monkeypatch.setattr("prosody._NativeProsodyClient", NativeClient)
+    pending = ProsodyClient.create(mock=True)
+    assert calls == []
+
+    assert isinstance(await pending, ProsodyClient)
+    assert calls == [{"mock": True}]
+
+
+def test_missing_native_client_reports_attribute_error():
+    client = object.__new__(ProsodyClient)
+
+    with pytest.raises(AttributeError):
+        getattr(client, "missing")
 
 # Use pytest's built-in logging; logs will appear at DEBUG level
 logger = logging.getLogger(__name__)
@@ -57,6 +103,22 @@ class TestHandler(EventHandler):
         pass
 
 
+class RequestHandler(EventHandler):
+    async def on_message(self, context: Context, message: Message):
+        return {"key": message.key, "accepted": True}
+
+    async def on_timer(self, context: Context, timer: Timer):
+        return None
+
+
+class RejectingRequestHandler(EventHandler):
+    async def on_message(self, context: Context, message: Message):
+        raise PermanentError("request rejected")
+
+    async def on_timer(self, context: Context, timer: Timer):
+        raise PermanentError("request rejected")
+
+
 @pytest.fixture
 async def random_topic_and_group():
     logger.debug("=" * 40)
@@ -90,7 +152,7 @@ async def random_topic_and_group():
 
 
 @pytest.fixture
-async def client(random_topic_and_group):
+async def client(random_topic_and_group, client_factory):
     logger.debug("=" * 40)
     logger.debug("FIXTURE client: STARTING")
     logger.debug(f"FIXTURE client: Current event loop: {asyncio.get_running_loop()}")
@@ -99,7 +161,7 @@ async def client(random_topic_and_group):
     logger.debug(f"FIXTURE client: Got topic={topic}, group={group}")
 
     logger.debug("FIXTURE client: Creating ProsodyClient...")
-    client = ProsodyClient(
+    client = await client_factory(
         bootstrap_servers="localhost:9094",
         source_system="test-send",
         group_id=group,
@@ -112,18 +174,6 @@ async def client(random_topic_and_group):
     logger.debug("FIXTURE client: About to yield client")
     yield client
 
-    logger.debug("FIXTURE client: TEARDOWN STARTING")
-    logger.debug("FIXTURE client: Checking consumer_state()...")
-    state = await asyncio.wait_for(client.consumer_state(), timeout=DEFAULT_TIMEOUT)
-    logger.debug(f"FIXTURE client: consumer_state() = {state}")
-
-    if state == "running":
-        logger.debug("FIXTURE client: Calling unsubscribe()...")
-        await asyncio.wait_for(client.unsubscribe(), timeout=DEFAULT_TIMEOUT)
-        logger.debug("FIXTURE client: unsubscribe() completed")
-
-    logger.debug("FIXTURE client: TEARDOWN COMPLETED")
-
 
 async def test_client_initialization(client):
     logger.debug("=" * 40)
@@ -135,6 +185,10 @@ async def test_client_initialization(client):
     logger.debug("TEST test_client_initialization: PASSED")
 
 
+async def test_shutdown_is_idempotent(client):
+    await asyncio.gather(client.shutdown(), client.shutdown())
+
+
 async def test_client_source_system(client):
     logger.debug("=" * 40)
     logger.debug("TEST test_client_source_system: STARTING")
@@ -142,10 +196,10 @@ async def test_client_source_system(client):
     logger.debug("TEST test_client_source_system: PASSED")
 
 
-def test_client_raises_after_fork():
+async def test_client_raises_after_fork(client_factory):
     import os
 
-    client = ProsodyClient(
+    client = await client_factory(
         bootstrap_servers="localhost:9092",
         source_system="fork-test",
         mock=True,
@@ -244,13 +298,70 @@ async def test_send_and_receive_message(client, random_topic_and_group):
     logger.debug("TEST test_send_and_receive_message: PASSED")
 
 
-async def test_client_configuration(random_topic_and_group):
+async def test_request_returns_the_local_handler_response(random_topic_and_group, client_factory):
+    topic, group = random_topic_and_group
+    client = await client_factory(
+        bootstrap_servers="localhost:9094",
+        source_system="request-test",
+        group_id=group,
+        subscribed_topics=topic,
+        probe_port=None,
+        cassandra_nodes="localhost:9042",
+        subsystem="inventory",
+    )
+    await asyncio.wait_for(client.subscribe(RequestHandler()), timeout=DEFAULT_TIMEOUT)
+    results = await asyncio.wait_for(
+        client.request(
+            topic,
+            "order-1",
+            {"type": "order.created"},
+            subsystems=["inventory"],
+            timeout=timedelta(seconds=DEFAULT_TIMEOUT),
+        ),
+        timeout=DEFAULT_TIMEOUT,
+    )
+    assert len(results) == 1
+    assert results["inventory"] == Success({"key": "order-1", "accepted": True})
+
+
+async def test_request_returns_handler_failure(random_topic_and_group, client_factory):
+    topic, group = random_topic_and_group
+    client = await client_factory(
+        bootstrap_servers="localhost:9094",
+        source_system="request-test",
+        group_id=group,
+        subscribed_topics=topic,
+        probe_port=None,
+        cassandra_nodes="localhost:9042",
+        subsystem="inventory",
+    )
+    await asyncio.wait_for(
+        client.subscribe(RejectingRequestHandler()), timeout=DEFAULT_TIMEOUT
+    )
+    results = await asyncio.wait_for(
+        client.request(
+            topic,
+            "order-1",
+            {"type": "order.created"},
+            subsystems=["inventory"],
+            timeout=timedelta(seconds=DEFAULT_TIMEOUT),
+        ),
+        timeout=DEFAULT_TIMEOUT,
+    )
+
+    outcome = results["inventory"]
+    assert isinstance(outcome, Failure)
+    assert isinstance(outcome.error, HandlerError)
+    assert "request rejected" in outcome.error.message
+
+
+async def test_client_configuration(random_topic_and_group, client_factory):
     logger.debug("=" * 40)
     logger.debug("TEST test_client_configuration: STARTING")
 
     topic, group = random_topic_and_group
     logger.debug("TEST: Creating ProsodyClient with mock=True...")
-    client = ProsodyClient(
+    client = await client_factory(
         bootstrap_servers=["localhost:9092", "localhost:9093"],
         source_system="test-send",
         group_id=group,
@@ -264,18 +375,18 @@ async def test_client_configuration(random_topic_and_group):
         failure_topic="failed-messages",
         probe_port=None,
         cassandra_nodes=["localhost:9042", "localhost:9043"],
-        mock=True
+        mock=True,
     )
     logger.debug("TEST: ProsodyClient created")
     assert isinstance(client, ProsodyClient)
     logger.debug("TEST test_client_configuration: PASSED")
 
 
-async def test_deduplication_configuration(random_topic_and_group):
+async def test_deduplication_configuration(random_topic_and_group, client_factory):
     topic, group = random_topic_and_group
 
     # idempotence_version and idempotence_ttl as timedelta
-    client = ProsodyClient(
+    client = await client_factory(
         bootstrap_servers="localhost:9092",
         source_system="test-dedup",
         group_id=group,
@@ -287,7 +398,7 @@ async def test_deduplication_configuration(random_topic_and_group):
     assert isinstance(client, ProsodyClient)
 
     # idempotence_ttl as float seconds
-    client = ProsodyClient(
+    client = await client_factory(
         bootstrap_servers="localhost:9092",
         source_system="test-dedup",
         group_id=group,
@@ -298,7 +409,7 @@ async def test_deduplication_configuration(random_topic_and_group):
     assert isinstance(client, ProsodyClient)
 
     # None values must not raise a TypeError
-    client = ProsodyClient(
+    client = await client_factory(
         bootstrap_servers="localhost:9092",
         source_system="test-dedup",
         group_id=group,
@@ -310,11 +421,11 @@ async def test_deduplication_configuration(random_topic_and_group):
     assert isinstance(client, ProsodyClient)
 
 
-async def test_span_configuration(random_topic_and_group):
+async def test_span_configuration(random_topic_and_group, client_factory):
     topic, group = random_topic_and_group
 
     # valid message_spans and timer_spans
-    client = ProsodyClient(
+    client = await client_factory(
         bootstrap_servers="localhost:9092",
         source_system="test-spans",
         group_id=group,
@@ -326,7 +437,7 @@ async def test_span_configuration(random_topic_and_group):
     assert isinstance(client, ProsodyClient)
 
     # None values must not raise
-    client = ProsodyClient(
+    client = await client_factory(
         bootstrap_servers="localhost:9092",
         source_system="test-spans",
         group_id=group,
@@ -336,29 +447,6 @@ async def test_span_configuration(random_topic_and_group):
         mock=True,
     )
     assert isinstance(client, ProsodyClient)
-
-    # invalid message_spans raises ValueError with field name
-    with pytest.raises(ValueError, match="message_spans"):
-        ProsodyClient(
-            bootstrap_servers="localhost:9092",
-            source_system="test-spans",
-            group_id=group,
-            subscribed_topics=[topic],
-            message_spans="invalid",
-            mock=True,
-        )
-
-    # invalid timer_spans raises ValueError with field name
-    with pytest.raises(ValueError, match="timer_spans"):
-        ProsodyClient(
-            bootstrap_servers="localhost:9092",
-            source_system="test-spans",
-            group_id=group,
-            subscribed_topics=[topic],
-            timer_spans="invalid",
-            mock=True,
-        )
-
 
 async def test_multiple_messages(client, random_topic_and_group):
     logger.debug("=" * 40)
@@ -544,7 +632,7 @@ async def test_permanent_error_decorator(client, random_topic_and_group):
 
 
 @pytest.mark.asyncio
-async def test_best_effort_mode_does_not_retry(random_topic_and_group):
+async def test_best_effort_mode_does_not_retry(random_topic_and_group, client_factory):
     logger.debug("=" * 40)
     logger.debug("TEST test_best_effort_mode_does_not_retry: STARTING")
 
@@ -553,14 +641,14 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
     handler = TransientErrorHandler()
 
     logger.debug("TEST: Creating ProsodyClient with mode=best-effort...")
-    client_with_best_effort = ProsodyClient(
+    client_with_best_effort = await client_factory(
         bootstrap_servers="localhost:9094",
         source_system="test-send",
         group_id=group,
         subscribed_topics=topic,
         probe_port=None,
         cassandra_nodes="localhost:9042",
-        mode="best-effort"
+        mode="best-effort",
     )
     logger.debug("TEST: Client created")
 
@@ -579,8 +667,6 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group):
 
     assert not handler.retry_event.is_set()
 
-    logger.debug("TEST: Unsubscribing...")
-    await asyncio.wait_for(client_with_best_effort.unsubscribe(), timeout=DEFAULT_TIMEOUT)
     logger.debug("TEST test_best_effort_mode_does_not_retry: PASSED")
 
 

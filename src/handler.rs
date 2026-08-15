@@ -20,6 +20,7 @@ use prosody::consumer::message::ConsumerMessage;
 use prosody::consumer::middleware::FallibleHandler;
 use prosody::consumer::{DemandType, Keyed};
 use prosody::error::{ClassifyError, ErrorCategory};
+use prosody::high_level::{ClientHandler, JsonCodecs};
 use prosody::propagator::new_propagator;
 use prosody::timers::{TimerType, Trigger};
 use pyo3::exceptions::PyTypeError;
@@ -27,7 +28,8 @@ use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
 use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 use pyo3_async_runtimes::{TaskLocals, into_future_with_locals};
-use pythonize::pythonize;
+use pythonize::{depythonize, pythonize};
+use serde_json::Value;
 use thiserror::Error;
 use tokio::select;
 use tracing::{debug, error, instrument};
@@ -194,7 +196,7 @@ impl PythonHandler {
 
 impl FallibleHandler for PythonHandler {
     type Error = WrappedPythonError;
-    type Output = ();
+    type Output = Value;
     type Payload = serde_json::Value;
 
     /// Processes a Kafka message by invoking the Python handler.
@@ -215,7 +217,7 @@ impl FallibleHandler for PythonHandler {
         context: C,
         message: ConsumerMessage<Self::Payload>,
         demand_type: DemandType,
-    ) -> Result<(), Self::Error>
+    ) -> Result<Self::Output, Self::Error>
     where
         C: EventContext<Payload = Self::Payload>,
     {
@@ -240,13 +242,13 @@ impl FallibleHandler for PythonHandler {
             execute(context, message, serialized_context, execution_context)?;
 
         pin_mut!(complete_future);
-        select! {
+        let output = select! {
             // Handle normal completion
             result = complete_future.as_mut() => {
                 if let Err(error) = log_exception(&result) {
                     error!("message handling failed but error could not be logged: {error:#}");
                 }
-                result?;
+                result?
             }
 
             // Handle cancel request
@@ -255,13 +257,15 @@ impl FallibleHandler for PythonHandler {
                 cancel_task(&self.0.event_set_method, shutdown_event)?;
 
                 debug!("waiting for task to cleanup");
-                complete_future.await?;
+                let output = complete_future.await?;
 
                 debug!("task cancelled");
+                output
             }
-        }
+        };
 
-        Ok(())
+        Python::attach(|py| depythonize(output.bind(py)))
+            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
     }
 
     /// Processes a timer event by invoking the Python handler.
@@ -282,7 +286,7 @@ impl FallibleHandler for PythonHandler {
         context: C,
         trigger: Trigger,
         demand_type: DemandType,
-    ) -> Result<(), Self::Error>
+    ) -> Result<Self::Output, Self::Error>
     where
         C: EventContext<Payload = Self::Payload>,
     {
@@ -290,7 +294,7 @@ impl FallibleHandler for PythonHandler {
 
         // Only process application timers; internal timers are handled by middleware
         if trigger.timer_type != TimerType::Application {
-            return Ok(());
+            return Ok(Value::Null);
         }
         // Propagate tracing context to Python
         let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
@@ -313,13 +317,13 @@ impl FallibleHandler for PythonHandler {
             execute_timer(context, trigger, serialized_context, timer_context)?;
 
         pin_mut!(complete_future);
-        select! {
+        let output = select! {
             // Handle normal completion
             result = complete_future.as_mut() => {
                 if let Err(error) = log_exception(&result) {
                     error!("timer handling failed but error could not be logged: {error:#}");
                 }
-                result?;
+                result?
             }
 
             // Handle cancel request
@@ -328,13 +332,15 @@ impl FallibleHandler for PythonHandler {
                 cancel_task(&self.0.event_set_method, shutdown_event)?;
 
                 debug!("waiting for timer task to cleanup");
-                complete_future.await?;
+                let output = complete_future.await?;
 
                 debug!("timer task cancelled");
+                output
             }
-        }
+        };
 
-        Ok(())
+        Python::attach(|py| depythonize(output.bind(py)))
+            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
     }
 
     /// Shuts down the handler.
@@ -344,6 +350,10 @@ impl FallibleHandler for PythonHandler {
     async fn shutdown(self) {
         // No cleanup required - Python handles resource cleanup via GC
     }
+}
+
+impl ClientHandler for PythonHandler {
+    type Codecs = JsonCodecs;
 }
 
 /// Logs Python exceptions with full traceback information.
@@ -546,6 +556,10 @@ pub enum WrappedPythonError {
     /// Underlying Python exception
     #[error(transparent)]
     Python(#[from] PyErr),
+
+    /// The handler result has no JSON representation.
+    #[error("handler result is not representable as JSON: {0}")]
+    ResultConversion(String),
 }
 
 impl ClassifyError for WrappedPythonError {
@@ -562,6 +576,7 @@ impl ClassifyError for WrappedPythonError {
                     _ => ErrorCategory::Transient,
                 })
             }
+            WrappedPythonError::ResultConversion(_) => ErrorCategory::Permanent,
         }
     }
 }

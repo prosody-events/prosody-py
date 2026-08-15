@@ -35,6 +35,7 @@ mod handler;
 mod logging;
 mod message;
 mod published;
+mod request;
 mod state;
 mod util;
 
@@ -76,7 +77,6 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
         .set_item("prosody.context", context_module)?;
 
     prosody_module.add_class::<AdminClient>()?;
-
     // Internal erased keyed-state handles (the typed Python surface wraps
     // these); registered on the main module rather than a `prosody.state`
     // submodule to leave that name free for the typed layer.

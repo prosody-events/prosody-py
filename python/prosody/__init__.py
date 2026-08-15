@@ -6,6 +6,16 @@ from prosody.prosody import (
     flush_telemetry,
     shutdown_telemetry,
 )
+from prosody.request import (
+    Failure,
+    FormatMismatch,
+    HandlerError,
+    MalformedResponse,
+    Outcome,
+    ResponseError,
+    Success,
+    Timeout,
+)
 
 from prosody.context import Context
 from prosody.errors import (
@@ -45,8 +55,24 @@ from prosody.state import (
 from prosody.timer import Timer
 
 
-class ProsodyClient(_NativeProsodyClient):
+class ProsodyClient:
     """Prosody client with typed published-state composition."""
+
+    def __init__(self):
+        raise TypeError("Use await ProsodyClient.create(**configuration)")
+
+    @classmethod
+    def create(cls, **configuration):
+        """Create a client without blocking the Python event loop."""
+        async def finish():
+            client = object.__new__(cls)
+            client._native = await _NativeProsodyClient.create(**configuration)
+            return client
+
+        return finish()
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_native"), name)
 
     async def state(self, subsystem, definition):
         """Open a read-only view of a published JSON collection."""
