@@ -72,7 +72,7 @@ class EventHandler(ABC, Generic[P]):
             message (Message[P]): The Kafka message to be processed.
 
         Returns:
-            JSONValue: The response for subsystem requests.
+            JSONValue: The response for requests.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
