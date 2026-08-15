@@ -215,6 +215,61 @@ PROSODY_STALL_THRESHOLD=15s  # Default stall detection threshold
 
 ## Advanced Usage
 
+### Subsystem Requests
+
+Requests return one outcome for each named subsystem. The result dictionary uses canonical subsystem names as keys.
+
+Do not rely on dictionary iteration order.
+
+Prosody raises an exception if the request cannot produce the complete result dictionary.
+
+Do not await a request from a handler for the same key and subsystem. The request cannot finish before that handler returns.
+
+Message handler return values become successful request outcomes. Each return value must have a JSON representation.
+
+Return a JSON response from each message handler:
+
+```python
+class InventoryHandler(EventHandler):
+    async def on_message(self, context, message):
+        return {"accepted": message.key}
+```
+
+Send a request without a subscription on the requester:
+
+```python
+import sys
+from datetime import timedelta
+
+from prosody import Failure
+
+subsystems = ["inventory", "billing"]
+results = await client.request(
+    "orders",
+    "order-1",
+    {"type": "order.created"},
+    subsystems=subsystems,
+    timeout=timedelta(seconds=2),
+)
+
+for subsystem, outcome in results.items():
+    if isinstance(outcome, Failure):
+        print(f"{subsystem}: {outcome.error.message}", file=sys.stderr)
+    else:
+        print(f"{subsystem}: {outcome.value}")
+```
+
+The example can print these results:
+
+```text
+inventory: {'accepted': 'order-1'}
+billing: no response arrived before the deadline
+```
+
+Each value is a `Success` or `Failure`. Each failure contains one typed response error.
+
+Each response error has one message.
+
 ### Pipeline Mode
 
 Pipeline mode is the default mode. Ensures ordered processing, retrying failed operations indefinitely:
@@ -849,57 +904,6 @@ While the process is automated, manual intervention may sometimes be necessary:
 
 Remember, all releases are automatically published to PyPI. Ensure you have thoroughly tested your changes before
 merging to `main`.
-
-## Subsystem Requests
-
-Requests return one outcome for each named subsystem. The result dictionary uses canonical subsystem names as keys.
-
-Do not await a request from a handler for the same key and subsystem. The request cannot finish before that handler returns.
-
-Message handler return values become successful request outcomes. Each return value must have a JSON representation.
-
-Return a JSON response from each message handler:
-
-```python
-class InventoryHandler(EventHandler):
-    async def on_message(self, context, message):
-        return {"accepted": message.key}
-```
-
-Send a request without a subscription on the requester:
-
-```python
-import sys
-from datetime import timedelta
-
-from prosody import Failure
-
-subsystems = ["inventory", "billing"]
-results = await client.request(
-    "orders",
-    "order-1",
-    {"type": "order.created"},
-    subsystems=subsystems,
-    timeout=timedelta(seconds=2),
-)
-
-for subsystem, outcome in results.items():
-    if isinstance(outcome, Failure):
-        print(f"{subsystem}: {outcome.error.message}", file=sys.stderr)
-    else:
-        print(f"{subsystem}: {outcome.value}")
-```
-
-The example can print these results:
-
-```text
-inventory: {'accepted': 'order-1'}
-billing: no response arrived before the deadline
-```
-
-Each value is a `Success` or `Failure`. Each failure contains one typed response error.
-
-Each response error has one message.
 
 ## Administrative Operations
 
