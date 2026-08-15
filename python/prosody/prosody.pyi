@@ -277,7 +277,6 @@ class _ProsodyClientApi:
         *,
         subsystems: Sequence[str],
         timeout: timedelta,
-        headers: Mapping[str, str] | None = None,
     ) -> dict[str, Outcome[JSONValue]]:
         """Request one response from each subsystem.
 
@@ -287,6 +286,17 @@ class _ProsodyClientApi:
             ValueError: If a subsystem name is invalid.
             RuntimeError: If the request cannot produce the complete result dictionary.
         """
+        ...
+
+    async def request_excise(
+        self,
+        topic: str,
+        key: str,
+        *,
+        subsystems: Sequence[str],
+        timeout: timedelta,
+    ) -> dict[str, Outcome[JSONValue]]:
+        """Request one excise response from each subsystem."""
         ...
 
     async def consumer_state(self) -> Literal['shut_down', 'unconfigured', 'configured', 'running']:

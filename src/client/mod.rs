@@ -150,7 +150,7 @@ impl ProsodyClient {
     }
 
     /// Sends one request and returns one outcome per subsystem.
-    #[pyo3(signature = (topic, key, payload, *, subsystems, timeout, headers = None))]
+    #[pyo3(signature = (topic, key, payload, *, subsystems, timeout))]
     fn request(
         &self,
         topic: String,
@@ -158,7 +158,6 @@ impl ProsodyClient {
         payload: &Bound<'_, PyAny>,
         subsystems: Vec<String>,
         timeout: &Bound<'_, PyAny>,
-        headers: Option<HashMap<String, String>>,
     ) -> PyResult<Py<PyAny>> {
         self.check_fork()?;
         let py = payload.py();
@@ -185,13 +184,60 @@ impl ProsodyClient {
         future_into_py(py, async move {
             let results = client
                 .request(
-                    headers.unwrap_or_default().into_iter().collect(),
+                    Vec::new(),
                     topic.as_str().into(),
                     key,
                     payload,
                     subsystems,
                     timeout,
                 )
+                .instrument(span)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| {
+                let module = py.import("prosody.request")?;
+                let outcomes = PyDict::new(py);
+                for (subsystem, result) in results {
+                    outcomes.set_item(subsystem.as_str(), to_python(py, &module, result)?)?;
+                }
+                Ok(outcomes.into_any().unbind())
+            })
+        })
+        .map(Bound::unbind)
+    }
+
+    /// Sends one excise request and returns one outcome per subsystem.
+    #[pyo3(signature = (topic, key, *, subsystems, timeout))]
+    fn request_excise(
+        &self,
+        py: Python<'_>,
+        topic: String,
+        key: String,
+        subsystems: Vec<String>,
+        timeout: &Bound<'_, PyAny>,
+    ) -> PyResult<Py<PyAny>> {
+        self.check_fork()?;
+        let context = self.get_context.bind(py).call0()?;
+        let data = PyDict::new(py);
+        self.inject.call1(py, (&data, context))?;
+        let trace_headers: HashMap<String, String> = data.extract()?;
+        let context = self.client.propagator().extract(&trace_headers);
+        let span = info_span!("python-request-excise", %topic, %key);
+        if let Err(error) = span.set_parent(context) {
+            debug!("failed to set parent span: {error:#}");
+        }
+        let subsystems = subsystems
+            .into_iter()
+            .map(|name| {
+                SubsystemName::try_new(name)
+                    .map_err(|error| PyValueError::new_err(error.to_string()))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let timeout = decode_duration(timeout)?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            let results = client
+                .request_excise(Vec::new(), topic.as_str().into(), key, subsystems, timeout)
                 .instrument(span)
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;

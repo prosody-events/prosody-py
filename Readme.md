@@ -229,6 +229,8 @@ PROSODY_STALL_THRESHOLD=15s  # Default stall detection threshold
 
 Requests return one outcome for each named subsystem. The result dictionary uses canonical subsystem names as keys.
 
+Use `request_excise` to send an excise record and collect the same outcome type.
+
 Do not rely on dictionary iteration order.
 
 Prosody raises an exception if the request cannot produce the complete result dictionary.
@@ -982,7 +984,8 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
 - `excise(topic: str, key: str) -> None`: Send an excise record for a key.
-- `request(topic, key, payload, *, subsystems, timeout, headers=None) -> dict[str, Outcome[JSONValue]]`: Request one response from each subsystem.
+- `request(topic, key, payload, *, subsystems, timeout) -> dict[str, Outcome[JSONValue]]`: Request one response from each subsystem.
+- `request_excise(topic, key, *, subsystems, timeout) -> dict[str, Outcome[JSONValue]]`: Request one excise response from each subsystem.
 - `consumer_state() -> str`: Get the current state of the consumer.
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.

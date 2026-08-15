@@ -87,6 +87,13 @@ async def request_typed(client: ProsodyClient) -> None:
         subsystems=["inventory"],
         timeout=timedelta(seconds=2),
     )
+    excise_results = await client.request_excise(
+        "orders",
+        "order-1",
+        subsystems=["inventory"],
+        timeout=timedelta(seconds=2),
+    )
+    assert_type(excise_results, dict[str, Outcome[JSONValue]])
     assert_type(results, dict[str, Outcome[JSONValue]])
     for outcome in results.values():
         if isinstance(outcome, Success):
