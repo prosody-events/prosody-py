@@ -85,7 +85,7 @@ impl PreparedClient {
             client,
             get_context: self.get_context,
             inject: self.inject,
-            handler: Arc::new(parking_lot::RwLock::new(None)),
+            handler: Arc::new(parking_lot::Mutex::new(None)),
             pid: process::id(),
         })
     }

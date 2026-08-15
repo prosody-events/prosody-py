@@ -8,7 +8,7 @@
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
 use opentelemetry::propagation::TextMapPropagator;
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache, SharedHighLevelClient};
 use prosody::propagator::new_propagator;
 use prosody::subsystem::SubsystemName;
@@ -47,7 +47,7 @@ pub struct ProsodyClient {
     shutdown: Shutdown,
     get_context: Py<PyAny>,
     inject: Py<PyAny>,
-    handler: Arc<RwLock<Option<PythonHandler>>>,
+    handler: Arc<Mutex<Option<PythonHandler>>>,
     pid: u32,
 }
 
@@ -301,7 +301,7 @@ impl ProsodyClient {
                 .subscribe(handler)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-            *current.write() = Some(retained);
+            *current.lock() = Some(retained);
             Ok(())
         })
     }
@@ -353,7 +353,7 @@ impl ProsodyClient {
                 .unsubscribe()
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()));
-            *current.write() = None;
+            *current.lock() = None;
             result
         })
     }
@@ -372,7 +372,7 @@ impl ProsodyClient {
             let result = shutdown
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()));
-            *current.write() = None;
+            *current.lock() = None;
             result
         })
     }
@@ -424,7 +424,7 @@ impl ProsodyClient {
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // Never lock synchronization state inherited from another process.
         if process::id() == self.pid
-            && let Some(handler) = self.handler.read().as_ref()
+            && let Some(handler) = self.handler.lock().as_ref()
         {
             visit.call(handler.handle_method().as_any())?;
             visit.call(handler.timer_method().as_any())?;
