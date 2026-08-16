@@ -140,12 +140,18 @@ class RequestHandler(EventHandler):
     async def on_message(self, context: Context, message: Message):
         return {"key": message.key, "accepted": True}
 
+    async def on_excise(self, context: Context, message: Message):
+        return {"key": message.key, "accepted": True}
+
     async def on_timer(self, context: Context, timer: Timer):
         return None
 
 
 class RejectingRequestHandler(EventHandler):
     async def on_message(self, context: Context, message: Message):
+        raise PermanentError("request rejected")
+
+    async def on_excise(self, context: Context, message: Message):
         raise PermanentError("request rejected")
 
     async def on_timer(self, context: Context, timer: Timer):
