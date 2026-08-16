@@ -18,7 +18,7 @@ use super::{
 /// # Errors
 ///
 /// Returns `PyErr` if accessing traceback information fails
-pub(super) fn log_exception(result: &PyResult<Py<PyAny>>) -> PyResult<()> {
+pub(super) fn log_exception(kind: &str, result: &PyResult<Py<PyAny>>) -> PyResult<()> {
     let Err(error) = result else {
         return Ok(());
     };
@@ -34,7 +34,7 @@ pub(super) fn log_exception(result: &PyResult<Py<PyAny>>) -> PyResult<()> {
 
         let traceback = traceback.join("");
 
-        error!(%traceback, "message handling failed: {error:#}");
+        error!(%traceback, "{kind} handling failed: {error:#}");
         Ok(())
     })
 }

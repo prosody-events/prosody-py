@@ -6,7 +6,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from prosody import ProsodyClient, EventHandler, Message, Context
+from prosody import Context, EventHandler, Message, ProsodyClient, Timer
 
 # To run this example:
 # 1. Install dependencies:
@@ -63,6 +63,9 @@ class ExampleHandler(EventHandler):
                 "timestamp": datetime.now().isoformat()
             })
 
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pass
+
 
 async def send_messages(client: ProsodyClient):
     while True:
@@ -97,7 +100,7 @@ async def main():
 
     # Create and subscribe the message handler
     handler = ExampleHandler()
-    client.subscribe(handler)
+    await client.subscribe(handler)
 
     try:
         # Start the message sending task

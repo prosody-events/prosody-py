@@ -241,7 +241,7 @@ impl PythonHandler {
         pin_mut!(complete_future);
         let output = select! {
             result = complete_future.as_mut() => {
-                if let Err(error) = log_exception(&result) {
+                if let Err(error) = log_exception(kind, &result) {
                     error!("{kind} handling failed but the error could not be logged: {error:#}");
                 }
                 result?
@@ -360,7 +360,7 @@ impl FallibleHandler for PythonHandler {
         let output = select! {
             // Handle normal completion
             result = complete_future.as_mut() => {
-                if let Err(error) = log_exception(&result) {
+                if let Err(error) = log_exception("timer", &result) {
                     error!("timer handling failed but error could not be logged: {error:#}");
                 }
                 result?

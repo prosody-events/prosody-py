@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Generic
+from typing import Any, Callable, Coroutine, Generic
 
 from typing_extensions import TypeVar
 
@@ -50,6 +50,8 @@ def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -
 
 
 P = TypeVar("P", default=JSONValue)
+
+
 class EventHandler(ABC, Generic[P]):
     """
     Abstract base class for event handlers, generic over the message payload.
@@ -116,93 +118,77 @@ class ProsodyHandler:
         self.handler = handler
         self.tracer = trace.get_tracer(__name__)
 
-    async def on_message(self, context, message, opentelemetry_context, shutdown_event):
+    async def _dispatch(
+        self,
+        call: Callable[[], Coroutine[Any, Any, Any]],
+        span_name: str,
+        event_type: str,
+        details: dict[str, Any],
+        opentelemetry_context,
+        shutdown_event,
+    ):
         otel_context = extract(carrier=opentelemetry_context)
-
-        with self.tracer.start_as_current_span("on_message", context=otel_context):
-            handler_task = asyncio.create_task(self.handler.on_message(context, message))
+        with self.tracer.start_as_current_span(span_name, context=otel_context):
+            handler_task = asyncio.create_task(call())
             shutdown_task = asyncio.create_task(shutdown_event.wait())
-
             try:
                 done, _ = await asyncio.wait(
                     {handler_task, shutdown_task},
-                    return_when=asyncio.FIRST_COMPLETED
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-
                 if shutdown_task in done:
                     handler_task.cancel("partition has been revoked")
-
                 try:
                     return await handler_task
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    _capture_handler_exception("message", {
-                        "topic": getattr(message, "topic", None),
-                        "partition": getattr(message, "partition", None),
-                        "key": getattr(message, "key", None),
-                        "offset": getattr(message, "offset", None),
-                    }, exc)
+                    _capture_handler_exception(event_type, details, exc)
                     raise
-
             finally:
                 for task in {handler_task, shutdown_task}:
                     if not task.done():
                         task.cancel("task is shutting down")
+
+    async def on_message(self, context, message, opentelemetry_context, shutdown_event):
+        return await self._dispatch(
+            lambda: self.handler.on_message(context, message),
+            "on_message",
+            "message",
+            {
+                "topic": getattr(message, "topic", None),
+                "partition": getattr(message, "partition", None),
+                "key": getattr(message, "key", None),
+                "offset": getattr(message, "offset", None),
+            },
+            opentelemetry_context,
+            shutdown_event,
+        )
 
     async def on_excise(self, context, message, opentelemetry_context, shutdown_event):
-        otel_context = extract(carrier=opentelemetry_context)
-        with self.tracer.start_as_current_span("on_excise", context=otel_context):
-            handler_task = asyncio.create_task(self.handler.on_excise(context, message))
-            shutdown_task = asyncio.create_task(shutdown_event.wait())
-            try:
-                done, _ = await asyncio.wait(
-                    {handler_task, shutdown_task}, return_when=asyncio.FIRST_COMPLETED
-                )
-                if shutdown_task in done:
-                    handler_task.cancel("partition has been revoked")
-                return await handler_task
-            except Exception as exc:
-                _capture_handler_exception("excise", {
-                    "topic": message.topic,
-                    "partition": message.partition,
-                    "key": message.key,
-                    "offset": message.offset,
-                }, exc)
-                raise
-            finally:
-                for task in {handler_task, shutdown_task}:
-                    if not task.done():
-                        task.cancel("task is shutting down")
+        return await self._dispatch(
+            lambda: self.handler.on_excise(context, message),
+            "on_excise",
+            "excise",
+            {
+                "topic": getattr(message, "topic", None),
+                "partition": getattr(message, "partition", None),
+                "key": getattr(message, "key", None),
+                "offset": getattr(message, "offset", None),
+            },
+            opentelemetry_context,
+            shutdown_event,
+        )
 
     async def on_timer(self, context, timer, opentelemetry_context, shutdown_event):
-        otel_context = extract(carrier=opentelemetry_context)
-
-        with self.tracer.start_as_current_span("on_timer", context=otel_context):
-            handler_task = asyncio.create_task(self.handler.on_timer(context, timer))
-            shutdown_task = asyncio.create_task(shutdown_event.wait())
-
-            try:
-                done, _ = await asyncio.wait(
-                    {handler_task, shutdown_task},
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                if shutdown_task in done:
-                    handler_task.cancel("partition has been revoked")
-
-                try:
-                    await handler_task
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    _capture_handler_exception("timer", {
-                        "key": getattr(timer, "key", None),
-                        "time": getattr(timer, "time", None),
-                    }, exc)
-                    raise
-
-            finally:
-                for task in {handler_task, shutdown_task}:
-                    if not task.done():
-                        task.cancel("task is shutting down")
+        await self._dispatch(
+            lambda: self.handler.on_timer(context, timer),
+            "on_timer",
+            "timer",
+            {
+                "key": getattr(timer, "key", None),
+                "time": getattr(timer, "time", None),
+            },
+            opentelemetry_context,
+            shutdown_event,
+        )

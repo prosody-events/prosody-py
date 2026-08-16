@@ -49,8 +49,12 @@ BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog", capacity=
 def order_payload(message: Message[OrderEvent]) -> OrderEvent:
     """Return an order payload or reject a value outside the declared schema."""
     payload = message.payload
-    if payload is None:
-        raise PermanentError("order event payload must be an object")
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(payload.get("order_id"), str)
+        or type(payload.get("total")) is not int
+    ):
+        raise PermanentError("order event must contain a string order_id and integer total")
     return payload
 
 
