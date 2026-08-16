@@ -247,6 +247,12 @@ Return a JSON response from each message handler:
 class InventoryHandler(EventHandler):
     async def on_message(self, context, message):
         return {"accepted": message.key}
+
+    async def on_excise(self, context, message):
+        return None
+
+    async def on_timer(self, context, timer) -> None:
+        pass
 ```
 
 Send a request without a subscription on the requester:
@@ -478,6 +484,9 @@ class MyHandler(EventHandler):
         print("Timer fired!")
         print(f"Key: {timer.key}")
         print(f"Scheduled time: {timer.time}")
+
+    async def on_excise(self, context: Context, message: Message):
+        return None
 ```
 
 ### Timer Methods
@@ -579,6 +588,12 @@ class CountHandler(EventHandler):
         count = context.state(COUNTER)
         await count.set((await count.get() or 0) + 1)
 
+    async def on_excise(self, context: Context, message: Message):
+        return None
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pass
+
 
 client = await ProsodyClient.create(
     group_id="counters",
@@ -623,6 +638,9 @@ class BatchHandler(EventHandler[Activity]):
             await notify(timer.key, batch)
         await pending.clear()
         await context.state(WINDOW).clear()
+
+    async def on_excise(self, context: Context, message: Message[Activity]):
+        return None
 ```
 
 See the complete, mypy-checked example for imports, types, client setup, and `notify`: [`examples/keyed_state_windowing.py`](examples/keyed_state_windowing.py).
@@ -722,6 +740,12 @@ class MyHandler(EventHandler):
         with tracer.start_as_current_span("test-receive"):
             # Process the received message
             print(f"Received message: {message}")
+
+    async def on_excise(self, context: Context, message: Message):
+        return None
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pass
 ```
 
 ### Span Linking
@@ -854,6 +878,12 @@ class MyHandler(EventHandler):
         # Your message handling logic here
         # TypeError and AttributeError will be treated as permanent
         # All other exceptions will be treated as transient (default behavior)
+        pass
+
+    async def on_excise(self, context: Context, message: Message):
+        return None
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
         pass
 ```
 
