@@ -35,7 +35,8 @@ payload type through `on_message`; an unsubscripted handler defaults to
 ## Quick Start
 
 ```python
-from prosody import ProsodyClient, EventHandler, Context, Message
+from prosody import Context, EventHandler, Message, ProsodyClient
+from prosody.message import JSONValue
 import datetime
 
 # Initialize the client with Kafka bootstrap server, consumer group, and topics
@@ -59,6 +60,7 @@ client = await ProsodyClient.create(
 class MyHandler(EventHandler):
     async def on_excise(self, context: Context, message: Message) -> JSONValue:
         print(f"Excise key: {message.key}")
+        return {"excised": message.key}
 
     async def on_message(self, context: Context, message: Message) -> None:
         # Process the received message
