@@ -210,6 +210,55 @@ impl PythonHandler {
     pub fn timer_class(&self) -> &Py<PyAny> {
         &self.0.timer_class
     }
+
+    async fn handle_record<C>(
+        &self,
+        context: C,
+        message: ConsumerMessage<Value>,
+        method: &Py<PyAny>,
+        kind: &str,
+    ) -> Result<Value, WrappedPythonError>
+    where
+        C: EventContext<Payload = Value>,
+    {
+        let mut carrier = HashMap::with_capacity(2);
+        self.0
+            .propagator
+            .inject_context(&message.span().context(), &mut carrier);
+        let cancel_future = context.on_cancel();
+        let execution_context = MessageExecutionContext {
+            message_class: &self.0.message_class,
+            event_class: &self.0.event_class,
+            method,
+            locals: &self.0.locals,
+            propagator: self.0.propagator.clone(),
+            otel_get_current: &self.0.otel_get_current,
+            otel_inject: &self.0.otel_inject,
+        };
+        let (shutdown_event, complete_future) =
+            execute(context, message, carrier, execution_context)?;
+
+        pin_mut!(complete_future);
+        let output = select! {
+            result = complete_future.as_mut() => {
+                if let Err(error) = log_exception(&result) {
+                    error!("{kind} handling failed but the error could not be logged: {error:#}");
+                }
+                result?
+            }
+            () = cancel_future => {
+                debug!("cancel signal received; cancelling task");
+                cancel_task(&self.0.event_set_method, shutdown_event)?;
+                debug!("waiting for task to finish");
+                let output = complete_future.await?;
+                debug!("task cancelled");
+                output
+            }
+        };
+
+        Python::attach(|py| depythonize(output.bind(py)))
+            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
+    }
 }
 
 impl FallibleHandler for PythonHandler {
@@ -239,51 +288,9 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        let _ = demand_type; // Not used in Python handler
-        // Propagate tracing context to Python
-        let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
-        self.0
-            .propagator
-            .inject_context(&message.span().context(), &mut serialized_context);
-
-        let cancel_future = context.on_cancel();
-        let execution_context = MessageExecutionContext {
-            message_class: &self.0.message_class,
-            event_class: &self.0.event_class,
-            method: &self.0.handle_method,
-            locals: &self.0.locals,
-            propagator: self.0.propagator.clone(),
-            otel_get_current: &self.0.otel_get_current,
-            otel_inject: &self.0.otel_inject,
-        };
-        let (shutdown_event, complete_future) =
-            execute(context, message, serialized_context, execution_context)?;
-
-        pin_mut!(complete_future);
-        let output = select! {
-            // Handle normal completion
-            result = complete_future.as_mut() => {
-                if let Err(error) = log_exception(&result) {
-                    error!("message handling failed but error could not be logged: {error:#}");
-                }
-                result?
-            }
-
-            // Handle cancel request
-            () = cancel_future => {
-                debug!("cancel signal received; cancelling task");
-                cancel_task(&self.0.event_set_method, shutdown_event)?;
-
-                debug!("waiting for task to cleanup");
-                let output = complete_future.await?;
-
-                debug!("task cancelled");
-                output
-            }
-        };
-
-        Python::attach(|py| depythonize(output.bind(py)))
-            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
+        let _ = demand_type;
+        self.handle_record(context, message, &self.0.handle_method, "message")
+            .await
     }
 
     #[instrument(level = "debug", skip(self, context, demand_type), err)]
@@ -297,40 +304,8 @@ impl FallibleHandler for PythonHandler {
         C: EventContext<Payload = Self::Payload>,
     {
         let _ = demand_type;
-        let mut serialized_context = HashMap::with_capacity(2);
-        self.0
-            .propagator
-            .inject_context(&message.span().context(), &mut serialized_context);
-
-        let cancel_future = context.on_cancel();
-        let execution_context = MessageExecutionContext {
-            message_class: &self.0.message_class,
-            event_class: &self.0.event_class,
-            method: &self.0.excise_method,
-            locals: &self.0.locals,
-            propagator: self.0.propagator.clone(),
-            otel_get_current: &self.0.otel_get_current,
-            otel_inject: &self.0.otel_inject,
-        };
-        let (shutdown_event, complete_future) =
-            execute(context, message, serialized_context, execution_context)?;
-
-        pin_mut!(complete_future);
-        let output = select! {
-            result = complete_future.as_mut() => {
-                if let Err(error) = log_exception(&result) {
-                    error!("excise handling failed but error could not be logged: {error:#}");
-                }
-                result?
-            }
-            () = cancel_future => {
-                cancel_task(&self.0.event_set_method, shutdown_event)?;
-                complete_future.await?
-            }
-        };
-
-        Python::attach(|py| depythonize(output.bind(py)))
-            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
+        self.handle_record(context, message, &self.0.excise_method, "excise")
+            .await
     }
 
     /// Processes a timer event by invoking the Python handler.

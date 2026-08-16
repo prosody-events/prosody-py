@@ -53,9 +53,6 @@ class OrderHandler(EventHandler[OrderEvent]):
         self, context: Context, message: Message[OrderEvent]
     ) -> None:
         payload = message.payload
-        if payload is None:
-            return
-
         cart = context.state(CART)  # ValueState[Cart]
         current = await cart.get() or Cart(items=[])
         await cart.set({"items": [*current["items"], payload["order_id"]]})
