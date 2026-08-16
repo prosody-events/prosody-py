@@ -327,6 +327,7 @@ class _ProsodyClientApi:
             handler (EventHandler): An instance implementing the EventHandler interface.
 
         Raises:
+            TypeError: If the handler does not implement all event methods.
             RuntimeError: If the consumer is not configured or is already
                 subscribed.
 

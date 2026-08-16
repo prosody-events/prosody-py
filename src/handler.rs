@@ -37,6 +37,8 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::context::Context;
 
+const HANDLER_METHODS: [&str; 3] = ["on_message", "on_excise", "on_timer"];
+
 /// Python objects and dependencies needed for message execution
 struct MessageExecutionContext<'a> {
     message_class: &'a Py<PyAny>,
@@ -124,6 +126,14 @@ impl PythonHandler {
             return Err(PyTypeError::new_err(format!(
                 "handler must be a subclass of {HANDLER_CLASS_NAME}"
             )));
+        }
+
+        for method_name in HANDLER_METHODS {
+            if !handler.getattr(method_name)?.is_callable() {
+                return Err(PyTypeError::new_err(format!(
+                    "handler.{method_name} must be callable"
+                )));
+            }
         }
 
         // Wrap handler with tracing/cancellation support

@@ -62,6 +62,35 @@ def test_missing_native_client_reports_attribute_error():
     with pytest.raises(AttributeError):
         getattr(client, "missing")
 
+
+@pytest.mark.parametrize("missing", ["on_message", "on_excise", "on_timer"])
+@pytest.mark.asyncio
+async def test_subscribe_rejects_non_callable_handler_before_consumption(missing):
+    class CompleteHandler(EventHandler):
+        async def on_message(self, context, message):
+            return None
+
+        async def on_excise(self, context, message):
+            return None
+
+        async def on_timer(self, context, timer):
+            return None
+
+    client = await ProsodyClient.create(
+        mock=True,
+        bootstrap_servers="localhost:9094",
+        group_id=f"handler-validation-{uuid.uuid4()}",
+        subscribed_topics="events",
+    )
+    handler = CompleteHandler()
+    setattr(handler, missing, None)
+    try:
+        with pytest.raises(TypeError, match=f"handler.{missing} must be callable"):
+            await client.subscribe(handler)
+        assert await client.consumer_state() == "configured"
+    finally:
+        await client.shutdown()
+
 # Use pytest's built-in logging; logs will appear at DEBUG level
 logger = logging.getLogger(__name__)
 

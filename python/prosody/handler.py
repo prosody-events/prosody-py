@@ -54,9 +54,8 @@ class EventHandler(ABC, Generic[P]):
     """
     Abstract base class for event handlers, generic over the message payload.
 
-    Subclasses must implement the `on_message` method to define custom message
-    processing logic. Subclasses may optionally implement the `on_timer` method
-    to handle timer events. An unsubscripted handler defaults its payload to
+    Subclasses must implement `on_message`, `on_excise`, and `on_timer`.
+    An unsubscripted handler defaults its payload to
     ``JSONValue``; use ``EventHandler[Payload]`` with a structural JSON type such
     as a ``TypedDict`` to give ``on_message`` a narrower static contract. This
     annotation does not perform runtime validation or model construction.
@@ -99,7 +98,7 @@ class EventHandler(ABC, Generic[P]):
             timer (Timer): The timer event to be processed.
 
         Returns:
-            JSONValue: The handler result.
+            None: No result.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
