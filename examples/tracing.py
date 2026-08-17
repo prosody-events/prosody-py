@@ -6,7 +6,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from prosody import Context, EventHandler, Message, ProsodyClient, Timer
+from prosody import Context, EventHandler, ExciseMessage, Message, ProsodyClient, Timer
 
 # To run this example:
 # 1. Install dependencies:
@@ -51,7 +51,7 @@ tracer = trace.get_tracer(__name__)
 
 
 class ExampleHandler(EventHandler):
-    async def on_excise(self, context: Context, message: Message) -> None:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
         print(f"Excise {message.key}")
 
     async def on_message(self, context: Context, message: Message) -> None:

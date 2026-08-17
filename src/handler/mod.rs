@@ -38,7 +38,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 mod execution;
 
 pub use execution::WrappedPythonError;
-use execution::{cancel_task, execute, execute_timer, log_exception};
+use execution::{PythonRecord, cancel_task, execute, execute_timer, log_exception};
 
 use crate::context::Context;
 
@@ -47,6 +47,7 @@ const HANDLER_METHODS: [&str; 3] = ["on_message", "on_excise", "on_timer"];
 /// Python objects and dependencies needed for message execution
 struct MessageExecutionContext<'a> {
     message_class: &'a Py<PyAny>,
+    record_class: &'a Py<PyAny>,
     event_class: &'a Py<PyAny>,
     method: &'a Py<PyAny>,
     locals: &'a TaskLocals,
@@ -76,6 +77,9 @@ const HANDLER_WRAPPER_CLASS_NAME: &str = "ProsodyHandler";
 /// Python class name for Kafka messages
 const MESSAGE_CLASS_NAME: &str = "Message";
 
+/// Python class name for excise records.
+const EXCISE_CLASS_NAME: &str = "ExciseMessage";
+
 /// Python class name for timer events
 const TIMER_CLASS_NAME: &str = "Timer";
 
@@ -94,6 +98,7 @@ pub struct PythonHandlerImpl {
     pub excise_method: Py<PyAny>,
     pub timer_method: Py<PyAny>,
     pub message_class: Py<PyAny>,
+    pub excise_class: Py<PyAny>,
     pub timer_class: Py<PyAny>,
     pub event_class: Py<PyAny>,
     pub event_set_method: Py<PyAny>,
@@ -124,6 +129,7 @@ impl PythonHandler {
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
         let tracing_handler_class = prosody_module.getattr(HANDLER_WRAPPER_CLASS_NAME)?;
         let message_class = prosody_module.getattr(MESSAGE_CLASS_NAME)?;
+        let excise_class = prosody_module.getattr(EXCISE_CLASS_NAME)?;
         let timer_class = prosody_module.getattr(TIMER_CLASS_NAME)?;
 
         // Verify handler inherits from EventHandler
@@ -171,6 +177,7 @@ impl PythonHandler {
             excise_method: excise_method.unbind(),
             timer_method: timer_method.unbind(),
             message_class: message_class.unbind(),
+            excise_class: excise_class.unbind(),
             timer_class: timer_class.unbind(),
             event_class: event_class.unbind(),
             event_set_method: event_set_method.unbind(),
@@ -211,15 +218,18 @@ impl PythonHandler {
         &self.0.timer_class
     }
 
-    async fn handle_record<C>(
+    async fn handle_record<C, P>(
         &self,
         context: C,
-        message: ConsumerMessage<Value>,
+        message: ConsumerMessage<P>,
+        record_class: &Py<PyAny>,
         method: &Py<PyAny>,
         kind: &str,
     ) -> Result<Value, WrappedPythonError>
     where
         C: EventContext<Payload = Value>,
+        ConsumerMessage<P>: PythonRecord,
+        P: Send + Sync + 'static,
     {
         let mut carrier = HashMap::with_capacity(2);
         self.0
@@ -228,6 +238,7 @@ impl PythonHandler {
         let cancel_future = context.on_cancel();
         let execution_context = MessageExecutionContext {
             message_class: &self.0.message_class,
+            record_class,
             event_class: &self.0.event_class,
             method,
             locals: &self.0.locals,
@@ -289,23 +300,35 @@ impl FallibleHandler for PythonHandler {
         C: EventContext<Payload = Self::Payload>,
     {
         let _ = demand_type;
-        self.handle_record(context, message, &self.0.handle_method, "message")
-            .await
+        self.handle_record(
+            context,
+            message,
+            &self.0.message_class,
+            &self.0.handle_method,
+            "message",
+        )
+        .await
     }
 
     #[instrument(level = "debug", skip(self, context, demand_type), err)]
     async fn on_excise<C>(
         &self,
         context: C,
-        message: ConsumerMessage<Self::Payload>,
+        message: ConsumerMessage<()>,
         demand_type: DemandType,
     ) -> Result<Self::Output, Self::Error>
     where
         C: EventContext<Payload = Self::Payload>,
     {
         let _ = demand_type;
-        self.handle_record(context, message, &self.0.excise_method, "excise")
-            .await
+        self.handle_record(
+            context,
+            message,
+            &self.0.excise_class,
+            &self.0.excise_method,
+            "excise",
+        )
+        .await
     }
 
     /// Processes a timer event by invoking the Python handler.

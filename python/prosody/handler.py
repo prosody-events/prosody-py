@@ -10,7 +10,7 @@ from opentelemetry import trace
 from opentelemetry.propagate import extract
 
 from prosody.context import Context
-from prosody.message import JSONValue, Message
+from prosody.message import ExciseMessage, JSONValue, Message
 from prosody.timer import Timer
 
 _log = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ class EventHandler(ABC, Generic[P]):
         pass
 
     @abstractmethod
-    async def on_excise(self, context: Context, message: Message[P]) -> JSONValue:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> JSONValue:
         """Handle an excise record."""
         pass
 

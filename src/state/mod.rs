@@ -238,10 +238,7 @@ fn build_message(
     env: &StateEnv,
     message: &ConsumerMessage<Value>,
 ) -> PyResult<Py<PyAny>> {
-    let payload = match message.record().message() {
-        Some(payload) => pythonize(py, payload)?,
-        None => py.None().into_bound(py),
-    };
+    let payload = pythonize(py, message.payload())?;
     let core = Py::new(py, MessageCore::new(message.clone()))?;
     let object = env.0.message_class.bind(py).call1((
         message.topic().as_ref(),

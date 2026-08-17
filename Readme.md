@@ -58,7 +58,7 @@ client = await ProsodyClient.create(
 
 # Define a custom message handler
 class MyHandler(EventHandler):
-    async def on_excise(self, context: Context, message: Message) -> JSONValue:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> JSONValue:
         print(f"Excise key: {message.key}")
         return {"excised": message.key}
 
@@ -485,7 +485,7 @@ class MyHandler(EventHandler):
         print(f"Key: {timer.key}")
         print(f"Scheduled time: {timer.time}")
 
-    async def on_excise(self, context: Context, message: Message):
+    async def on_excise(self, context: Context, message: ExciseMessage):
         return None
 ```
 
@@ -588,7 +588,7 @@ class CountHandler(EventHandler):
         count = context.state(COUNTER)
         await count.set((await count.get() or 0) + 1)
 
-    async def on_excise(self, context: Context, message: Message):
+    async def on_excise(self, context: Context, message: ExciseMessage):
         return None
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
@@ -639,7 +639,7 @@ class BatchHandler(EventHandler[Activity]):
         await pending.clear()
         await context.state(WINDOW).clear()
 
-    async def on_excise(self, context: Context, message: Message[Activity]):
+    async def on_excise(self, context: Context, message: ExciseMessage):
         return None
 ```
 
@@ -741,7 +741,7 @@ class MyHandler(EventHandler):
             # Process the received message
             print(f"Received message: {message}")
 
-    async def on_excise(self, context: Context, message: Message):
+    async def on_excise(self, context: Context, message: ExciseMessage):
         return None
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
@@ -880,7 +880,7 @@ class MyHandler(EventHandler):
         # All other exceptions will be treated as transient (default behavior)
         pass
 
-    async def on_excise(self, context: Context, message: Message):
+    async def on_excise(self, context: Context, message: ExciseMessage):
         return None
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
@@ -1043,7 +1043,7 @@ P = TypeVar("P", default=JSONValue)
 
 class EventHandler(ABC, Generic[P]):
     @abstractmethod
-    async def on_excise(self, context: Context, message: Message[P]) -> JSONValue:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> JSONValue:
         pass
 
     @abstractmethod
@@ -1075,7 +1075,7 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `offset: int`: The message offset within the partition.
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
-- `payload: P | None`: The typed payload, or `None` for an excise record.
+- `payload: P`: The typed message payload. `ExciseMessage` has no payload attribute.
 
 `Message[P]` defaults to `Message[JSONValue]`. Supplying a `TypedDict` payload
 specialization gives field-level checking without runtime model construction or

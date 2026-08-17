@@ -12,6 +12,7 @@ from prosody.prosody import AdminClient
 
 from prosody import (
     Context,
+    ExciseMessage,
     EventHandler,
     Failure,
     HandlerError,
@@ -32,6 +33,12 @@ def test_event_handler_is_runtime_subscriptable():
 
 def test_outcome_alias_is_available_at_runtime():
     assert Outcome[dict] is not None
+
+
+def test_excise_message_has_no_payload():
+    message = ExciseMessage("events", 0, 1, datetime.now(timezone.utc), "key")
+
+    assert not hasattr(message, "payload")
 
 
 @pytest.mark.asyncio
@@ -110,7 +117,7 @@ tracer = trace.get_tracer("prosody-test")
 
 
 class TestHandler(EventHandler):
-    async def on_excise(self, context: Context, message: Message) -> None:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
         self.messages.append(message)
         self.message_received.set()
 
@@ -118,7 +125,7 @@ class TestHandler(EventHandler):
 
     def __init__(self):
         logger.debug("TestHandler.__init__() called")
-        self.messages: List[Message] = []
+        self.messages: List[Message | ExciseMessage] = []
         self.message_count = 0
         self.message_received = tsasync.Event()
         logger.debug("TestHandler.__init__() completed")
@@ -140,7 +147,7 @@ class RequestHandler(EventHandler):
     async def on_message(self, context: Context, message: Message):
         return {"key": message.key, "accepted": True}
 
-    async def on_excise(self, context: Context, message: Message):
+    async def on_excise(self, context: Context, message: ExciseMessage):
         return {"key": message.key, "accepted": True}
 
     async def on_timer(self, context: Context, timer: Timer):
@@ -151,7 +158,7 @@ class RejectingRequestHandler(EventHandler):
     async def on_message(self, context: Context, message: Message):
         raise PermanentError("request rejected")
 
-    async def on_excise(self, context: Context, message: Message):
+    async def on_excise(self, context: Context, message: ExciseMessage):
         raise PermanentError("request rejected")
 
     async def on_timer(self, context: Context, timer: Timer):
@@ -346,7 +353,7 @@ async def test_send_and_receive_excise(client, random_topic_and_group):
     await asyncio.wait_for(handler.message_received.wait(), timeout=DEFAULT_TIMEOUT)
 
     assert handler.messages[0].key == "obsolete-key"
-    assert handler.messages[0].payload is None
+    assert isinstance(handler.messages[0], ExciseMessage)
 
 
 async def test_request_returns_the_local_handler_response(random_topic_and_group, client_factory):
@@ -586,7 +593,7 @@ async def test_same_key_message_order(client, random_topic_and_group):
 
 
 class TransientErrorHandler(EventHandler):
-    async def on_excise(self, context: Context, message: Message) -> None:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
         return None
 
     def __init__(self):
@@ -636,7 +643,7 @@ async def test_transient_error_decorator(client, random_topic_and_group):
 
 
 class PermanentErrorHandler(EventHandler):
-    async def on_excise(self, context: Context, message: Message) -> None:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
         return None
 
     def __init__(self):
@@ -730,7 +737,7 @@ async def test_best_effort_mode_does_not_retry(random_topic_and_group, client_fa
 class CallbackTimerHandler(EventHandler):
     """Handler that executes a custom callback function for timer testing"""
 
-    async def on_excise(self, context: Context, message: Message) -> None:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
         return None
 
     __test__ = False

@@ -8,6 +8,7 @@ from typing_extensions import TypedDict, assert_type
 from prosody import (
     Context,
     EventHandler,
+    ExciseMessage,
     Failure,
     MapDefinition,
     Message,
@@ -42,8 +43,9 @@ assert_type(parse_amount("1"), int)
 class DefaultHandler(EventHandler):
     """An unsubscripted handler retains the JSONValue default."""
 
-    async def on_excise(self, context: Context, message: Message) -> None:
-        assert message.payload is None
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
+        assert_type(message.key, str)
+        message.payload  # type: ignore[attr-defined]
 
     async def on_message(self, context: Context, message: Message) -> None:
         assert_type(message, Message[JSONValue])
@@ -53,8 +55,8 @@ class DefaultHandler(EventHandler):
 
 
 class Handler(EventHandler[Event]):
-    async def on_excise(self, context: Context, message: Message[Event]) -> None:
-        assert message.payload is None
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
+        assert_type(message, ExciseMessage)
 
     async def on_message(self, context: Context, message: Message[Event]) -> None:
         totals = context.state(TOTALS)
@@ -68,7 +70,7 @@ class Handler(EventHandler[Event]):
         await events.append(message)
         event = await events.peek()
         assert_type(event, Optional[Message[Event]])
-        if event is not None and event.payload is not None:
+        if event is not None:
             assert_type(event.payload["amount"], int)
 
     async def on_timer(self, context: Context, timer: Timer) -> None:

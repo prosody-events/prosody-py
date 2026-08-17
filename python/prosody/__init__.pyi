@@ -11,7 +11,7 @@ from prosody.errors import (
     transient as transient,
 )
 from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
-from prosody.message import Message as Message
+from prosody.message import ExciseMessage as ExciseMessage, Message as Message
 from typing import TypeVar, overload
 
 from prosody.prosody import (

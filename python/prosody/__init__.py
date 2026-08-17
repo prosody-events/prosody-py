@@ -30,7 +30,7 @@ from prosody.errors import (
     NullValueError,
 )
 from prosody.handler import EventHandler, ProsodyHandler
-from prosody.message import Message
+from prosody.message import ExciseMessage, Message
 from prosody.state import (
     Direction,
     value,

@@ -3,14 +3,14 @@ from typing import Any, Generic
 from typing_extensions import TypeVar
 
 from prosody.context import Context
-from prosody.message import JSONValue, Message
+from prosody.message import ExciseMessage, JSONValue, Message
 from prosody.timer import Timer
 
 P = TypeVar("P", default=JSONValue)
 
 class EventHandler(Generic[P]):
     async def on_message(self, context: Context, message: Message[P]) -> JSONValue: ...
-    async def on_excise(self, context: Context, message: Message[P]) -> JSONValue: ...
+    async def on_excise(self, context: Context, message: ExciseMessage) -> JSONValue: ...
     async def on_timer(self, context: Context, timer: Timer) -> None: ...
 
 class ProsodyHandler:
@@ -20,7 +20,7 @@ class ProsodyHandler:
     async def on_message(
         self,
         context: Context,
-        message: Message[Any],
+        message: ExciseMessage,
         opentelemetry_context: Any,
         shutdown_event: Any,
     ) -> JSONValue: ...

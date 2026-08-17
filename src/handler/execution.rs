@@ -5,6 +5,44 @@ use super::{
     into_future_with_locals, pythonize,
 };
 
+pub(super) trait PythonRecord {
+    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>>;
+}
+
+impl PythonRecord for ConsumerMessage<serde_json::Value> {
+    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>> {
+        let payload = pythonize(py, self.payload())?;
+        let core = Py::new(py, MessageCore::new(self.clone()))?;
+        class.call1(
+            py,
+            (
+                self.topic().as_ref(),
+                self.partition(),
+                self.offset(),
+                *self.timestamp(),
+                self.key().as_ref(),
+                payload,
+                core,
+            ),
+        )
+    }
+}
+
+impl PythonRecord for ConsumerMessage<()> {
+    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>> {
+        class.call1(
+            py,
+            (
+                self.topic().as_ref(),
+                self.partition(),
+                self.offset(),
+                *self.timestamp(),
+                self.key().as_ref(),
+            ),
+        )
+    }
+}
+
 /// Logs Python exceptions with full traceback information.
 ///
 /// # Arguments
@@ -75,9 +113,9 @@ pub(super) fn cancel_task(event_set_method: &Py<PyAny>, shutdown_event: Py<PyAny
 /// # Errors
 ///
 /// Returns `PyErr` on Python object creation/method call failures
-pub(super) fn execute<C>(
+pub(super) fn execute<C, P>(
     context: C,
-    message: ConsumerMessage<serde_json::Value>,
+    message: ConsumerMessage<P>,
     serialized_context: HashMap<String, String>,
     execution_context: MessageExecutionContext<'_>,
 ) -> PyResult<(
@@ -86,6 +124,8 @@ pub(super) fn execute<C>(
 )>
 where
     C: EventContext<Payload = serde_json::Value>,
+    ConsumerMessage<P>: PythonRecord,
+    P: Send + Sync + 'static,
 {
     Python::attach(move |py| {
         // Create Python message objects using cached OpenTelemetry functions
@@ -97,24 +137,7 @@ where
             message_class: execution_context.message_class.clone_ref(py),
             state_handles: Mutex::new(HashMap::new()),
         };
-        let payload = match message.record().message() {
-            Some(payload) => pythonize(py, payload)?,
-            None => py.None().into_bound(py),
-        };
-        let core = Py::new(py, MessageCore::new(message.clone()))?;
-
-        let message = execution_context.message_class.call1(
-            py,
-            (
-                message.topic().as_ref(),
-                message.partition(),
-                message.offset(),
-                *message.timestamp(),
-                message.key().as_ref(),
-                payload,
-                core,
-            ),
-        )?;
+        let message = message.into_python(py, execution_context.record_class)?;
 
         // Convert serialized_context to a Python dict
         let otel_context = serialized_context.into_py_dict(py)?;

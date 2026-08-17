@@ -16,6 +16,7 @@ from typing_extensions import TypedDict, assert_type
 from prosody import (
     Context,
     EventHandler,
+    ExciseMessage,
     MapDefinition,
     Message,
     MessageDequeDefinition,
@@ -59,7 +60,7 @@ def order_payload(message: Message[OrderEvent]) -> OrderEvent:
 
 
 class OrderHandler(EventHandler[OrderEvent]):
-    async def on_excise(self, context: Context, message: Message[OrderEvent]) -> None:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
         print(f"Excise {message.key}")
 
     async def on_message(

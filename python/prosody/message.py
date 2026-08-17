@@ -51,8 +51,8 @@ class Message(Generic[P]):
     key: str
     """The message key."""
 
-    payload: Optional[P]
-    """The message payload, or ``None`` for an excise record."""
+    payload: P
+    """The message payload."""
 
     _core: Optional[Any] = field(default=None, compare=False, repr=False)
     """Internal handle to the message prosody delivered.
@@ -62,3 +62,14 @@ class Message(Generic[P]):
     Not part of the public API: it is excluded from equality and ``repr``, so a
     message built in Python still compares equal to the delivered one it mirrors.
     """
+
+
+@dataclass(frozen=True)
+class ExciseMessage:
+    """A Kafka excise record with no payload."""
+
+    topic: str
+    partition: int
+    offset: int
+    timestamp: datetime
+    key: str
