@@ -61,6 +61,7 @@ python-source = "python"
 files = [
     "examples/keyed_state_typed.py",
     "examples/keyed_state_windowing.py",
+    "tests/typecheck/consumer.py",
     "tests/typecheck/negative.py",
 ]
 mypy_path = "python"

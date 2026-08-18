@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, List, Optional, Union, TypeAlias, Dict, Generic
+from typing import List, Optional, Union, TypeAlias, Dict, Generic
 
 from typing_extensions import TypeVar
 
@@ -54,7 +54,7 @@ class Message(Generic[P]):
     payload: P
     """The message payload."""
 
-    _core: Optional[Any] = field(default=None, compare=False, repr=False)
+    _core: Optional[object] = field(default=None, compare=False, repr=False)
     """Internal handle to the message prosody delivered.
 
     Set on every message prosody hands to a handler, and only readable by the

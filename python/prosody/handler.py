@@ -2,7 +2,8 @@ import asyncio
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Coroutine, Generic
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Generic, Protocol
 
 from typing_extensions import TypeVar
 
@@ -50,6 +51,11 @@ def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -
 
 
 P = TypeVar("P", default=JSONValue)
+R = TypeVar("R")
+
+
+class _ShutdownEvent(Protocol):
+    async def wait(self) -> None: ...
 
 
 class EventHandler(ABC, Generic[P]):
@@ -113,20 +119,20 @@ class EventHandler(ABC, Generic[P]):
         pass
 
 
-class ProsodyHandler:
-    def __init__(self, handler: EventHandler[Any]):
+class ProsodyHandler(Generic[P]):
+    def __init__(self, handler: EventHandler[P]):
         self.handler = handler
         self.tracer = trace.get_tracer(__name__)
 
     async def _dispatch(
         self,
-        call: Callable[[], Coroutine[Any, Any, Any]],
+        call: Callable[[], Awaitable[R]],
         span_name: str,
         event_type: str,
-        details: dict[str, Any],
-        opentelemetry_context,
-        shutdown_event,
-    ):
+        details: dict[str, object],
+        opentelemetry_context: Mapping[str, str],
+        shutdown_event: _ShutdownEvent,
+    ) -> R:
         otel_context = extract(carrier=opentelemetry_context)
         with self.tracer.start_as_current_span(span_name, context=otel_context):
             handler_task = asyncio.create_task(call())
@@ -150,7 +156,13 @@ class ProsodyHandler:
                     if not task.done():
                         task.cancel("task is shutting down")
 
-    async def on_message(self, context, message, opentelemetry_context, shutdown_event):
+    async def on_message(
+        self,
+        context: Context,
+        message: Message[P],
+        opentelemetry_context: Mapping[str, str],
+        shutdown_event: _ShutdownEvent,
+    ) -> JSONValue:
         return await self._dispatch(
             lambda: self.handler.on_message(context, message),
             "on_message",
@@ -165,7 +177,13 @@ class ProsodyHandler:
             shutdown_event,
         )
 
-    async def on_excise(self, context, message, opentelemetry_context, shutdown_event):
+    async def on_excise(
+        self,
+        context: Context,
+        message: ExciseMessage,
+        opentelemetry_context: Mapping[str, str],
+        shutdown_event: _ShutdownEvent,
+    ) -> JSONValue:
         return await self._dispatch(
             lambda: self.handler.on_excise(context, message),
             "on_excise",
@@ -180,7 +198,13 @@ class ProsodyHandler:
             shutdown_event,
         )
 
-    async def on_timer(self, context, timer, opentelemetry_context, shutdown_event):
+    async def on_timer(
+        self,
+        context: Context,
+        timer: Timer,
+        opentelemetry_context: Mapping[str, str],
+        shutdown_event: _ShutdownEvent,
+    ) -> None:
         await self._dispatch(
             lambda: self.handler.on_timer(context, timer),
             "on_timer",
