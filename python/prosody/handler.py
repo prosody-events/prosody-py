@@ -56,7 +56,7 @@ Result = TypeVar("Result")
 
 
 class _ShutdownEvent(Protocol):
-    async def wait(self) -> None: ...
+    wait: Callable[[], Awaitable[None]]
 
 
 class EventHandler(ABC, Generic[P, Response]):
