@@ -866,6 +866,8 @@ if __name__ == '__main__':
 Prosody classifies errors as transient (temporary, can be retried) or permanent (won't be resolved by retrying). By
 default, all errors are considered transient.
 
+The error classes and decorators apply to `on_message`, `on_excise`, and `on_timer`.
+
 Use the `@permanent` decorator to classify exceptions that should not be retried:
 
 ```python
