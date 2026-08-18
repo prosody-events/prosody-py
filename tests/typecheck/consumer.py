@@ -29,6 +29,10 @@ class Event(TypedDict):
     amount: int
 
 
+class Response(TypedDict):
+    accepted: bool
+
+
 TOTALS: MapDefinition[int] = map("totals")
 EVENTS: MessageDequeDefinition[Event] = message_deque("events", capacity=10)
 
@@ -55,11 +59,12 @@ class DefaultHandler(EventHandler):
         pass
 
 
-class Handler(EventHandler[Event]):
-    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
+class Handler(EventHandler[Event, Response]):
+    async def on_excise(self, context: Context, message: ExciseMessage) -> Response:
         assert_type(message, ExciseMessage)
+        return {"accepted": True}
 
-    async def on_message(self, context: Context, message: Message[Event]) -> None:
+    async def on_message(self, context: Context, message: Message[Event]) -> Response:
         totals = context.state(TOTALS)
         assert_type(await totals.get(message.key), Optional[int])
         assert_type(await totals.get(message.key, 0), int)
@@ -73,13 +78,15 @@ class Handler(EventHandler[Event]):
         assert_type(event, Optional[Message[Event]])
         if event is not None:
             assert_type(event.payload["amount"], int)
+        return {"accepted": True}
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
         assert_type(timer.key, str)
 
 
 wrapped_handler = ProsodyHandler(Handler())
-assert_type(wrapped_handler.handler, EventHandler[Event])
+assert_type(wrapped_handler, ProsodyHandler[Event, Response])
+assert_type(wrapped_handler.handler, EventHandler[Event, Response])
 
 
 async def subscribe_specialized(client: ProsodyClient) -> None:

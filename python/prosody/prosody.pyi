@@ -21,6 +21,7 @@ from prosody.state import (
 )
 
 P = TypeVar("P")
+R = TypeVar("R")
 T = TypeVar("T")
 V = TypeVar("V")
 
@@ -319,7 +320,7 @@ class _ProsodyClientApi:
         self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
     ) -> _NativePublishedDeque[JSONValue]: ...
 
-    async def subscribe(self, handler: EventHandler[P]) -> None:
+    async def subscribe(self, handler: EventHandler[P, R]) -> None:
         """
         Subscribe to messages using the provided handler.
 

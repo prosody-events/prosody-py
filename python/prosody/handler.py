@@ -51,26 +51,26 @@ def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -
 
 
 P = TypeVar("P", default=JSONValue)
-R = TypeVar("R")
+Response = TypeVar("Response", default=JSONValue)
+Result = TypeVar("Result")
 
 
 class _ShutdownEvent(Protocol):
     async def wait(self) -> None: ...
 
 
-class EventHandler(ABC, Generic[P]):
+class EventHandler(ABC, Generic[P, Response]):
     """
-    Abstract base class for event handlers, generic over the message payload.
+    Abstract base class for event handlers, generic over payload and response.
 
     Subclasses must implement `on_message`, `on_excise`, and `on_timer`.
-    An unsubscripted handler defaults its payload to
-    ``JSONValue``; use ``EventHandler[Payload]`` with a structural JSON type such
-    as a ``TypedDict`` to give ``on_message`` a narrower static contract. This
-    annotation does not perform runtime validation or model construction.
+    An unsubscripted handler uses ``JSONValue`` for both types.
+    Use structural JSON types such as ``TypedDict`` for precise
+    payload and response contracts. These annotations do not validate values.
     """
 
     @abstractmethod
-    async def on_message(self, context: Context, message: Message[P]) -> JSONValue:
+    async def on_message(self, context: Context, message: Message[P]) -> Response:
         """
         Handle a Kafka message.
 
@@ -79,7 +79,7 @@ class EventHandler(ABC, Generic[P]):
             message (Message[P]): The Kafka message to be processed.
 
         Returns:
-            JSONValue: The response for requests.
+            Response: The response for requests.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
@@ -92,7 +92,7 @@ class EventHandler(ABC, Generic[P]):
         pass
 
     @abstractmethod
-    async def on_excise(self, context: Context, message: ExciseMessage) -> JSONValue:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> Response:
         """Handle an excise record."""
         pass
 
@@ -119,20 +119,20 @@ class EventHandler(ABC, Generic[P]):
         pass
 
 
-class ProsodyHandler(Generic[P]):
-    def __init__(self, handler: EventHandler[P]):
+class ProsodyHandler(Generic[P, Response]):
+    def __init__(self, handler: EventHandler[P, Response]):
         self.handler = handler
         self.tracer = trace.get_tracer(__name__)
 
     async def _dispatch(
         self,
-        call: Callable[[], Awaitable[R]],
+        call: Callable[[], Awaitable[Result]],
         span_name: str,
         event_type: str,
         details: dict[str, object],
         opentelemetry_context: Mapping[str, str],
         shutdown_event: _ShutdownEvent,
-    ) -> R:
+    ) -> Result:
         otel_context = extract(carrier=opentelemetry_context)
         with self.tracer.start_as_current_span(span_name, context=otel_context):
             handler_task = asyncio.create_task(call())
@@ -162,7 +162,7 @@ class ProsodyHandler(Generic[P]):
         message: Message[P],
         opentelemetry_context: Mapping[str, str],
         shutdown_event: _ShutdownEvent,
-    ) -> JSONValue:
+    ) -> Response:
         return await self._dispatch(
             lambda: self.handler.on_message(context, message),
             "on_message",
@@ -183,7 +183,7 @@ class ProsodyHandler(Generic[P]):
         message: ExciseMessage,
         opentelemetry_context: Mapping[str, str],
         shutdown_event: _ShutdownEvent,
-    ) -> JSONValue:
+    ) -> Response:
         return await self._dispatch(
             lambda: self.handler.on_excise(context, message),
             "on_excise",

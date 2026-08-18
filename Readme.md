@@ -28,9 +28,9 @@ The wheel includes a `py.typed` marker and type information for the public API,
 so applications can type-check normal `prosody` imports without installing a
 separate stub package. For example, run `mypy your_application/` after installing
 Prosody and mypy. Keyed-state definitions carry their declared value type through
-`Context.state(...)`. `EventHandler[Payload]` carries a declared structural JSON
-payload type through `on_message`; an unsubscripted handler defaults to
-`JSONValue`. See [Keyed State](#keyed-state-cassandra) for typed examples.
+`Context.state(...)`. `EventHandler[Payload, Response]` preserves both declared types.
+An unsubscripted handler uses `JSONValue` for both types.
+See [Keyed State](#keyed-state-cassandra) for typed examples.
 
 ## Quick Start
 
@@ -1022,7 +1022,7 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
 - `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
-- `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
+- `subscribe(handler: EventHandler[P, R]) -> None`: Subscribe while preserving the handler's payload and response types.
 - `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
 - `shutdown() -> None`: Stop all client services. Concurrent and repeated calls await the same operation.
 
@@ -1040,14 +1040,15 @@ typing. Parameterizing the handler gives `on_message` the same payload type:
 
 ```python
 P = TypeVar("P", default=JSONValue)
+R = TypeVar("R", default=JSONValue)
 
-class EventHandler(ABC, Generic[P]):
+class EventHandler(ABC, Generic[P, R]):
     @abstractmethod
-    async def on_excise(self, context: Context, message: ExciseMessage) -> JSONValue:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> R:
         pass
 
     @abstractmethod
-    async def on_message(self, context: Context, message: Message[P]) -> JSONValue:
+    async def on_message(self, context: Context, message: Message[P]) -> R:
         # Implement your message handling logic here
         pass
     
@@ -1057,7 +1058,7 @@ class EventHandler(ABC, Generic[P]):
         pass
 ```
 
-For example, `EventHandler[OrderEvent]` receives `Message[OrderEvent]` when
+For example, `EventHandler[OrderEvent, Response]` receives `Message[OrderEvent]` when
 `OrderEvent` is a `TypedDict`. This is a static contract only: Prosody still
 delivers plain JSON and does not construct or validate dataclass or Pydantic
 models. Validate the payload explicitly before using such a model.
