@@ -382,6 +382,35 @@ async def test_request_returns_the_local_handler_response(random_topic_and_group
     assert results["inventory"] == Success({"key": "order-1", "accepted": True})
 
 
+async def test_excise_request_returns_the_local_handler_response(
+    random_topic_and_group, client_factory
+):
+    topic, group = random_topic_and_group
+    client = await client_factory(
+        bootstrap_servers="localhost:9094",
+        source_system="request-excise-test",
+        group_id=group,
+        subscribed_topics=topic,
+        probe_port=None,
+        cassandra_nodes="localhost:9042",
+        subsystem="inventory",
+    )
+    await asyncio.wait_for(client.subscribe(RequestHandler()), timeout=DEFAULT_TIMEOUT)
+    results = await asyncio.wait_for(
+        client.request_excise(
+            topic,
+            "order-1",
+            subsystems=["inventory"],
+            timeout=timedelta(seconds=DEFAULT_TIMEOUT),
+        ),
+        timeout=DEFAULT_TIMEOUT,
+    )
+
+    assert results == {
+        "inventory": Success({"key": "order-1", "accepted": True})
+    }
+
+
 async def test_request_returns_handler_failure(random_topic_and_group, client_factory):
     topic, group = random_topic_and_group
     client = await client_factory(
