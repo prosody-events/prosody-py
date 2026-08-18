@@ -16,9 +16,11 @@ from typing_extensions import TypedDict, assert_type
 from prosody import (
     Context,
     EventHandler,
+    ExciseMessage,
     MapDefinition,
     Message,
     MessageDequeDefinition,
+    PermanentError,
     Timer,
     ValueDefinition,
     map,
@@ -45,12 +47,26 @@ TOTALS: MapDefinition[int] = map("totals")  # keys are always str
 BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog", capacity=100)
 
 
+def order_payload(message: Message[OrderEvent]) -> OrderEvent:
+    """Return an order payload or reject a value outside the declared schema."""
+    payload = message.payload
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(payload.get("order_id"), str)
+        or type(payload.get("total")) is not int
+    ):
+        raise PermanentError("order event must contain a string order_id and integer total")
+    return payload
+
+
 class OrderHandler(EventHandler[OrderEvent]):
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
+        print(f"Excise {message.key}")
+
     async def on_message(
         self, context: Context, message: Message[OrderEvent]
     ) -> None:
-        payload = message.payload
-
+        payload = order_payload(message)
         cart = context.state(CART)  # ValueState[Cart]
         current = await cart.get() or Cart(items=[])
         await cart.set({"items": [*current["items"], payload["order_id"]]})
@@ -78,11 +94,14 @@ class OrderHandler(EventHandler[OrderEvent]):
         await backlog.append(message)
         oldest = await backlog.get(0)  # Optional[Message[OrderEvent]]
         if oldest is not None:
-            _order_id: str = oldest.payload["order_id"]
+            _order_id: str = order_payload(oldest)["order_id"]
         newest = await backlog.peek()  # Optional[Message[OrderEvent]]
         front = await backlog.peekleft()  # Optional[Message[OrderEvent]]
         if newest is not None and front is not None:
-            _actions: str = newest.payload["order_id"] + front.payload["order_id"]
+            _actions: str = (
+                order_payload(newest)["order_id"]
+                + order_payload(front)["order_id"]
+            )
 
         await cart.commit()
 
@@ -90,7 +109,7 @@ class OrderHandler(EventHandler[OrderEvent]):
         _key: str = timer.key
 
 
-async def unparameterized(m: Message) -> None:
+async def unparameterized(m: Message[JSONValue]) -> None:
     """A bare ``Message`` (defaulting to ``Message[JSONValue]``) type-checks."""
     _topic: str = m.topic
     assert_type(m.payload, JSONValue)

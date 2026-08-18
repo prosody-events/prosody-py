@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, List, Optional, Union, TypeAlias, Dict, Generic
+from typing import List, Optional, Union, TypeAlias, Dict, Generic
 
 from typing_extensions import TypeVar
 
@@ -52,9 +52,9 @@ class Message(Generic[P]):
     """The message key."""
 
     payload: P
-    """The message payload (JSON-serializable by default)."""
+    """The message payload."""
 
-    _core: Optional[Any] = field(default=None, compare=False, repr=False)
+    _core: Optional[object] = field(default=None, compare=False, repr=False)
     """Internal handle to the message prosody delivered.
 
     Set on every message prosody hands to a handler, and only readable by the
@@ -62,3 +62,14 @@ class Message(Generic[P]):
     Not part of the public API: it is excluded from equality and ``repr``, so a
     message built in Python still compares equal to the delivered one it mirrors.
     """
+
+
+@dataclass(frozen=True)
+class ExciseMessage:
+    """A Kafka excise record with no payload."""
+
+    topic: str
+    partition: int
+    offset: int
+    timestamp: datetime
+    key: str

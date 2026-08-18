@@ -6,7 +6,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from prosody import ProsodyClient, EventHandler, Message, Context
+from prosody import Context, EventHandler, ExciseMessage, Message, ProsodyClient, Timer
 
 # To run this example:
 # 1. Install dependencies:
@@ -51,6 +51,9 @@ tracer = trace.get_tracer(__name__)
 
 
 class ExampleHandler(EventHandler):
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
+        print(f"Excise {message.key}")
+
     async def on_message(self, context: Context, message: Message) -> None:
         # Start a new span for each received message
         with tracer.start_as_current_span("receive-message") as span:
@@ -59,6 +62,9 @@ class ExampleHandler(EventHandler):
                 "content": message.payload["content"],
                 "timestamp": datetime.now().isoformat()
             })
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pass
 
 
 async def send_messages(client: ProsodyClient):
@@ -94,7 +100,7 @@ async def main():
 
     # Create and subscribe the message handler
     handler = ExampleHandler()
-    client.subscribe(handler)
+    await client.subscribe(handler)
 
     try:
         # Start the message sending task

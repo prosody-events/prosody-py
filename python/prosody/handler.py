@@ -2,7 +2,8 @@ import asyncio
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Generic
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Generic, Protocol
 
 from typing_extensions import TypeVar
 
@@ -10,7 +11,7 @@ from opentelemetry import trace
 from opentelemetry.propagate import extract
 
 from prosody.context import Context
-from prosody.message import JSONValue, Message
+from prosody.message import ExciseMessage, JSONValue, Message
 from prosody.timer import Timer
 
 _log = logging.getLogger(__name__)
@@ -50,20 +51,26 @@ def _capture_handler_exception(event_type: str, context: dict, exc: Exception) -
 
 
 P = TypeVar("P", default=JSONValue)
-class EventHandler(ABC, Generic[P]):
-    """
-    Abstract base class for event handlers, generic over the message payload.
+Response = TypeVar("Response", default=JSONValue)
+Result = TypeVar("Result")
 
-    Subclasses must implement the `on_message` method to define custom message
-    processing logic. Subclasses may optionally implement the `on_timer` method
-    to handle timer events. An unsubscripted handler defaults its payload to
-    ``JSONValue``; use ``EventHandler[Payload]`` with a structural JSON type such
-    as a ``TypedDict`` to give ``on_message`` a narrower static contract. This
-    annotation does not perform runtime validation or model construction.
+
+class _ShutdownEvent(Protocol):
+    wait: Callable[[], Awaitable[None]]
+
+
+class EventHandler(ABC, Generic[P, Response]):
+    """
+    Abstract base class for event handlers, generic over payload and response.
+
+    Subclasses must implement `on_message`, `on_excise`, and `on_timer`.
+    An unsubscripted handler uses ``JSONValue`` for both types.
+    Use structural JSON types such as ``TypedDict`` for precise
+    payload and response contracts. These annotations do not validate values.
     """
 
     @abstractmethod
-    async def on_message(self, context: Context, message: Message[P]) -> JSONValue:
+    async def on_message(self, context: Context, message: Message[P]) -> Response:
         """
         Handle a Kafka message.
 
@@ -72,7 +79,7 @@ class EventHandler(ABC, Generic[P]):
             message (Message[P]): The Kafka message to be processed.
 
         Returns:
-            JSONValue: The response for requests.
+            Response: The response for requests.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
@@ -85,7 +92,12 @@ class EventHandler(ABC, Generic[P]):
         pass
 
     @abstractmethod
-    async def on_timer(self, context: Context, timer: Timer) -> JSONValue:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> Response:
+        """Handle an excise record."""
+        pass
+
+    @abstractmethod
+    async def on_timer(self, context: Context, timer: Timer) -> None:
         """
         Handle a timer event.
 
@@ -94,7 +106,7 @@ class EventHandler(ABC, Generic[P]):
             timer (Timer): The timer event to be processed.
 
         Returns:
-            JSONValue: The handler result.
+            None: No result.
 
         Notes:
             - This method may be cancelled at any time. Implement it to respond quickly to cancellation.
@@ -107,73 +119,100 @@ class EventHandler(ABC, Generic[P]):
         pass
 
 
-class ProsodyHandler:
-    def __init__(self, handler: EventHandler[Any]):
+class ProsodyHandler(Generic[P, Response]):
+    def __init__(self, handler: EventHandler[P, Response]):
         self.handler = handler
         self.tracer = trace.get_tracer(__name__)
 
-    async def on_message(self, context, message, opentelemetry_context, shutdown_event):
+    async def _dispatch(
+        self,
+        call: Callable[[], Awaitable[Result]],
+        span_name: str,
+        event_type: str,
+        details: dict[str, object],
+        opentelemetry_context: Mapping[str, str],
+        shutdown_event: _ShutdownEvent,
+    ) -> Result:
         otel_context = extract(carrier=opentelemetry_context)
-
-        with self.tracer.start_as_current_span("on_message", context=otel_context):
-            handler_task = asyncio.create_task(self.handler.on_message(context, message))
+        with self.tracer.start_as_current_span(span_name, context=otel_context):
+            handler_task = asyncio.create_task(call())
             shutdown_task = asyncio.create_task(shutdown_event.wait())
-
             try:
                 done, _ = await asyncio.wait(
                     {handler_task, shutdown_task},
-                    return_when=asyncio.FIRST_COMPLETED
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-
                 if shutdown_task in done:
                     handler_task.cancel("partition has been revoked")
-
                 try:
                     return await handler_task
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    _capture_handler_exception("message", {
-                        "topic": getattr(message, "topic", None),
-                        "partition": getattr(message, "partition", None),
-                        "key": getattr(message, "key", None),
-                        "offset": getattr(message, "offset", None),
-                    }, exc)
+                    _capture_handler_exception(event_type, details, exc)
                     raise
-
             finally:
                 for task in {handler_task, shutdown_task}:
                     if not task.done():
                         task.cancel("task is shutting down")
 
-    async def on_timer(self, context, timer, opentelemetry_context, shutdown_event):
-        otel_context = extract(carrier=opentelemetry_context)
+    async def on_message(
+        self,
+        context: Context,
+        message: Message[P],
+        opentelemetry_context: Mapping[str, str],
+        shutdown_event: _ShutdownEvent,
+    ) -> Response:
+        return await self._dispatch(
+            lambda: self.handler.on_message(context, message),
+            "on_message",
+            "message",
+            {
+                "topic": getattr(message, "topic", None),
+                "partition": getattr(message, "partition", None),
+                "key": getattr(message, "key", None),
+                "offset": getattr(message, "offset", None),
+            },
+            opentelemetry_context,
+            shutdown_event,
+        )
 
-        with self.tracer.start_as_current_span("on_timer", context=otel_context):
-            handler_task = asyncio.create_task(self.handler.on_timer(context, timer))
-            shutdown_task = asyncio.create_task(shutdown_event.wait())
+    async def on_excise(
+        self,
+        context: Context,
+        message: ExciseMessage,
+        opentelemetry_context: Mapping[str, str],
+        shutdown_event: _ShutdownEvent,
+    ) -> Response:
+        return await self._dispatch(
+            lambda: self.handler.on_excise(context, message),
+            "on_excise",
+            "excise",
+            {
+                "topic": getattr(message, "topic", None),
+                "partition": getattr(message, "partition", None),
+                "key": getattr(message, "key", None),
+                "offset": getattr(message, "offset", None),
+            },
+            opentelemetry_context,
+            shutdown_event,
+        )
 
-            try:
-                done, _ = await asyncio.wait(
-                    {handler_task, shutdown_task},
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                if shutdown_task in done:
-                    handler_task.cancel("partition has been revoked")
-
-                try:
-                    return await handler_task
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    _capture_handler_exception("timer", {
-                        "key": getattr(timer, "key", None),
-                        "time": getattr(timer, "time", None),
-                    }, exc)
-                    raise
-
-            finally:
-                for task in {handler_task, shutdown_task}:
-                    if not task.done():
-                        task.cancel("task is shutting down")
+    async def on_timer(
+        self,
+        context: Context,
+        timer: Timer,
+        opentelemetry_context: Mapping[str, str],
+        shutdown_event: _ShutdownEvent,
+    ) -> None:
+        await self._dispatch(
+            lambda: self.handler.on_timer(context, timer),
+            "on_timer",
+            "timer",
+            {
+                "key": getattr(timer, "key", None),
+                "time": getattr(timer, "time", None),
+            },
+            opentelemetry_context,
+            shutdown_event,
+        )

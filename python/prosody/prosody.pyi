@@ -21,6 +21,7 @@ from prosody.state import (
 )
 
 P = TypeVar("P")
+R = TypeVar("R")
 T = TypeVar("T")
 V = TypeVar("V")
 
@@ -265,6 +266,10 @@ class _ProsodyClientApi:
         """
         ...
 
+    async def excise(self, topic: str, key: str) -> None:
+        """Send an excise record for a key."""
+        ...
+
     async def request(
         self,
         topic: str,
@@ -273,7 +278,6 @@ class _ProsodyClientApi:
         *,
         subsystems: Sequence[str],
         timeout: timedelta,
-        headers: Mapping[str, str] | None = None,
     ) -> dict[str, Outcome[JSONValue]]:
         """Request one response from each subsystem.
 
@@ -283,6 +287,17 @@ class _ProsodyClientApi:
             ValueError: If a subsystem name is invalid.
             RuntimeError: If the request cannot produce the complete result dictionary.
         """
+        ...
+
+    async def request_excise(
+        self,
+        topic: str,
+        key: str,
+        *,
+        subsystems: Sequence[str],
+        timeout: timedelta,
+    ) -> dict[str, Outcome[JSONValue]]:
+        """Request one excise response from each subsystem."""
         ...
 
     async def consumer_state(self) -> Literal['shut_down', 'unconfigured', 'configured', 'running']:
@@ -305,7 +320,7 @@ class _ProsodyClientApi:
         self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
     ) -> _NativePublishedDeque[JSONValue]: ...
 
-    async def subscribe(self, handler: EventHandler[P]) -> None:
+    async def subscribe(self, handler: EventHandler[P, R]) -> None:
         """
         Subscribe to messages using the provided handler.
 
@@ -313,6 +328,7 @@ class _ProsodyClientApi:
             handler (EventHandler): An instance implementing the EventHandler interface.
 
         Raises:
+            TypeError: If the handler does not implement all event methods.
             RuntimeError: If the consumer is not configured or is already
                 subscribed.
 

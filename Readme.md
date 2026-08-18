@@ -28,14 +28,15 @@ The wheel includes a `py.typed` marker and type information for the public API,
 so applications can type-check normal `prosody` imports without installing a
 separate stub package. For example, run `mypy your_application/` after installing
 Prosody and mypy. Keyed-state definitions carry their declared value type through
-`Context.state(...)`. `EventHandler[Payload]` carries a declared structural JSON
-payload type through `on_message`; an unsubscripted handler defaults to
-`JSONValue`. See [Keyed State](#keyed-state-cassandra) for typed examples.
+`Context.state(...)`. `EventHandler[Payload, Response]` preserves both declared types.
+An unsubscripted handler uses `JSONValue` for both types.
+See [Keyed State](#keyed-state-cassandra) for typed examples.
 
 ## Quick Start
 
 ```python
-from prosody import ProsodyClient, EventHandler, Context, Message
+from prosody import Context, EventHandler, Message, ProsodyClient
+from prosody.message import JSONValue
 import datetime
 
 # Initialize the client with Kafka bootstrap server, consumer group, and topics
@@ -57,6 +58,10 @@ client = await ProsodyClient.create(
 
 # Define a custom message handler
 class MyHandler(EventHandler):
+    async def on_excise(self, context: Context, message: ExciseMessage) -> JSONValue:
+        print(f"Excise key: {message.key}")
+        return {"excised": message.key}
+
     async def on_message(self, context: Context, message: Message) -> None:
         # Process the received message
         print(f"Received message: {message}")
@@ -76,10 +81,19 @@ client.subscribe(MyHandler())
 
 # Send a message to a topic
 await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
+await client.excise("my-topic", "obsolete-key")
 
 # Shut down all client services when done
 await client.shutdown()
 ```
+
+## Excise records
+
+Call `excise(topic, key)` to send a Kafka record with a key and no payload. Use this record to delete the key from compacted views.
+
+Each handler must implement `on_message`, `on_excise`, and `on_timer`. Subscription fails before consumption if a method is missing.
+
+Return a JSON value from `on_excise`. Prosody sends this value when the excise record is a subsystem request.
 
 ## Architecture
 
@@ -217,6 +231,8 @@ PROSODY_STALL_THRESHOLD=15s  # Default stall detection threshold
 
 Requests return one outcome for each named subsystem. The result dictionary uses canonical subsystem names as keys.
 
+Use `request_excise` to send an excise record and collect the same outcome type.
+
 Do not rely on dictionary iteration order.
 
 Prosody raises an exception if the request cannot produce the complete result dictionary.
@@ -231,6 +247,12 @@ Return a JSON response from each message handler:
 class InventoryHandler(EventHandler):
     async def on_message(self, context, message):
         return {"accepted": message.key}
+
+    async def on_excise(self, context, message):
+        return None
+
+    async def on_timer(self, context, timer) -> None:
+        pass
 ```
 
 Send a request without a subscription on the requester:
@@ -462,6 +484,9 @@ class MyHandler(EventHandler):
         print("Timer fired!")
         print(f"Key: {timer.key}")
         print(f"Scheduled time: {timer.time}")
+
+    async def on_excise(self, context: Context, message: ExciseMessage):
+        return None
 ```
 
 ### Timer Methods
@@ -563,6 +588,12 @@ class CountHandler(EventHandler):
         count = context.state(COUNTER)
         await count.set((await count.get() or 0) + 1)
 
+    async def on_excise(self, context: Context, message: ExciseMessage):
+        return None
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pass
+
 
 client = await ProsodyClient.create(
     group_id="counters",
@@ -607,6 +638,9 @@ class BatchHandler(EventHandler[Activity]):
             await notify(timer.key, batch)
         await pending.clear()
         await context.state(WINDOW).clear()
+
+    async def on_excise(self, context: Context, message: ExciseMessage):
+        return None
 ```
 
 See the complete, mypy-checked example for imports, types, client setup, and `notify`: [`examples/keyed_state_windowing.py`](examples/keyed_state_windowing.py).
@@ -706,6 +740,12 @@ class MyHandler(EventHandler):
         with tracer.start_as_current_span("test-receive"):
             # Process the received message
             print(f"Received message: {message}")
+
+    async def on_excise(self, context: Context, message: ExciseMessage):
+        return None
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pass
 ```
 
 ### Span Linking
@@ -826,6 +866,8 @@ if __name__ == '__main__':
 Prosody classifies errors as transient (temporary, can be retried) or permanent (won't be resolved by retrying). By
 default, all errors are considered transient.
 
+The error classes and decorators apply to `on_message`, `on_excise`, and `on_timer`.
+
 Use the `@permanent` decorator to classify exceptions that should not be retried:
 
 ```python
@@ -838,6 +880,12 @@ class MyHandler(EventHandler):
         # Your message handling logic here
         # TypeError and AttributeError will be treated as permanent
         # All other exceptions will be treated as transient (default behavior)
+        pass
+
+    async def on_excise(self, context: Context, message: ExciseMessage):
+        return None
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
         pass
 ```
 
@@ -969,12 +1017,14 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 
 - `__init__(**config)`: Initialize a new ProsodyClient with the given configuration.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
-- `request(topic, key, payload, *, subsystems, timeout, headers=None) -> dict[str, Outcome[JSONValue]]`: Request one response from each subsystem.
+- `excise(topic: str, key: str) -> None`: Send an excise record for a key.
+- `request(topic, key, payload, *, subsystems, timeout) -> dict[str, Outcome[JSONValue]]`: Request one response from each subsystem.
+- `request_excise(topic, key, *, subsystems, timeout) -> dict[str, Outcome[JSONValue]]`: Request one excise response from each subsystem.
 - `consumer_state() -> str`: Get the current state of the consumer.
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
 - `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
-- `subscribe(handler: EventHandler[P]) -> None`: Subscribe while preserving the handler's payload specialization.
+- `subscribe(handler: EventHandler[P, R]) -> None`: Subscribe while preserving the handler's payload and response types.
 - `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
 - `shutdown() -> None`: Stop all client services. Concurrent and repeated calls await the same operation.
 
@@ -992,10 +1042,15 @@ typing. Parameterizing the handler gives `on_message` the same payload type:
 
 ```python
 P = TypeVar("P", default=JSONValue)
+R = TypeVar("R", default=JSONValue)
 
-class EventHandler(ABC, Generic[P]):
+class EventHandler(ABC, Generic[P, R]):
     @abstractmethod
-    async def on_message(self, context: Context, message: Message[P]) -> None:
+    async def on_excise(self, context: Context, message: ExciseMessage) -> R:
+        pass
+
+    @abstractmethod
+    async def on_message(self, context: Context, message: Message[P]) -> R:
         # Implement your message handling logic here
         pass
     
@@ -1005,7 +1060,7 @@ class EventHandler(ABC, Generic[P]):
         pass
 ```
 
-For example, `EventHandler[OrderEvent]` receives `Message[OrderEvent]` when
+For example, `EventHandler[OrderEvent, Response]` receives `Message[OrderEvent]` when
 `OrderEvent` is a `TypedDict`. This is a static contract only: Prosody still
 delivers plain JSON and does not construct or validate dataclass or Pydantic
 models. Validate the payload explicitly before using such a model.
@@ -1023,7 +1078,7 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `offset: int`: The message offset within the partition.
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
-- `payload: P`: The statically typed message payload.
+- `payload: P`: The typed message payload. `ExciseMessage` has no payload attribute.
 
 `Message[P]` defaults to `Message[JSONValue]`. Supplying a `TypedDict` payload
 specialization gives field-level checking without runtime model construction or

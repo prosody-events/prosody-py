@@ -8,12 +8,14 @@ from typing_extensions import TypedDict, assert_type
 from prosody import (
     Context,
     EventHandler,
+    ExciseMessage,
     Failure,
     MapDefinition,
     Message,
     MessageDequeDefinition,
     Outcome,
     ProsodyClient,
+    ProsodyHandler,
     Success,
     Timer,
     map,
@@ -25,6 +27,10 @@ from prosody.message import JSONValue
 
 class Event(TypedDict):
     amount: int
+
+
+class Response(TypedDict):
+    accepted: bool
 
 
 TOTALS: MapDefinition[int] = map("totals")
@@ -42,6 +48,10 @@ assert_type(parse_amount("1"), int)
 class DefaultHandler(EventHandler):
     """An unsubscripted handler retains the JSONValue default."""
 
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
+        assert_type(message.key, str)
+        message.payload  # type: ignore[attr-defined]
+
     async def on_message(self, context: Context, message: Message) -> None:
         assert_type(message, Message[JSONValue])
 
@@ -49,8 +59,12 @@ class DefaultHandler(EventHandler):
         pass
 
 
-class Handler(EventHandler[Event]):
-    async def on_message(self, context: Context, message: Message[Event]) -> None:
+class Handler(EventHandler[Event, Response]):
+    async def on_excise(self, context: Context, message: ExciseMessage) -> Response:
+        assert_type(message, ExciseMessage)
+        return {"accepted": True}
+
+    async def on_message(self, context: Context, message: Message[Event]) -> Response:
         totals = context.state(TOTALS)
         assert_type(await totals.get(message.key), Optional[int])
         assert_type(await totals.get(message.key, 0), int)
@@ -64,9 +78,15 @@ class Handler(EventHandler[Event]):
         assert_type(event, Optional[Message[Event]])
         if event is not None:
             assert_type(event.payload["amount"], int)
+        return {"accepted": True}
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
         assert_type(timer.key, str)
+
+
+wrapped_handler = ProsodyHandler(Handler())
+assert_type(wrapped_handler, ProsodyHandler[Event, Response])
+assert_type(wrapped_handler.handler, EventHandler[Event, Response])
 
 
 async def subscribe_specialized(client: ProsodyClient) -> None:
@@ -81,6 +101,13 @@ async def request_typed(client: ProsodyClient) -> None:
         subsystems=["inventory"],
         timeout=timedelta(seconds=2),
     )
+    excise_results = await client.request_excise(
+        "orders",
+        "order-1",
+        subsystems=["inventory"],
+        timeout=timedelta(seconds=2),
+    )
+    assert_type(excise_results, dict[str, Outcome[JSONValue]])
     assert_type(results, dict[str, Outcome[JSONValue]])
     for outcome in results.values():
         if isinstance(outcome, Success):

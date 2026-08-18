@@ -103,6 +103,9 @@ class StateHandler(EventHandler):
     callback reports observation dicts over ``results`` (a ``tsasync.Channel``,
     thread-safe for the Rust->Python signalling), or raises to drive retry."""
 
+    async def on_excise(self, context, message) -> None:
+        return None
+
     __test__ = False
 
     def __init__(self, on_msg, on_tmr=None):

@@ -35,13 +35,21 @@ use tokio::select;
 use tracing::{debug, error, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+mod execution;
+
+pub use execution::WrappedPythonError;
+use execution::{PythonRecord, cancel_task, execute, execute_timer, log_exception};
+
 use crate::context::Context;
+
+const HANDLER_METHODS: [&str; 3] = ["on_message", "on_excise", "on_timer"];
 
 /// Python objects and dependencies needed for message execution
 struct MessageExecutionContext<'a> {
     message_class: &'a Py<PyAny>,
+    record_class: &'a Py<PyAny>,
     event_class: &'a Py<PyAny>,
-    handle_method: &'a Py<PyAny>,
+    method: &'a Py<PyAny>,
     locals: &'a TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
     otel_get_current: &'a Py<PyAny>,
@@ -69,6 +77,9 @@ const HANDLER_WRAPPER_CLASS_NAME: &str = "ProsodyHandler";
 /// Python class name for Kafka messages
 const MESSAGE_CLASS_NAME: &str = "Message";
 
+/// Python class name for excise records.
+const EXCISE_CLASS_NAME: &str = "ExciseMessage";
+
 /// Python class name for timer events
 const TIMER_CLASS_NAME: &str = "Timer";
 
@@ -84,8 +95,10 @@ pub struct PythonHandler(Arc<PythonHandlerImpl>);
 #[derive(Debug)]
 pub struct PythonHandlerImpl {
     pub handle_method: Py<PyAny>,
+    pub excise_method: Py<PyAny>,
     pub timer_method: Py<PyAny>,
     pub message_class: Py<PyAny>,
+    pub excise_class: Py<PyAny>,
     pub timer_class: Py<PyAny>,
     pub event_class: Py<PyAny>,
     pub event_set_method: Py<PyAny>,
@@ -116,6 +129,7 @@ impl PythonHandler {
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
         let tracing_handler_class = prosody_module.getattr(HANDLER_WRAPPER_CLASS_NAME)?;
         let message_class = prosody_module.getattr(MESSAGE_CLASS_NAME)?;
+        let excise_class = prosody_module.getattr(EXCISE_CLASS_NAME)?;
         let timer_class = prosody_module.getattr(TIMER_CLASS_NAME)?;
 
         // Verify handler inherits from EventHandler
@@ -125,9 +139,18 @@ impl PythonHandler {
             )));
         }
 
+        for method_name in HANDLER_METHODS {
+            if !handler.getattr(method_name)?.is_callable() {
+                return Err(PyTypeError::new_err(format!(
+                    "handler.{method_name} must be callable"
+                )));
+            }
+        }
+
         // Wrap handler with tracing/cancellation support
         let tracing_handler = tracing_handler_class.call1((handler,))?;
         let handle_method = tracing_handler.getattr("on_message")?;
+        let excise_method = tracing_handler.getattr("on_excise")?;
         let timer_method = tracing_handler.getattr("on_timer")?;
 
         // Get a reference to the event methods
@@ -151,8 +174,10 @@ impl PythonHandler {
 
         Ok(Self(Arc::new(PythonHandlerImpl {
             handle_method: handle_method.unbind(),
+            excise_method: excise_method.unbind(),
             timer_method: timer_method.unbind(),
             message_class: message_class.unbind(),
+            excise_class: excise_class.unbind(),
             timer_class: timer_class.unbind(),
             event_class: event_class.unbind(),
             event_set_method: event_set_method.unbind(),
@@ -192,6 +217,59 @@ impl PythonHandler {
     pub fn timer_class(&self) -> &Py<PyAny> {
         &self.0.timer_class
     }
+
+    async fn handle_record<C, P>(
+        &self,
+        context: C,
+        message: ConsumerMessage<P>,
+        record_class: &Py<PyAny>,
+        method: &Py<PyAny>,
+        kind: &str,
+    ) -> Result<Value, WrappedPythonError>
+    where
+        C: EventContext<Payload = Value>,
+        ConsumerMessage<P>: PythonRecord,
+        P: Send + Sync + 'static,
+    {
+        let mut carrier = HashMap::with_capacity(2);
+        self.0
+            .propagator
+            .inject_context(&message.span().context(), &mut carrier);
+        let cancel_future = context.on_cancel();
+        let execution_context = MessageExecutionContext {
+            message_class: &self.0.message_class,
+            record_class,
+            event_class: &self.0.event_class,
+            method,
+            locals: &self.0.locals,
+            propagator: self.0.propagator.clone(),
+            otel_get_current: &self.0.otel_get_current,
+            otel_inject: &self.0.otel_inject,
+        };
+        let (shutdown_event, complete_future) =
+            execute(context, message, carrier, execution_context)?;
+
+        pin_mut!(complete_future);
+        let output = select! {
+            result = complete_future.as_mut() => {
+                if let Err(error) = log_exception(kind, &result) {
+                    error!("{kind} handling failed but the error could not be logged: {error:#}");
+                }
+                result?
+            }
+            () = cancel_future => {
+                debug!("cancel signal received; cancelling task");
+                cancel_task(&self.0.event_set_method, shutdown_event)?;
+                debug!("waiting for task to finish");
+                let output = complete_future.await?;
+                debug!("task cancelled");
+                output
+            }
+        };
+
+        Python::attach(|py| depythonize(output.bind(py)))
+            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
+    }
 }
 
 impl FallibleHandler for PythonHandler {
@@ -221,51 +299,36 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        let _ = demand_type; // Not used in Python handler
-        // Propagate tracing context to Python
-        let mut serialized_context: HashMap<String, String> = HashMap::with_capacity(2);
-        self.0
-            .propagator
-            .inject_context(&message.span().context(), &mut serialized_context);
+        let _ = demand_type;
+        self.handle_record(
+            context,
+            message,
+            &self.0.message_class,
+            &self.0.handle_method,
+            "message",
+        )
+        .await
+    }
 
-        let cancel_future = context.on_cancel();
-        let execution_context = MessageExecutionContext {
-            message_class: &self.0.message_class,
-            event_class: &self.0.event_class,
-            handle_method: &self.0.handle_method,
-            locals: &self.0.locals,
-            propagator: self.0.propagator.clone(),
-            otel_get_current: &self.0.otel_get_current,
-            otel_inject: &self.0.otel_inject,
-        };
-        let (shutdown_event, complete_future) =
-            execute(context, message, serialized_context, execution_context)?;
-
-        pin_mut!(complete_future);
-        let output = select! {
-            // Handle normal completion
-            result = complete_future.as_mut() => {
-                if let Err(error) = log_exception(&result) {
-                    error!("message handling failed but error could not be logged: {error:#}");
-                }
-                result?
-            }
-
-            // Handle cancel request
-            () = cancel_future => {
-                debug!("cancel signal received; cancelling task");
-                cancel_task(&self.0.event_set_method, shutdown_event)?;
-
-                debug!("waiting for task to cleanup");
-                let output = complete_future.await?;
-
-                debug!("task cancelled");
-                output
-            }
-        };
-
-        Python::attach(|py| depythonize(output.bind(py)))
-            .map_err(|error| WrappedPythonError::ResultConversion(error.to_string()))
+    #[instrument(level = "debug", skip(self, context, demand_type), err)]
+    async fn on_excise<C>(
+        &self,
+        context: C,
+        message: ConsumerMessage<()>,
+        demand_type: DemandType,
+    ) -> Result<Self::Output, Self::Error>
+    where
+        C: EventContext<Payload = Self::Payload>,
+    {
+        let _ = demand_type;
+        self.handle_record(
+            context,
+            message,
+            &self.0.excise_class,
+            &self.0.excise_method,
+            "excise",
+        )
+        .await
     }
 
     /// Processes a timer event by invoking the Python handler.
@@ -320,7 +383,7 @@ impl FallibleHandler for PythonHandler {
         let output = select! {
             // Handle normal completion
             result = complete_future.as_mut() => {
-                if let Err(error) = log_exception(&result) {
+                if let Err(error) = log_exception("timer", &result) {
                     error!("timer handling failed but error could not be logged: {error:#}");
                 }
                 result?
@@ -354,243 +417,4 @@ impl FallibleHandler for PythonHandler {
 
 impl ClientHandler for PythonHandler {
     type Codecs = JsonCodecs;
-}
-
-/// Logs Python exceptions with full traceback information.
-///
-/// # Arguments
-///
-/// * `result` - `PyResult` containing a potential Python error to log
-///
-/// # Returns
-///
-/// A `PyResult` indicating whether logging succeeded
-///
-/// # Errors
-///
-/// Returns `PyErr` if accessing traceback information fails
-fn log_exception(result: &PyResult<Py<PyAny>>) -> PyResult<()> {
-    let Err(error) = result else {
-        return Ok(());
-    };
-
-    Python::attach(|py| {
-        let traceback = py.import("traceback")?;
-        let exc_info = (error.get_type(py), error.value(py), error.traceback(py));
-
-        let traceback: Vec<String> = traceback
-            .getattr("format_exception")?
-            .call1(exc_info)?
-            .extract()?;
-
-        let traceback = traceback.join("");
-
-        error!(%traceback, "message handling failed: {error:#}");
-        Ok(())
-    })
-}
-
-/// Cancels a Python task by signaling its shutdown event
-///
-/// # Arguments
-///
-/// * `event_set_method` - Python Event.set method
-/// * `shutdown_event` - Event to signal
-///
-/// # Errors
-///
-/// Returns `PyErr` if setting the event fails
-fn cancel_task(event_set_method: &Py<PyAny>, shutdown_event: Py<PyAny>) -> PyResult<()> {
-    Python::attach(|py| {
-        event_set_method.call1(py, (shutdown_event,))?;
-        Ok(())
-    })
-}
-
-/// Prepares and executes a Python message handler
-///
-/// # Arguments
-///
-/// * `context` - Message context
-/// * `message` - Kafka message
-/// * `serialized_context` - OpenTelemetry context
-/// * `message_class` - Python Message class
-/// * `event_class` - Python Event class
-/// * `handle_method` - Python handler method
-/// * `locals` - Python event loop task locals
-///
-/// # Returns
-///
-/// Tuple of (shutdown event, handler future)
-///
-/// # Errors
-///
-/// Returns `PyErr` on Python object creation/method call failures
-fn execute<C>(
-    context: C,
-    message: ConsumerMessage<serde_json::Value>,
-    serialized_context: HashMap<String, String>,
-    execution_context: MessageExecutionContext<'_>,
-) -> PyResult<(
-    Py<PyAny>,
-    impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
-)>
-where
-    C: EventContext<Payload = serde_json::Value>,
-{
-    Python::attach(move |py| {
-        // Create Python message objects using cached OpenTelemetry functions
-        let message_context = Context {
-            inner: context.boxed(),
-            get_current: execution_context.otel_get_current.clone_ref(py),
-            inject: execution_context.otel_inject.clone_ref(py),
-            propagator: execution_context.propagator,
-            message_class: execution_context.message_class.clone_ref(py),
-            state_handles: Mutex::new(HashMap::new()),
-        };
-        let payload = pythonize(py, message.payload())?;
-
-        // The core message rides along so a message-collection write can store
-        // the message the handler received; see `MessageCore`.
-        let core = Py::new(py, MessageCore::new(message.clone()))?;
-
-        let message = execution_context.message_class.call1(
-            py,
-            (
-                message.topic().as_ref(),
-                message.partition(),
-                message.offset(),
-                *message.timestamp(),
-                message.key().as_ref(),
-                payload,
-                core,
-            ),
-        )?;
-
-        // Convert serialized_context to a Python dict
-        let otel_context = serialized_context.into_py_dict(py)?;
-
-        // Create asyncio.Event for shutdown signaling
-        let shutdown_event = execution_context.event_class.call0(py)?;
-
-        // Create and convert handler coroutine to future
-        let coroutine = execution_context
-            .handle_method
-            .call1(
-                py,
-                (message_context, message, otel_context, &shutdown_event),
-            )?
-            .into_bound(py);
-
-        let complete_future = into_future_with_locals(execution_context.locals, coroutine)?;
-        Ok((shutdown_event, complete_future))
-    })
-}
-
-/// Executes a timer event by calling the Python handler
-///
-/// # Arguments
-///
-/// * `context` - Timer processing context
-/// * `trigger` - Timer trigger to process
-/// * `serialized_context` - OpenTelemetry context serialized as a `HashMap`
-/// * `timer_class` - Python Timer class
-/// * `event_class` - Python Event class for cancellation
-/// * `timer_method` - Python timer handler method
-/// * `locals` - Task locals for asyncio integration
-///
-/// # Returns
-///
-/// A tuple containing the shutdown event and the completion future
-fn execute_timer<C>(
-    context: C,
-    trigger: Trigger,
-    serialized_context: HashMap<String, String>,
-    timer_context: TimerExecutionContext<'_>,
-) -> PyResult<(
-    Py<PyAny>,
-    impl Future<Output = PyResult<Py<PyAny>>> + Send + Sized,
-)>
-where
-    C: EventContext<Payload = serde_json::Value>,
-{
-    Python::attach(move |py| {
-        // Create Python timer object using cached OpenTelemetry functions
-        let context_obj = Context {
-            inner: context.boxed(),
-            get_current: timer_context.otel_get_current.clone_ref(py),
-            inject: timer_context.otel_inject.clone_ref(py),
-            propagator: timer_context.propagator,
-            message_class: timer_context.message_class.clone_ref(py),
-            state_handles: Mutex::new(HashMap::new()),
-        };
-
-        let timer = timer_context.timer_class.call1(
-            py,
-            (trigger.key.as_ref(), {
-                let datetime_utc: DateTime<Utc> = trigger.time.into();
-                datetime_utc
-            }),
-        )?;
-
-        // Convert serialized_context to a Python dict
-        let otel_context = serialized_context.into_py_dict(py)?;
-
-        // Create asyncio.Event for shutdown signaling
-        let shutdown_event = timer_context.event_class.call0(py)?;
-
-        // Create and convert handler coroutine to future
-        let coroutine = timer_context
-            .timer_method
-            .call1(py, (context_obj, timer, otel_context, &shutdown_event))?
-            .into_bound(py);
-
-        let complete_future = into_future_with_locals(timer_context.locals, coroutine)?;
-        Ok((shutdown_event, complete_future))
-    })
-}
-
-/// Python errors from message handling
-#[derive(Debug, Error)]
-pub enum WrappedPythonError {
-    /// Underlying Python exception
-    #[error(transparent)]
-    Python(#[from] PyErr),
-
-    /// The handler result has no JSON representation.
-    #[error("handler result is not representable as JSON: {0}")]
-    ResultConversion(String),
-}
-
-impl ClassifyError for WrappedPythonError {
-    /// Determines error retry behavior based on Python error attributes
-    ///
-    /// Returns:
-    /// - `ErrorCategory::Permanent` for errors with `is_permanent=True`
-    /// - `ErrorCategory::Transient` otherwise
-    fn classify_error(&self) -> ErrorCategory {
-        match self {
-            WrappedPythonError::Python(error) => {
-                Python::attach(|py| match is_permanent_error(py, error) {
-                    Ok(true) => ErrorCategory::Permanent,
-                    _ => ErrorCategory::Transient,
-                })
-            }
-            WrappedPythonError::ResultConversion(_) => ErrorCategory::Permanent,
-        }
-    }
-}
-
-/// Checks if a Python error is marked as permanent
-///
-/// # Arguments
-///
-/// * `py` - Python interpreter token
-/// * `error` - Error to check
-///
-/// # Returns
-///
-/// Whether error has `is_permanent=True`
-fn is_permanent_error(py: Python, error: &PyErr) -> PyResult<bool> {
-    error.value(py).getattr("is_permanent")?.extract()
 }

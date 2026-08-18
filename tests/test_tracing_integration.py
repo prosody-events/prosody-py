@@ -53,8 +53,6 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any
-
 import pytest
 import tsasync
 
@@ -65,7 +63,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 
-from prosody import EventHandler, Message, Context, Timer
+from prosody import Context, EventHandler, ExciseMessage, Message, Timer
 from prosody.prosody import AdminClient
 
 
@@ -76,6 +74,9 @@ logger = logging.getLogger(__name__)
 
 class TracingHandler(EventHandler):
     """Test handler that creates spans and schedules timers with proper tracing"""
+
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
+        return None
 
     def __init__(self):
         self.message_received_event = tsasync.Event()
