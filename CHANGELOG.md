@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.4.0...prosody-py-v0.5.0) (2026-08-19)
+
+
+### Features
+
+* add subsystem requests ([#34](https://github.com/prosody-events/prosody-py/issues/34)) ([1c3ba3f](https://github.com/prosody-events/prosody-py/commit/1c3ba3f8b5b13292c4199df4278733e4c8d4cf16))
+* add typed excise records and requests ([#35](https://github.com/prosody-events/prosody-py/issues/35)) ([41eeded](https://github.com/prosody-events/prosody-py/commit/41eedede0785fae3352c03f5b2f9a16b89e30227))
+* expose published keyed state ([#26](https://github.com/prosody-events/prosody-py/issues/26)) ([f1817e1](https://github.com/prosody-events/prosody-py/commit/f1817e19cc7575b11bf40f0ad76dc3eac6bd0ca7))
+
+
+### Bug Fixes
+
+* **logging:** expose telemetry flush/shutdown and auto-flush at exit ([#23](https://github.com/prosody-events/prosody-py/issues/23)) ([f312f15](https://github.com/prosody-events/prosody-py/commit/f312f1572d10550f7dd97c7a1f47ff8b9aa1cb0e))
+* never construct a semaphore to build a consumer message ([#24](https://github.com/prosody-events/prosody-py/issues/24)) ([8eea048](https://github.com/prosody-events/prosody-py/commit/8eea048864f3cd89b823e4085860096a3a8d8695))
+
 ## [0.4.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.3.0...prosody-py-v0.4.0) (2026-07-21)
 
 
