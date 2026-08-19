@@ -89,11 +89,13 @@ await client.shutdown()
 
 ## Excise records
 
-Call `excise(topic, key)` to send a Kafka record with a key and no payload. Use this record to delete the key from compacted views.
+A compacted Kafka topic keeps the latest value for each key. To remove a key, Kafka needs a record with that key and no payload.
+
+Call `excise(topic, key)` to send this record. Prosody sends received excise records to `on_excise`, not to `on_message`.
 
 Each handler must implement `on_message`, `on_excise`, and `on_timer`. Subscription fails before consumption if a method is missing.
 
-Return a JSON value from `on_excise`. Prosody sends this value when the excise record is a subsystem request.
+If an excise record is a request, return a response from `on_excise`. Prosody uses this response as the subsystem result.
 
 ## Architecture
 
@@ -229,7 +231,11 @@ PROSODY_STALL_THRESHOLD=15s  # Default stall detection threshold
 
 ## Requests
 
-Requests return one outcome for each named subsystem. The result dictionary uses canonical subsystem names as keys.
+A normal Kafka send does not return consumer results. A request lets a producer wait for results from selected consumer roles.
+
+A subsystem is a stable name for one consumer role, such as `inventory` or `billing`. Configure the same subsystem name on all client instances for that role. A subsystem name also identifies the owner of published keyed state.
+
+Requests return one outcome for each selected subsystem. The result dictionary uses canonical subsystem names as keys.
 
 Use `request_excise` to send an excise record and collect the same outcome type.
 
@@ -239,9 +245,11 @@ Prosody raises an exception if the request cannot produce the complete result di
 
 Do not await a request from a handler for the same key and subsystem. The request cannot finish before that handler returns.
 
-Message handler return values become successful request outcomes. Each return value must have a JSON representation.
+Message and excise handler return values become successful request outcomes. Each return value must have a JSON representation.
 
-Return a JSON response from each message handler:
+Return a JSON response from each message and excise handler:
+
+Set `subsystem` to `inventory` on the client that subscribes this handler.
 
 ```python
 class InventoryHandler(EventHandler):
@@ -541,11 +549,11 @@ client = await ProsodyClient.create(
 
 ## Keyed State
 
-Stream handlers usually receive one event at a time. Many decisions need data from earlier events. Counters, activity windows, and workflows all need this data.
+A handler can process events for different keys concurrently. Prosody processes only one event at a time for each key. Many decisions need data from earlier events for the same key.
 
-A Kafka key identifies the entity for an event, such as a customer or order. Keyed state stores separate data for each key. Prosody selects the current message or timer key automatically. Prosody also runs only one handler for that key at a time.
+A Kafka key identifies the entity for an event, such as a customer or order. Keyed state stores separate data for each key. Prosody selects the current message or timer key automatically.
 
-State survives a process restart. State also survives when Kafka assigns a partition to a different process. By default, Prosody makes changes visible after the handler completes without an error. A failed attempt cannot make its pending changes visible.
+Keyed state survives a process restart. It also survives when Kafka assigns a partition to a different process. By default, Prosody commits keyed-state changes after the handler completes without an error. Prosody discards pending keyed-state changes from a failed attempt.
 
 Use keyed state for counters, duplicate detection, rolling totals, pending work, and per-key workflows. Use a database for business records, joins, and unplanned queries. Repeated database reads can make stream processing slow and expensive.
 
@@ -650,16 +658,16 @@ All operations are asynchronous. Map and deque scans use `async for`. Map keys a
 
 `None` means absence. Use `clear()` or `remove()` instead of storing it. Payload annotations guide the type checker but do not validate data.
 
-### When changes become visible
+### When keyed-state changes become visible
 
-Reads inside a handler see earlier writes from that handler. By default, Prosody buffers changes until the event succeeds.
+Reads inside a handler see earlier keyed-state writes from that handler. By default, Prosody buffers keyed-state changes until the event succeeds.
 
-Prosody then publishes the changes together. If the handler raises, none of its pending changes become visible.
+Prosody then commits the keyed-state changes together. If the handler raises, Prosody discards its pending keyed-state changes. This transaction does not include other handler side effects.
 
 Each collection also offers explicit controls for workflows that need different behavior:
 
 - `read_uncommitted=True` writes changes before Prosody records the event as complete. A crash can make these changes visible before a retry. Use this option only when repeated processing produces the same result.
-- `await state.commit()` immediately publishes the collection's pending changes. A later handler failure does not remove them.
+- `await state.commit()` commits the collection's pending changes before the handler ends. A later handler failure does not remove them.
 - `await state.rollback()` discards pending changes since the last `commit()`. It cannot undo committed changes.
 
 ### Published state
@@ -823,19 +831,15 @@ Strategies for achieving idempotence:
 - Each message advances the state machine, allowing for idempotent processing and easy failure recovery.
 - Particularly useful for complex, distributed transactions across multiple services.
 
-### Proper Shutdown
+### Application shutdown
 
-Shut down the client before your application exits:
+Call `shutdown()` when the application terminates. Shutdown stops the active subscription and all other client services. The client rejects new operations after shutdown.
+
+Call `unsubscribe()` only when the application will use the client again. You do not need to call `unsubscribe()` before `shutdown()`.
 
 ```python
 await client.shutdown()
 ```
-
-This ensures:
-
-1. Completion and commitment of all in-flight work
-2. Quick rebalancing, allowing other consumers to take over partitions
-3. Proper release of resources
 
 Implement shutdown handling in your application using an asyncio event:
 
@@ -846,10 +850,10 @@ from prosody import ProsodyClient
 
 
 async def main():
-    # Create an event to signal when to shut down
+    # Create the shutdown event.
     shutdown_event = asyncio.Event()
 
-    # Set up signal handlers
+    # Register the signal handlers.
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         asyncio.get_running_loop().add_signal_handler(
             sig, lambda s=sig: asyncio.create_task(shutdown(shutdown_event, s))
@@ -861,17 +865,17 @@ async def main():
         subscribed_topics="my-topic"
     )
 
-    # Subscribe to messages using your custom handler
+    # Subscribe with the application handler.
     client.subscribe(MyHandler())
 
-    # Wait for the shutdown event
+    # Wait for a shutdown signal.
     await shutdown_event.wait()
 
     await client.shutdown()
 
 
 async def shutdown(event: asyncio.Event, signal: signal.Signals):
-    print(f"Received signal {signal.name}. Initiating shutdown...")
+    print(f"Received signal {signal.name}. Client shutdown starts.")
     event.set()
 
 
