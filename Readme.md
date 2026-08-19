@@ -1034,6 +1034,8 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 
 ### ProsodyClient
 
+Await client operations unless an entry returns a property or an async iterator.
+
 - `await ProsodyClient.create(**config) -> ProsodyClient`: Create a client without blocking the event loop.
 - `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
 - `excise(topic: str, key: str) -> None`: Send an excise record for a key.
@@ -1046,13 +1048,13 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
 - `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
-- `subscribe(handler: EventHandler[P, R]) -> None`: Subscribe while preserving the handler's payload and response types.
+- `subscribe(handler: EventHandler[P, R]) -> None`: Start event processing with the specified handler.
 - `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
 - `shutdown() -> None`: Stop all client services. Concurrent and repeated calls await the same operation.
 
 ### AdminClient
 
-- `__init__(**config)`: Initialize a new AdminClient with the given configuration.
+- `AdminClient(bootstrap_servers=...)`: Create an admin client. Omit the argument to use the environment configuration.
 - `create_topic(name: str, **config) -> None`: Create a Kafka topic with optional configuration parameters.
 - `delete_topic(name: str) -> None`: Delete an existing Kafka topic.
 
@@ -1087,10 +1089,6 @@ For example, `EventHandler[OrderEvent, Response]` receives `Message[OrderEvent]`
 delivers plain JSON and does not construct or validate dataclass or Pydantic
 models. Validate the payload explicitly before using such a model.
 
-Note: The on_message method may be called from different threads. Ensure that any handler state is thread-safe. If
-library incompatibility becomes an issue, this may be changed in the future so all handler calls originate from the same
-thread,
-
 ### Message
 
 Represents a Kafka message as a frozen dataclass with the following attributes:
@@ -1112,7 +1110,7 @@ An `ExciseMessage` has `topic`, `partition`, `offset`, `timestamp`, and `key` at
 
 ### Context
 
-Represents the context of a Kafka message, providing timer scheduling methods:
+Represents the current event context:
 
 - `schedule(time: datetime) -> None`: Schedules a timer to fire at the specified time
 - `clear_and_schedule(time: datetime) -> None`: Clears all timers and schedules a new one
@@ -1120,7 +1118,7 @@ Represents the context of a Kafka message, providing timer scheduling methods:
 - `clear_scheduled() -> None`: Removes all scheduled timers
 - `scheduled() -> List[datetime]`: Returns a list of all scheduled timer times
 - `should_cancel() -> bool`: Check if cancellation has been requested (includes timeout and shutdown)
-- `on_cancel() -> Coroutine`: Awaitable that completes when cancellation is signaled
+- `on_cancel() -> None`: Completes when cancellation occurs
 - `state(definition) -> ValueState[T] | MapState[V] | DequeState[T]`: Bind a registered collection for the current attempt. Message definitions return handles that contain `Message[P]`. An unregistered or mismatched definition raises `PermanentStateError`. See [Keyed State](#keyed-state-2).
 
 ### Timer
@@ -1153,7 +1151,7 @@ Definition constructors return frozen objects used both in `state_collections` a
 - `message_map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MessageMapDefinition[P]`
 - `message_deque(name, *, ttl=None, read_uncommitted=None, capacity=None) -> MessageDequeDefinition[P]`
 
-Each definition type provides `to_config()`. It returns the native collection configuration.
+Each definition type provides `to_config()`. It returns an entry for `state_collections`.
 
 All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`. JSON definitions also expose `published` and `read_cache`. Map definitions expose `keyset_limit`. Deque definitions expose `capacity`.
 
@@ -1168,13 +1166,13 @@ All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`.
 `MapState[V]` (keys are `str`):
 
 - `get(key: str, default=None) -> Optional[V] | default` — default only on absence
-- `contains(key: str) -> bool` — cheap presence check (no decode/resolver)
+- `contains(key: str) -> bool` — test whether the map contains the key
 - `get_many(keys: List[str]) -> List[Optional[V]]`
 - `set(key: str, value: V) -> None`
 - `remove(key: str) -> None`
 - `clear() -> None`
 - `items(direction=Direction.FORWARD)` — async iterator over `(str, V)` entries
-- `keys(direction=Direction.FORWARD)` — cheap async iterator over `str` keys
+- `keys(direction=Direction.FORWARD)` — async iterator over `str` keys
 - `values()` — async iterator over `V` values (forward-only)
 - `__aiter__()` — forward async iteration over `str` keys (like `dict`)
 - `commit() -> None`
@@ -1203,7 +1201,7 @@ Published readers take the user key as their first argument. `PublishedValue[T]`
 
 Errors:
 
-- `StateError`: brand mixin on every keyed-state error; catch all of them with `except StateError`.
+- `StateError`: Base class for all keyed-state errors. Catch it to handle both error categories.
 - `TransientStateError` (subclasses `TransientError`): Reports a keyed-state error that Prosody can retry.
 - `NullValueError` (subclasses `TransientStateError` and `ValueError`): a `None` / JSON-`null` write; use `clear()` / `remove(key)` to delete instead.
 - `PermanentStateError` (subclasses `PermanentError`): Reports a keyed-state error that another attempt cannot resolve.
