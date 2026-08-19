@@ -69,7 +69,7 @@ jobs:
           manylinux: ${{ matrix.platform.target == 'aarch64' && '2_24' || 'auto' }}
           before-script-linux: |
             if command -v apk > /dev/null; then
-              apk add --no-cache cmake make curl-dev
+              apk add --no-cache cmake make curl-dev protobuf
             elif command -v yum > /dev/null; then
               yum install -y cmake libcurl-devel protobuf-compiler
             elif command -v apt-get > /dev/null; then
@@ -124,7 +124,7 @@ jobs:
           manylinux: musllinux_1_2
           before-script-linux: |
             if command -v apk > /dev/null; then
-              apk add --no-cache cmake make curl-dev
+              apk add --no-cache cmake make curl-dev protobuf
             elif command -v yum > /dev/null; then
               yum install -y cmake libcurl-devel protobuf-compiler
             elif command -v apt-get > /dev/null; then
@@ -166,6 +166,11 @@ jobs:
         with:
           python-version: 3.x
           architecture: ${{ matrix.platform.target }}
+      - name: Install protobuf compiler
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "25.9"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -202,6 +207,11 @@ jobs:
         with:
           python-version: 3.x
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install protobuf compiler
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "25.9"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
