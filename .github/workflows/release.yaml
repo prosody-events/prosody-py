@@ -71,7 +71,17 @@ jobs:
             if command -v apk > /dev/null; then
               apk add --no-cache cmake make curl-dev protobuf
             elif command -v yum > /dev/null; then
-              yum install -y cmake libcurl-devel protobuf-compiler
+              yum install -y cmake curl libcurl-devel unzip
+              case "$(uname -m)" in
+                x86_64) protoc_arch=x86_64 ;;
+                aarch64) protoc_arch=aarch_64 ;;
+                *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+              esac
+              curl -fsSL \
+                "https://github.com/protocolbuffers/protobuf/releases/download/v25.9/protoc-25.9-linux-${protoc_arch}.zip" \
+                -o /tmp/protoc.zip
+              unzip -q /tmp/protoc.zip -d /usr/local
+              protoc --version
             elif command -v apt-get > /dev/null; then
               apt-get update
               apt-get install -y cmake libcurl4-openssl-dev protobuf-compiler
@@ -126,7 +136,17 @@ jobs:
             if command -v apk > /dev/null; then
               apk add --no-cache cmake make curl-dev protobuf
             elif command -v yum > /dev/null; then
-              yum install -y cmake libcurl-devel protobuf-compiler
+              yum install -y cmake curl libcurl-devel unzip
+              case "$(uname -m)" in
+                x86_64) protoc_arch=x86_64 ;;
+                aarch64) protoc_arch=aarch_64 ;;
+                *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+              esac
+              curl -fsSL \
+                "https://github.com/protocolbuffers/protobuf/releases/download/v25.9/protoc-25.9-linux-${protoc_arch}.zip" \
+                -o /tmp/protoc.zip
+              unzip -q /tmp/protoc.zip -d /usr/local
+              protoc --version
             elif command -v apt-get > /dev/null; then
               apt-get update && apt-get install -y cmake libcurl4-openssl-dev protobuf-compiler
               # Headers land under a multiarch dir (arch-dependent). Symlink into
