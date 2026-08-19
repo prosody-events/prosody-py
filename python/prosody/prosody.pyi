@@ -279,13 +279,13 @@ class _ProsodyClientApi:
         subsystems: Sequence[str],
         timeout: timedelta,
     ) -> dict[str, Outcome[JSONValue]]:
-        """Request one response from each subsystem.
+        """Return one outcome for each subsystem.
 
         Cancel the task to cancel this request before it completes.
 
         Raises:
             ValueError: If a subsystem name is invalid.
-            RuntimeError: If the request cannot produce the complete result dictionary.
+            RuntimeError: If the request cannot start or the Kafka send fails.
         """
         ...
 
@@ -297,7 +297,7 @@ class _ProsodyClientApi:
         subsystems: Sequence[str],
         timeout: timedelta,
     ) -> dict[str, Outcome[JSONValue]]:
-        """Request one excise response from each subsystem."""
+        """Return one excise outcome for each subsystem."""
         ...
 
     async def consumer_state(self) -> Literal['shut_down', 'unconfigured', 'configured', 'running']:
