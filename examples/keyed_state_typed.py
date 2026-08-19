@@ -62,6 +62,9 @@ def order_payload(message: Message[OrderEvent]) -> OrderEvent:
 class OrderHandler(EventHandler[OrderEvent]):
     async def on_excise(self, context: Context, message: ExciseMessage) -> None:
         print(f"Excise {message.key}")
+        await context.state(CART).clear()
+        await context.state(TOTALS).clear()
+        await context.state(BACKLOG).clear()
 
     async def on_message(
         self, context: Context, message: Message[OrderEvent]
