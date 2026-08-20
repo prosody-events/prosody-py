@@ -64,7 +64,7 @@ jobs:
 
   linux:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -129,7 +129,7 @@ jobs:
 
   musllinux:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -193,7 +193,7 @@ jobs:
 
   windows:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -234,7 +234,7 @@ jobs:
 
   macos:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -275,7 +275,7 @@ jobs:
 
   sdist:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -304,7 +304,7 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     needs: [ release-please, linux, musllinux, windows, macos, sdist ]
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: needs.release-please.outputs.release_created == 'true'
     permissions:
       id-token: write
     steps:
