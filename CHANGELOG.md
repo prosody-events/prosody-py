@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.1](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.5.0...prosody-py-v0.5.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* guard releases and declare Python 3.15 ([#42](https://github.com/prosody-events/prosody-py/issues/42)) ([773813a](https://github.com/prosody-events/prosody-py/commit/773813a8ede97decd052ce37e48b2f06f4e3c77f))
+* install modern protoc in manylinux builds ([#39](https://github.com/prosody-events/prosody-py/issues/39)) ([d943ade](https://github.com/prosody-events/prosody-py/commit/d943adede228e356dcbd40fc05b4709ce9cda1e3))
+* support Python release retries ([#41](https://github.com/prosody-events/prosody-py/issues/41)) ([7edbf75](https://github.com/prosody-events/prosody-py/commit/7edbf758945460398412ba783cf4e7b231479fdc))
+* update mimalloc for thread lifecycle safety ([#43](https://github.com/prosody-events/prosody-py/issues/43)) ([c116f22](https://github.com/prosody-events/prosody-py/commit/c116f221f1d7affc3f1072af0b3081ff9e58bc1b))
+
 ## [0.5.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.4.0...prosody-py-v0.5.0) (2026-08-19)
 
 
