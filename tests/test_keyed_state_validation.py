@@ -160,27 +160,6 @@ async def test_rejects_unknown_payload():
         await make_client(state_collections=[raw(payload="bogus")])
 
 
-# --- recovery_delay rules -------------------------------------------------
-
-
-async def test_rejects_recovery_delay_fractional():
-    with pytest.raises(
-        ValueError, match="state_recovery_delay: must be a whole number of seconds"
-    ):
-        await make_client(state_recovery_delay=2.5, state_collections=[value("v")])
-
-
-async def test_rejects_recovery_delay_negative():
-    with pytest.raises(ValueError, match=r"state_recovery_delay"):
-        await make_client(state_recovery_delay=-5, state_collections=[value("v")])
-
-
-@pytest.mark.parametrize("delay", [float("nan"), float("inf")])
-async def test_rejects_recovery_delay_nonfinite(delay):
-    with pytest.raises(ValueError, match=r"state_recovery_delay"):
-        await make_client(state_recovery_delay=delay, state_collections=[value("v")])
-
-
 # --- happy path -----------------------------------------------------------
 
 

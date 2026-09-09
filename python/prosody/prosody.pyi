@@ -170,7 +170,6 @@ class _ProsodyClientApi:
             state_owned_cache_size: Optional[str] = None,
             state_read_cache_size: Optional[str] = None,
             state_read_cache: Optional[Union[Duration, Literal[False]]] = None,
-            state_recovery_delay: Optional[Duration] = None,
             subsystem: Optional[str] = None,
             peer_bind_address: Optional[str] = None,
             peer_advertised_connect: Optional[str] = None,
@@ -239,7 +238,6 @@ class _ProsodyClientApi:
             state_owned_cache_size: Capacity of the owning keyed-state cache, such as ``"64 MiB"``. Env: ``PROSODY_STATE_OWNED_CACHE_SIZE``. The storage engine selects its default when neither is set.
             state_read_cache_size: Capacity of the published-state read cache, such as ``"1 MiB"``. Env: ``PROSODY_STATE_READ_CACHE_SIZE``. Uses the owned cache size when set, or 1 MiB when both sizes are unset.
             state_read_cache: Default published-read cache TTL, or `False` to bypass the cache. Env: ``PROSODY_STATE_READ_CACHE_TTL``. Defaults to 5 seconds.
-            state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_STATE_RECOVERY_DELAY. Defaults to 30s.
             subsystem: Name under which published JSON collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
             peer_bind_address: Socket address for the peer listener. Prosody reads ``PROSODY_PEER_BIND_ADDRESS`` when absent.
             peer_advertised_connect: Connect URI for remote peers. Prosody reads ``PROSODY_PEER_ADVERTISED_CONNECT`` when absent.

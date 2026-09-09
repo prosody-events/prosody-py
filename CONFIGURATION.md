@@ -145,7 +145,6 @@ Register keyed-state collections before you subscribe. Persistence is backed by 
 | `state_owned_cache_size` / `PROSODY_STATE_OWNED_CACHE_SIZE` | Capacity of the owning keyed-state cache; accepts sizes such as `64 MiB` or `500 MB` | storage-engine default |
 | `state_read_cache_size` / `PROSODY_STATE_READ_CACHE_SIZE` | Capacity of the published-state read cache; accepts sizes such as `1 MiB` | `state_owned_cache_size` or `PROSODY_STATE_OWNED_CACHE_SIZE` when set; otherwise 1 MiB |
 | `state_read_cache` / `PROSODY_STATE_READ_CACHE_TTL`          | Default published-read cache TTL. Use `False` or the environment value `none` to bypass the cache                                                                         | 5s                  |
-| `state_recovery_delay` / `PROSODY_STATE_RECOVERY_DELAY` | Delay before the recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (`timedelta` or float seconds; the env var accepts a duration string like `30s`) | 30s                 |
 | `subsystem` / `PROSODY_SUBSYSTEM` | Subsystem name used to advertise JSON descriptors declared with `published=True` | (none) |
 
 Each `state_collections` entry has these fields. Prefer the definition constructors from the [API reference](Readme.md#api-reference). They serialize into `state_collections`, so you can reuse the same object with `context.state()`.
@@ -157,7 +156,7 @@ Published collections require `subsystem`. Keep it configured for one deployment
 | `name`             | Collection name; non-empty and unique within the client                             | (required) |
 | `kind`             | `"value"`, `"map"`, or `"deque"`                                                     | (required) |
 | `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received) | (required) |
-| `ttl`              | Per-write TTL, whole seconds >= 1 (must exceed the recovery delay); `timedelta` or int seconds | (none)     |
+| `ttl`              | Per-write TTL, whole seconds >= 1; `timedelta` or int seconds | (none)     |
 | `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
 | `published`        | Allow other clients to read this JSON collection without subscribing                | false      |
 | `read_cache`       | Published-read cache override: a duration, `False`, or inherit when omitted          | inherit    |
