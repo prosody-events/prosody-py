@@ -1,5 +1,4 @@
 import logging
-import warnings
 
 from prosody.prosody import (
     _NativeProsodyClient,
@@ -70,17 +69,7 @@ class ProsodyClient:
 
     @classmethod
     def create(cls, **configuration):
-        """Create a client without blocking the Python event loop.
-
-        ``state_recovery_delay`` is deprecated and has no effect.
-        """
-        if configuration.pop("state_recovery_delay", None) is not None:
-            warnings.warn(
-                "state_recovery_delay has no effect; remove it",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
+        """Create a client without blocking the Python event loop."""
         async def finish():
             client = object.__new__(cls)
             client._native = await _NativeProsodyClient.create(**configuration)

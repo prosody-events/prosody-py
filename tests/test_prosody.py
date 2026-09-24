@@ -63,24 +63,6 @@ async def test_create_starts_native_construction_when_awaited(monkeypatch):
     assert calls == [{"mock": True}]
 
 
-@pytest.mark.asyncio
-async def test_recovery_delay_is_deprecated_and_ignored(monkeypatch):
-    calls = []
-
-    class NativeClient:
-        @staticmethod
-        async def create(**configuration):
-            calls.append(configuration)
-            return object()
-
-    monkeypatch.setattr("prosody._NativeProsodyClient", NativeClient)
-    with pytest.warns(DeprecationWarning, match="state_recovery_delay"):
-        pending = ProsodyClient.create(mock=True, state_recovery_delay=30)
-    await pending
-
-    assert calls == [{"mock": True}]
-
-
 def test_missing_native_client_reports_attribute_error():
     client = object.__new__(ProsodyClient)
 
