@@ -111,24 +111,19 @@ async def test_client_state_dispatches_by_definition_type(definition, method):
 @pytest.mark.asyncio
 async def test_published_scans_reuse_typed_state_scan_adapter():
     class NativeMap:
-        scan_calls = 0
-
         async def contains_key(self, key, map_key):
             assert (key, map_key) == ("user-1", "a")
             return True
 
-        async def scan(self, key, direction):
-            self.scan_calls += 1
+        def scan(self, key, direction):
             assert (key, direction) == ("user-1", "forward")
             return _StubScan([("a", 1), ("b", 2)])
 
-        async def keys(self, key, direction):
+        def keys(self, key, direction):
             assert (key, direction) == ("user-1", "backward")
             return _StubScan(["b", "a"])
 
     class NativeDeque:
-        scan_calls = 0
-
         async def len(self, key):
             assert key == "user-1"
             return 2
@@ -149,15 +144,13 @@ async def test_published_scans_reuse_typed_state_scan_adapter():
             assert key == "user-1"
             return [1, 2][index] if index < 2 else None
 
-        async def scan(self, key, direction):
-            self.scan_calls += 1
+        def scan(self, key, direction):
             assert (key, direction) == ("user-1", "backward")
             return _StubScan([2, 1])
 
     native_map = NativeMap()
     published_map = PublishedMap(native_map)
     item_scan = published_map.items("user-1")
-    assert native_map.scan_calls == 0
     items = [
         item
         async for item in item_scan
@@ -174,7 +167,6 @@ async def test_published_scans_reuse_typed_state_scan_adapter():
     native_deque = NativeDeque()
     published_deque = PublishedDeque(native_deque)
     deque_scan = published_deque.values("user-1", Direction.BACKWARD)
-    assert native_deque.scan_calls == 0
     values = [
         item
         async for item in deque_scan

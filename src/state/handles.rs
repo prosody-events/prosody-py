@@ -213,7 +213,6 @@ macro_rules! map_state {
             /// Opens an entry cursor.
             fn scan(&self, py: Python, direction: &str) -> PyResult<$scan> {
                 let direction = parse_direction(py, &self.env, direction)?;
-                let _guard = self.env.op_context(py)?.attach();
                 Ok($scan::new(
                     self.state.entries().direction(direction).stream(),
                     self.env.clone(),
@@ -223,7 +222,6 @@ macro_rules! map_state {
             /// Opens a key cursor.
             fn keys(&self, py: Python, direction: &str) -> PyResult<NativeMapKeyScan> {
                 let direction = parse_direction(py, &self.env, direction)?;
-                let _guard = self.env.op_context(py)?.attach();
                 Ok(NativeMapKeyScan::new(
                     self.state.keys().direction(direction).stream(),
                     self.env.clone(),
@@ -434,7 +432,6 @@ macro_rules! deque_state {
             /// Opens an element cursor.
             fn scan(&self, py: Python, direction: &str) -> PyResult<$scan> {
                 let direction = parse_direction(py, &self.env, direction)?;
-                let _guard = self.env.op_context(py)?.attach();
                 Ok($scan::new(
                     self.state.values().direction(direction).stream(),
                     self.env.clone(),

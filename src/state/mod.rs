@@ -9,9 +9,10 @@
 //! Every operation reads the Python-side OpenTelemetry carrier while the GIL is
 //! held, then activates it while polling the erased future off the GIL, letting
 //! core's semantic collection span join the event trace without an extra
-//! `PyO3` binding span. Scans activate the carrier while core constructs its
-//! stream span; pulls transport vectors of up to 256 immediately-ready items
-//! without creating per-chunk binding spans.
+//! `PyO3` binding span. Opening a scan performs no read. Each pull activates
+//! the carrier, and core starts its stream span on the first pull. Pulls
+//! transport vectors of up to 256 immediately-ready items without creating
+//! per-chunk binding spans.
 //!
 //! Errors carry their category structurally: an [`ErasedStateError`] is raised
 //! as `PermanentStateError` or `TransientStateError` by reading its

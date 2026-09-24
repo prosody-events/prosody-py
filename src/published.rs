@@ -6,7 +6,7 @@ use crate::state::{
 };
 use prosody::consumer::event_context::ErasedStateError;
 use prosody::high_level::erased::{SharedDequeReader, SharedMapReader, SharedValueReader};
-use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::pythonize;
 use serde_json::Value;
@@ -91,24 +91,16 @@ impl PublishedMap {
         })
     }
 
-    fn scan<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
+    fn scan(&self, py: Python, key: String, direction: &str) -> PyResult<NativeJsonMapScan> {
         let direction = parse_direction(py, &self.env, direction)?;
-        let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let cursor = inner.entries(key).direction(direction).stream();
-            Python::attach(|py| Ok(Py::new(py, NativeJsonMapScan::new(cursor, env))?.into_any()))
-        })
+        let cursor = self.inner.entries(key).direction(direction).stream();
+        Ok(NativeJsonMapScan::new(cursor, self.env.clone()))
     }
 
-    fn keys<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
+    fn keys(&self, py: Python, key: String, direction: &str) -> PyResult<NativeMapKeyScan> {
         let direction = parse_direction(py, &self.env, direction)?;
-        let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let cursor = inner.keys(key).direction(direction).stream();
-            Python::attach(|py| Ok(Py::new(py, NativeMapKeyScan::new(cursor, env))?.into_any()))
-        })
+        let cursor = self.inner.keys(key).direction(direction).stream();
+        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
     }
 }
 
@@ -179,13 +171,9 @@ impl PublishedDeque {
         })
     }
 
-    fn scan<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
+    fn scan(&self, py: Python, key: String, direction: &str) -> PyResult<NativeJsonDequeScan> {
         let direction = parse_direction(py, &self.env, direction)?;
-        let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let cursor = inner.values(key).direction(direction).stream();
-            Python::attach(|py| Ok(Py::new(py, NativeJsonDequeScan::new(cursor, env))?.into_any()))
-        })
+        let cursor = self.inner.values(key).direction(direction).stream();
+        Ok(NativeJsonDequeScan::new(cursor, self.env.clone()))
     }
 }

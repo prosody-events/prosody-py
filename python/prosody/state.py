@@ -363,21 +363,9 @@ class _StateScan(Generic[Y]):
     close use ``contextlib.aclosing(...)``.
     """
 
-    def __init__(
-        self,
-        native: Union[_NativeScan[X], Callable[[], Awaitable[_NativeScan[X]]]],
-        transform: Callable[[X], Y],
-    ) -> None:
-        self._native = native if not callable(native) else None
-        self._open = native if callable(native) else None
+    def __init__(self, native: _NativeScan[X], transform: Callable[[X], Y]) -> None:
+        self._native = native
         self._transform = transform
-
-    async def _cursor(self) -> _NativeScan[X]:
-        if self._native is None:
-            assert self._open is not None
-            self._native = await self._open()
-            self._open = None
-        return self._native
 
     def __aiter__(self) -> "_StateScan[Y]":
         return self
@@ -385,11 +373,10 @@ class _StateScan(Generic[Y]):
     async def __anext__(self) -> Y:
         # Re-raises the native StopAsyncIteration at exhaustion (never coerced
         # by PEP 479 since it crosses no generator boundary here).
-        return self._transform(await (await self._cursor()).__anext__())
+        return self._transform(await self._native.__anext__())
 
     async def aclose(self) -> None:
-        if self._native is not None:
-            await self._native.aclose()
+        await self._native.aclose()
 
 
 class PublishedValue(Generic[T]):
@@ -420,23 +407,16 @@ class PublishedMap(Generic[V]):
     def items(
         self, key: str, direction: Direction = Direction.FORWARD
     ) -> "_StateScan[tuple[str, V]]":
-        return _StateScan(
-            lambda: self._native.scan(key, direction.value),
-            _identity,
-        )
+        return _StateScan(self._native.scan(key, direction.value), _identity)
 
     def keys(
         self, key: str, direction: Direction = Direction.FORWARD
     ) -> "_StateScan[str]":
-        return _StateScan(
-            lambda: self._native.keys(key, direction.value),
-            _identity,
-        )
+        return _StateScan(self._native.keys(key, direction.value), _identity)
 
     def values(self, key: str) -> "_StateScan[V]":
         return _StateScan(
-            lambda: self._native.scan(key, Direction.FORWARD.value),
-            lambda entry: entry[1],
+            self._native.scan(key, Direction.FORWARD.value), lambda entry: entry[1]
         )
 
 
@@ -465,10 +445,7 @@ class PublishedDeque(Generic[T]):
     def values(
         self, key: str, direction: Direction = Direction.FORWARD
     ) -> "_StateScan[T]":
-        return _StateScan(
-            lambda: self._native.scan(key, direction.value),
-            _identity,
-        )
+        return _StateScan(self._native.scan(key, direction.value), _identity)
 
 
 class _PublishedValueNative(Protocol[T]):
@@ -488,12 +465,10 @@ class _PublishedMapNative(Protocol[V]):
     async def contains_key(self, key: str, map_key: str) -> bool:
         raise NotImplementedError
 
-    async def scan(
-        self, key: str, direction: str
-    ) -> "_NativeScan[tuple[str, V]]":
+    def scan(self, key: str, direction: str) -> "_NativeScan[tuple[str, V]]":
         raise NotImplementedError
 
-    async def keys(self, key: str, direction: str) -> "_NativeScan[str]":
+    def keys(self, key: str, direction: str) -> "_NativeScan[str]":
         raise NotImplementedError
 
 
@@ -513,7 +488,7 @@ class _PublishedDequeNative(Protocol[T]):
     async def peek_back(self, key: str) -> Optional[T]:
         raise NotImplementedError
 
-    async def scan(self, key: str, direction: str) -> "_NativeScan[T]":
+    def scan(self, key: str, direction: str) -> "_NativeScan[T]":
         raise NotImplementedError
 
 
