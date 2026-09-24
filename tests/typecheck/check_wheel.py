@@ -8,10 +8,13 @@ from zipfile import ZipFile
 REQUIRED = {
     "prosody/__init__.pyi",
     "prosody/context.pyi",
+    "prosody/definition.pyi",
     "prosody/errors.pyi",
     "prosody/handler.pyi",
     "prosody/prosody.pyi",
+    "prosody/published.pyi",
     "prosody/py.typed",
+    "prosody/query.pyi",
     "prosody/request.pyi",
     "prosody/state.pyi",
 }

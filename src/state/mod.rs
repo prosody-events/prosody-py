@@ -45,9 +45,15 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-mod handles;
+mod deque;
+mod map;
+mod query;
+mod value;
 
-pub(crate) use handles::*;
+pub(crate) use deque::{NativeJsonDequeState, NativeMessageDequeState};
+pub(crate) use map::{NativeJsonMapState, NativeMessageMapState};
+pub(crate) use query::{KeyQuery, PositionQuery};
+pub(crate) use value::{NativeJsonValueState, NativeMessageValueState};
 
 /// Maximum number of immediately-ready scan items transported through `PyO3`
 /// in one vector. Core owns ready draining, error ordering, and pull
@@ -284,6 +290,19 @@ fn json_write_item(
     Ok(value)
 }
 
+/// Prepares a Kafka-message write.
+fn message_write_item(
+    py: Python,
+    env: &StateEnv,
+    item: &Bound<PyAny>,
+) -> PyResult<ConsumerMessage<Value>> {
+    if item.is_instance(env.0.message_class.bind(py))? {
+        consumer_message(py, env, item)
+    } else {
+        Err(transient_error(py, env, "expected a Kafka message"))
+    }
+}
+
 struct ScanInner<T> {
     cursor: StateCursor<T>,
     retained: VecDeque<T>,
@@ -412,7 +431,7 @@ native_scan!(
     message_map_entry
 );
 native_scan!(
-    NativeMapKeyScan,
+    NativeKeyScan,
     String,
     |py, _env: &StateEnv, key: &String| {
         Ok::<Py<PyAny>, PyErr>(PyString::new(py, key).into_any().unbind())

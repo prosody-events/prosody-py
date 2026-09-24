@@ -646,10 +646,37 @@ Do not reuse a durable name for a different collection kind or payload type. Cre
 | Collection | JSON payload | Kafka message | Main operations |
 | --- | --- | --- | --- |
 | Value | `value` | `message_value` | `get`, `set`, `clear` |
-| Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `set`, `remove`, `items`, `keys`, `clear` |
+| Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `set`, `remove`, `items`, `keys`, `values`, `clear` |
 | Deque | `deque` | `message_deque` | `append`, `appendleft`, `pop`, `popleft`, `get`, `size`, `values`, `clear` |
 
 All operations are asynchronous. Map and deque scans use `async for`. Map keys are strings.
+
+### Query a part of a collection
+
+Map and deque scans accept keyword options. Prosody applies them in storage, so a scan reads only the selected entries:
+
+- `prefix` keeps map keys that start with a string.
+- `from_` and `after` start at a key, or after it. `to` and `before` stop at a key, or before it.
+- `limit` returns at most that number of items.
+- Deque scans take positions from the front instead of keys. `range` also accepts a `range` or a `slice` of positions, such as `range=slice(2, 5)`.
+
+The edges follow the scan direction, so a `Direction.BACKWARD` scan starts at the high end. Options narrow a scan and never widen it. Positions cannot be negative. To read the last items of a deque, scan `Direction.BACKWARD` with a `limit`.
+
+To read a large map one page at a time, pass the last key of each page as `after`:
+
+```python
+async def order_pages(context: Context) -> None:
+    orders = context.state(ORDERS)
+    last: Optional[str] = None
+    while True:
+        page = [key async for key in orders.keys(after=last, limit=100)]
+        if not page:
+            break
+        await process(page)
+        last = page[-1]
+```
+
+Setting both `from_` and `after`, or both `to` and `before`, raises `ValueError`. A `limit` below 1 also raises `ValueError`.
 
 `None` means absence. Do not store this value. Use `clear()` or `remove()`. Payload annotations guide the type checker but do not validate data.
 
@@ -695,7 +722,7 @@ current_order = await order_reader.get("customer-123")
 
 The reader cannot see pending changes that exist only in a handler. It cannot change the collection. Each read takes an explicit key because no handler supplies one.
 
-Map and deque readers fetch data in chunks. They do not load the complete collection before iteration starts.
+Map and deque readers fetch data in chunks. They do not load the complete collection before iteration starts. Their scans accept the same query options as the handler scans.
 
 The default cache window is five seconds. Set `read_cache=timedelta(...)` to select a different window. Set `read_cache=False` to bypass the cache.
 
@@ -1155,6 +1182,8 @@ Each definition type provides `to_config()`. It returns an entry for `state_coll
 
 All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`. JSON definitions also expose `published` and `read_cache`. Map definitions expose `keyset_limit`. Deque definitions expose `capacity`.
 
+Map scans (`MapState.items`, `keys`, and `values`) accept the keyword options `prefix`, `from_`, `after`, `to`, `before`, and `limit`. Deque scans accept `from_`, `after`, `to`, `before`, `range`, and `limit` with positions. See [Query a part of a collection](#query-a-part-of-a-collection).
+
 `ValueState[T]`:
 
 - `get() -> Optional[T]`
@@ -1171,9 +1200,9 @@ All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`.
 - `set(key: str, value: V) -> None`
 - `remove(key: str) -> None`
 - `clear() -> None`
-- `items(direction=Direction.FORWARD)` — async iterator over `(str, V)` entries
-- `keys(direction=Direction.FORWARD)` — async iterator over `str` keys
-- `values()` — async iterator over `V` values (forward-only)
+- `items(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, limit=None)` — async iterator over `(str, V)` entries
+- `keys(direction=Direction.FORWARD, *, ...)` — async iterator over `str` keys, with the same options
+- `values(*, direction=Direction.FORWARD, ...)` — async iterator over `V` values, with the same options
 - `__aiter__()` — forward async iteration over `str` keys (like `dict`)
 - `commit() -> None`
 - `rollback() -> None`
@@ -1190,14 +1219,14 @@ All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`.
 - `is_empty() -> bool`
 - `clear() -> None`
 - `get(index: int) -> Optional[T]`
-- `values(direction=Direction.FORWARD)` — async iterator over `T` elements
+- `values(direction=Direction.FORWARD, *, from_=None, after=None, to=None, before=None, range=None, limit=None)` — async iterator over `T` elements
 - `__aiter__()` — forward async iteration over `T` elements
 - `commit() -> None`
 - `rollback() -> None`
 
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
 
-Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, and `values` return async iterators directly.
+Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, and `values` return async iterators directly and accept the handler query options.
 
 Errors:
 

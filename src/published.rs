@@ -1,7 +1,7 @@
 //! Python-native read-only views over published keyed state.
 
 use crate::state::{
-    NativeJsonDequeScan, NativeJsonMapScan, NativeMapKeyScan, StateEnv, parse_direction,
+    KeyQuery, NativeJsonDequeScan, NativeJsonMapScan, NativeKeyScan, PositionQuery, StateEnv,
     state_error,
 };
 use prosody::consumer::event_context::ErasedStateError;
@@ -91,16 +91,14 @@ impl PublishedMap {
         })
     }
 
-    fn scan(&self, py: Python, key: String, direction: &str) -> PyResult<NativeJsonMapScan> {
-        let direction = parse_direction(py, &self.env, direction)?;
-        let cursor = self.inner.entries(key).direction(direction).stream();
+    fn scan(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeJsonMapScan> {
+        let cursor = query.stream(py, &self.env, self.inner.entries(key))?;
         Ok(NativeJsonMapScan::new(cursor, self.env.clone()))
     }
 
-    fn keys(&self, py: Python, key: String, direction: &str) -> PyResult<NativeMapKeyScan> {
-        let direction = parse_direction(py, &self.env, direction)?;
-        let cursor = self.inner.keys(key).direction(direction).stream();
-        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
+    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeKeyScan> {
+        let cursor = query.stream(py, &self.env, self.inner.keys(key))?;
+        Ok(NativeKeyScan::new(cursor, self.env.clone()))
     }
 }
 
@@ -171,9 +169,8 @@ impl PublishedDeque {
         })
     }
 
-    fn scan(&self, py: Python, key: String, direction: &str) -> PyResult<NativeJsonDequeScan> {
-        let direction = parse_direction(py, &self.env, direction)?;
-        let cursor = self.inner.values(key).direction(direction).stream();
+    fn scan(&self, py: Python, key: String, query: PositionQuery) -> PyResult<NativeJsonDequeScan> {
+        let cursor = query.stream(py, &self.env, self.inner.values(key))?;
         Ok(NativeJsonDequeScan::new(cursor, self.env.clone()))
     }
 }

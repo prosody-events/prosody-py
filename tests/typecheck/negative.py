@@ -9,6 +9,7 @@ from typing_extensions import TypedDict
 
 from prosody import (
     Context,
+    Direction,
     MapDefinition,
     Message,
     MessageDequeDefinition,
@@ -34,7 +35,11 @@ async def expected_errors(
     totals = context.state(TOTALS)
     await totals.set("key", "not-an-int")  # type: ignore[arg-type]
 
+    totals.keys(limit="10")  # type: ignore[arg-type]
+    totals.values(Direction.BACKWARD)  # type: ignore[call-arg]
+
     events = context.state(EVENTS)
     await events.append(message.payload)  # type: ignore[arg-type]
+    events.values(range=[0, 1])  # type: ignore[arg-type]
 
     await ProsodyClient.create(unknown_option=True)  # type: ignore[call-arg]

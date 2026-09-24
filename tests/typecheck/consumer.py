@@ -7,6 +7,7 @@ from typing_extensions import TypedDict, assert_type
 
 from prosody import (
     Context,
+    Direction,
     EventHandler,
     ExciseMessage,
     Failure,
@@ -71,9 +72,13 @@ class Handler(EventHandler[Event, Response]):
         assert_type(await totals.contains(message.key), bool)
         async for key in totals:
             assert_type(key, str)
+        async for entry in totals.items(Direction.BACKWARD, prefix="a", after="a1", limit=5):
+            assert_type(entry, tuple[str, int])
 
         events = context.state(EVENTS)
         await events.append(message)
+        async for item in events.values(range=slice(0, 5), limit=2):
+            assert_type(item, Message[Event])
         event = await events.peek()
         assert_type(event, Optional[Message[Event]])
         if event is not None:

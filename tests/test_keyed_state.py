@@ -41,6 +41,7 @@ from prosody import (
     NullValueError,
 )
 from prosody.prosody import AdminClient
+from prosody.query import _KeyQuery
 
 
 DEFAULT_TIMEOUT = 30.0
@@ -1079,7 +1080,7 @@ async def test_bad_direction_token_is_transient(state_client):
         try:
             # The typed API only passes Direction.value tokens, so drive the
             # native handle directly to reach parse_direction's guard.
-            m._native.scan("sideways")
+            m._native.scan(_KeyQuery("sideways"))
             await results.send({"threw": False})
         except Exception as e:
             await results.send(

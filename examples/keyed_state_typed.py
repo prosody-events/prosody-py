@@ -15,6 +15,7 @@ from typing_extensions import TypedDict, assert_type
 
 from prosody import (
     Context,
+    Direction,
     EventHandler,
     ExciseMessage,
     MapDefinition,
@@ -93,11 +94,23 @@ class OrderHandler(EventHandler[OrderEvent]):
         async for _k in totals:
             _key: str = _k
 
+        # Keyset paging: pass the last key of a page as `after`.
+        last: Optional[str] = None
+        while True:
+            page = [key async for key in totals.keys(after=last, limit=100)]
+            if not page:
+                break
+            last = page[-1]
+        latest = totals.values(direction=Direction.BACKWARD, limit=3)
+        _latest: List[int] = [total async for total in latest]
+
         backlog = context.state(BACKLOG)  # DequeState[Message[OrderEvent]]
         await backlog.append(message)
         oldest = await backlog.get(0)  # Optional[Message[OrderEvent]]
         if oldest is not None:
             _order_id: str = order_payload(oldest)["order_id"]
+        async for _event in backlog.values(Direction.BACKWARD, range=range(0, 10)):
+            _recent: Message[OrderEvent] = _event
         newest = await backlog.peek()  # Optional[Message[OrderEvent]]
         front = await backlog.peekleft()  # Optional[Message[OrderEvent]]
         if newest is not None and front is not None:
