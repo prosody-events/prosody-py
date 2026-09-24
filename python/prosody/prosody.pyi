@@ -252,7 +252,7 @@ class _ProsodyClientApi:
             state_read_cache_size: Capacity of the published-state read cache, such as ``"1 MiB"``. Env: ``PROSODY_STATE_READ_CACHE_SIZE``. Uses the owned cache size when set, or 1 MiB when both sizes are unset.
             state_read_cache: Default published-read cache TTL, or `False` to bypass the cache. Env: ``PROSODY_STATE_READ_CACHE_TTL``. Defaults to 5 seconds.
             state_recovery_delay: Deprecated and ignored. Setting it emits a ``DeprecationWarning``. Remove it.
-            subsystem: Name under which published JSON collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
+            subsystem: Name under which published collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
             peer_bind_address: Socket address for the peer listener. Prosody reads ``PROSODY_PEER_BIND_ADDRESS`` when absent.
             peer_advertised_connect: Connect URI for remote peers. Prosody reads ``PROSODY_PEER_ADVERTISED_CONNECT`` when absent.
             peer_network_name: Network name for direct routes. Prosody reads ``PROSODY_PEER_NETWORK_NAME`` when absent.

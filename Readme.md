@@ -728,7 +728,7 @@ current_order = context.state(CURRENT_ORDER)
 await current_order.set({"sku": "book"})
 ```
 
-Read published state from a handler or other application code. The Prosody client does not need an active subscription.
+Read published state from a handler or other application code. The Prosody client does not need an active subscription. A client that only reads published state does not need `subscribed_topics`.
 
 Use the subsystem and the same definition to open a reader:
 
