@@ -11,6 +11,7 @@ annotation; see :mod:`prosody.definition`. Map keys and set members are always
 ``str``.
 """
 
+import enum
 from typing import Generic, List, Optional, Tuple, Union, overload
 
 from typing_extensions import TypeVar
@@ -48,6 +49,17 @@ V = TypeVar("V", default=JSONValue)  # map value type
 D = TypeVar("D")  # get() default's own type, preserved in the return
 
 
+class StoreOutcome(enum.Enum):
+    """The effect of ``commit()`` or ``rollback()`` on a collection.
+
+    ``APPLIED`` means the call wrote or discarded buffered operations.
+    ``NO_OP`` means nothing was buffered.
+    """
+
+    APPLIED = "applied"
+    NO_OP = "no_op"
+
+
 class ValueState(Generic[T]):
     """Typed handle over a single-value collection.
 
@@ -68,11 +80,17 @@ class ValueState(Generic[T]):
     async def clear(self) -> None:
         """Buffer a delete of the value."""
         ...
-    async def commit(self) -> None:
-        """Durably flush the buffered operations mid-handler."""
+    async def commit(self) -> StoreOutcome:
+        """Durably flush the buffered operations mid-handler.
+
+        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
+        """
         ...
-    async def rollback(self) -> None:
-        """Discard buffered uncommitted operations back to the committed floor."""
+    async def rollback(self) -> StoreOutcome:
+        """Discard buffered uncommitted operations back to the committed floor.
+
+        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
+        """
         ...
 
 
@@ -208,11 +226,17 @@ class MapState(Generic[V]):
         scan — rather than per-key :meth:`get` after key iteration.
         """
         ...
-    async def commit(self) -> None:
-        """Durably flush the buffered operations mid-handler."""
+    async def commit(self) -> StoreOutcome:
+        """Durably flush the buffered operations mid-handler.
+
+        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
+        """
         ...
-    async def rollback(self) -> None:
-        """Discard buffered uncommitted operations back to the committed floor."""
+    async def rollback(self) -> StoreOutcome:
+        """Discard buffered uncommitted operations back to the committed floor.
+
+        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
+        """
         ...
 
 
@@ -260,11 +284,17 @@ class SetState:
     def __aiter__(self) -> _StateScan[str]:
         """Forward iteration over the members."""
         ...
-    async def commit(self) -> None:
-        """Durably flush the buffered operations mid-handler."""
+    async def commit(self) -> StoreOutcome:
+        """Durably flush the buffered operations mid-handler.
+
+        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
+        """
         ...
-    async def rollback(self) -> None:
-        """Discard buffered uncommitted operations back to the committed floor."""
+    async def rollback(self) -> StoreOutcome:
+        """Discard buffered uncommitted operations back to the committed floor.
+
+        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
+        """
         ...
 
 
@@ -350,9 +380,15 @@ class DequeState(Generic[T]):
     def __aiter__(self) -> _StateScan[T]:
         """Forward iteration over the elements."""
         ...
-    async def commit(self) -> None:
-        """Durably flush the buffered operations mid-handler."""
+    async def commit(self) -> StoreOutcome:
+        """Durably flush the buffered operations mid-handler.
+
+        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
+        """
         ...
-    async def rollback(self) -> None:
-        """Discard buffered uncommitted operations back to the committed floor."""
+    async def rollback(self) -> StoreOutcome:
+        """Discard buffered uncommitted operations back to the committed floor.
+
+        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
+        """
         ...

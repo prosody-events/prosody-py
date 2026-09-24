@@ -2,7 +2,7 @@
 
 use super::{
     Arc, Bound, BoxSetState, FutureExt, KeyQuery, NativeKeyScan, PyAny, PyResult, PyTraverseError,
-    PyVisit, Python, StateEnv, future_into_py, pyclass, pymethods, state_error,
+    PyVisit, Python, StateEnv, future_into_py, outcome_token, pyclass, pymethods, state_error,
 };
 
 /// Ordered set state handle over string members.
@@ -90,24 +90,26 @@ impl NativeSetState {
         Ok(NativeKeyScan::new(cursor, self.env.clone()))
     }
 
-    /// Durably commits the buffered operations.
+    /// Durably commits the buffered operations and reports the outcome.
     fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
         let env = self.env.clone();
         future_into_py(py, async move {
             let out = state.commit().with_context(ctx).await;
-            Python::attach(|py| out.map(drop).map_err(|error| state_error(py, &env, &error)))
+            Python::attach(|py| {
+                out.map(outcome_token)
+                    .map_err(|error| state_error(py, &env, &error))
+            })
         })
     }
 
-    /// Discards the buffered operations.
+    /// Discards the buffered operations and reports the outcome.
     fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
         future_into_py(py, async move {
-            state.rollback().with_context(ctx).await;
-            Ok(())
+            Ok(outcome_token(state.rollback().with_context(ctx).await))
         })
     }
 

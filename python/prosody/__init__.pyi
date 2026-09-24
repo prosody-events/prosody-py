@@ -41,6 +41,7 @@ from prosody.state import (
     MessageValueDefinition as MessageValueDefinition,
     SetDefinition as SetDefinition,
     SetState as SetState,
+    StoreOutcome as StoreOutcome,
     ValueDefinition as ValueDefinition,
     ValueState as ValueState,
     PublishedValue as PublishedValue,

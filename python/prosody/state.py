@@ -15,6 +15,7 @@ Definitions live in :mod:`prosody.definition`, query options in
 module re-exports them.
 """
 
+import enum
 from typing import Any, List, Optional, Generic, Union
 
 from typing_extensions import TypeVar
@@ -57,6 +58,18 @@ T = TypeVar("T", default=JSONValue)  # value / deque item type
 V = TypeVar("V", default=JSONValue)  # map value type
 
 
+class StoreOutcome(enum.Enum):
+    """The effect of :meth:`commit` or :meth:`rollback` on a collection.
+
+    ``APPLIED`` means the call wrote or discarded buffered operations.
+    ``NO_OP`` means nothing was buffered. The string values are the tokens
+    the native handles return.
+    """
+
+    APPLIED = "applied"
+    NO_OP = "no_op"
+
+
 class ValueState(Generic[T]):
     """Typed handle over a single-value collection.
 
@@ -81,13 +94,13 @@ class ValueState(Generic[T]):
         """Buffer a delete of the value."""
         await self._native.clear()
 
-    async def commit(self) -> None:
+    async def commit(self) -> StoreOutcome:
         """Durably commit the buffered operations mid-handler."""
-        await self._native.commit()
+        return StoreOutcome(await self._native.commit())
 
-    async def rollback(self) -> None:
+    async def rollback(self) -> StoreOutcome:
         """Discard buffered uncommitted operations back to the committed floor."""
-        await self._native.rollback()
+        return StoreOutcome(await self._native.rollback())
 
 
 class MapState(Generic[V]):
@@ -231,13 +244,13 @@ class MapState(Generic[V]):
         """
         return self.keys()
 
-    async def commit(self) -> None:
+    async def commit(self) -> StoreOutcome:
         """Durably commit the buffered operations mid-handler."""
-        await self._native.commit()
+        return StoreOutcome(await self._native.commit())
 
-    async def rollback(self) -> None:
+    async def rollback(self) -> StoreOutcome:
         """Discard buffered uncommitted operations back to the committed floor."""
-        await self._native.rollback()
+        return StoreOutcome(await self._native.rollback())
 
 
 class SetState:
@@ -296,13 +309,13 @@ class SetState:
         """Forward iteration over the members."""
         return self.members()
 
-    async def commit(self) -> None:
+    async def commit(self) -> StoreOutcome:
         """Durably commit the buffered operations mid-handler."""
-        await self._native.commit()
+        return StoreOutcome(await self._native.commit())
 
-    async def rollback(self) -> None:
+    async def rollback(self) -> StoreOutcome:
         """Discard buffered uncommitted operations back to the committed floor."""
-        await self._native.rollback()
+        return StoreOutcome(await self._native.rollback())
 
 
 class DequeState(Generic[T]):
@@ -410,10 +423,10 @@ class DequeState(Generic[T]):
         """Forward iteration over the elements."""
         return self.values(Direction.FORWARD)
 
-    async def commit(self) -> None:
+    async def commit(self) -> StoreOutcome:
         """Durably commit the buffered operations mid-handler."""
-        await self._native.commit()
+        return StoreOutcome(await self._native.commit())
 
-    async def rollback(self) -> None:
+    async def rollback(self) -> StoreOutcome:
         """Discard buffered uncommitted operations back to the committed floor."""
-        await self._native.rollback()
+        return StoreOutcome(await self._native.rollback())

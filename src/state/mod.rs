@@ -33,7 +33,7 @@ use prosody::consumer::event_context::{
     StateCursor,
 };
 use prosody::consumer::message::ConsumerMessage;
-use prosody::state::Direction;
+use prosody::state::{Direction, StoreOutcome};
 use pyo3::exceptions::PyStopAsyncIteration;
 use pyo3::gc::{PyTraverseError, PyVisit};
 use pyo3::types::{PyAnyMethods, PyDict, PyString, PyTuple};
@@ -202,6 +202,15 @@ pub(crate) fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> Py
             env,
             &format!("direction: expected \"forward\" or \"backward\", got {other:?}"),
         )),
+    }
+}
+
+/// Names a commit or rollback outcome with the token of the Python
+/// `StoreOutcome` enum.
+fn outcome_token(outcome: StoreOutcome) -> &'static str {
+    match outcome {
+        StoreOutcome::Applied => "applied",
+        StoreOutcome::NoOp => "no_op",
     }
 }
 

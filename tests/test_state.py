@@ -27,6 +27,7 @@ from prosody import (
     MapState,
     SetState,
     DequeState,
+    StoreOutcome,
     StateError,
     PermanentStateError,
     TransientStateError,
@@ -289,6 +290,7 @@ def test_exports_present():
         "MapState",
         "SetState",
         "DequeState",
+        "StoreOutcome",
         "set",
         "SetDefinition",
         "PublishedSet",
@@ -344,6 +346,14 @@ class _StubNative:
         s = _StubScan([k for k, _ in self._scan_items])
         self.scans.append(s)
         return s
+
+    async def commit(self):
+        self.calls.append(("commit", ()))
+        return "applied"
+
+    async def rollback(self):
+        self.calls.append(("rollback", ()))
+        return "no_op"
 
     def __getattr__(self, name):
         async def coro(*args):

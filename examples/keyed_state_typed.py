@@ -23,6 +23,7 @@ from prosody import (
     MessageDequeDefinition,
     PermanentError,
     SetDefinition,
+    StoreOutcome,
     Timer,
     ValueDefinition,
     map,
@@ -129,7 +130,8 @@ class OrderHandler(EventHandler[OrderEvent]):
                 + order_payload(front)["order_id"]
             )
 
-        await cart.commit()
+        if await cart.commit() is StoreOutcome.NO_OP:
+            print("nothing to commit")
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
         _key: str = timer.key

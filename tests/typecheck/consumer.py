@@ -20,6 +20,7 @@ from prosody import (
     PublishedSet,
     SetDefinition,
     SetState,
+    StoreOutcome,
     Success,
     Timer,
     map,
@@ -81,6 +82,7 @@ class Handler(EventHandler[Event, Response]):
             assert_type(entry, tuple[str, int])
         assert_type(await totals.contains_many(["a"]), list[bool])
         assert_type(await totals.is_empty(), bool)
+        assert_type(await totals.commit(), StoreOutcome)
 
         tags = context.state(TAGS)
         assert_type(tags, SetState)
@@ -89,6 +91,7 @@ class Handler(EventHandler[Event, Response]):
         assert_type(await tags.contains_many(["a"]), list[bool])
         async for member in tags.members(from_="a", before="z"):
             assert_type(member, str)
+        assert_type(await tags.rollback(), StoreOutcome)
 
         events = context.state(EVENTS)
         await events.append(message)

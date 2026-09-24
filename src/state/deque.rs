@@ -3,8 +3,8 @@
 use super::{
     Arc, Bound, BoxDequeState, ConsumerMessage, FutureExt, NativeJsonDequeScan,
     NativeMessageDequeScan, PositionQuery, PyAny, PyResult, PyTraverseError, PyVisit, Python,
-    StateEnv, Value, build_message, future_into_py, json_write_item, message_write_item, pyclass,
-    pymethods, pythonize, state_error, transient_error,
+    StateEnv, Value, build_message, future_into_py, json_write_item, message_write_item,
+    outcome_token, pyclass, pymethods, pythonize, state_error, transient_error,
 };
 
 macro_rules! deque_state {
@@ -168,7 +168,7 @@ macro_rules! deque_state {
                 Ok($scan::new(cursor, self.env.clone()))
             }
 
-            /// Durably commits the buffered operations.
+            /// Durably commits the buffered operations and reports the outcome.
             fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
                 let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
@@ -176,18 +176,18 @@ macro_rules! deque_state {
                 future_into_py(py, async move {
                     let out = state.commit().with_context(ctx).await;
                     Python::attach(|py| {
-                        out.map(drop).map_err(|error| state_error(py, &env, &error))
+                        out.map(outcome_token)
+                            .map_err(|error| state_error(py, &env, &error))
                     })
                 })
             }
 
-            /// Discards the buffered operations.
+            /// Discards the buffered operations and reports the outcome.
             fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
                 let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
                 future_into_py(py, async move {
-                    state.rollback().with_context(ctx).await;
-                    Ok(())
+                    Ok(outcome_token(state.rollback().with_context(ctx).await))
                 })
             }
 

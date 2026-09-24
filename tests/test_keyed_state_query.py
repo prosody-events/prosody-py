@@ -1,5 +1,5 @@
-"""Infra-backed checks that query options and sets cross the native boundary
-intact.
+"""Infra-backed checks that query options, sets, and store outcomes cross the
+native boundary intact.
 
 Each scenario runs inside a live handler with the fixtures and collections of
 ``test_keyed_state.py``. Core owns the query semantics; these tests check that
@@ -8,6 +8,7 @@ each Python option reaches core as the matching query setting.
 
 from prosody import (
     Direction,
+    StoreOutcome,
     deque as deque_definition,
     map as map_definition,
     set as set_definition,
@@ -173,6 +174,38 @@ async def test_deque_position_options_reach_core(state_client):
     assert obs["tail"] == [9, 8, 7]
     assert obs["reverse_from"] == [5, 4, 3]
     assert obs["page"] == [7, 8]
+
+
+async def test_commit_and_rollback_report_store_outcomes(state_client):
+    client, topic, _ = state_client
+
+    async def outcomes(ctx):
+        report = {}
+        writes = {
+            "cart": lambda s: s.set({"v": 1}),
+            "totals": lambda s: s.set("k", 1),
+            "tags": lambda s: s.add("m"),
+            "backlog": lambda s: s.append(1),
+        }
+        for name, write in writes.items():
+            state = ctx.state(STATE_DEFS[name])
+            await _wait(write(state))
+            committed = await _wait(state.commit())
+            idle_commit = await _wait(state.commit())
+            await _wait(write(state))
+            rolled_back = await _wait(state.rollback())
+            idle_rollback = await _wait(state.rollback())
+            report[name] = [committed, idle_commit, rolled_back, idle_rollback]
+        return report
+
+    obs = await _observe(client, topic, outcomes)
+    expected = [
+        StoreOutcome.APPLIED,
+        StoreOutcome.NO_OP,
+        StoreOutcome.APPLIED,
+        StoreOutcome.NO_OP,
+    ]
+    assert obs == {name: expected for name in ["cart", "totals", "tags", "backlog"]}
 
 
 async def test_published_readers_accept_query_options(

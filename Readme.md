@@ -693,6 +693,8 @@ This transaction applies only to keyed state. Some workflows need state changes 
 - `await state.commit()` commits the collection's pending changes before the handler ends. A later handler failure does not remove them.
 - `await state.rollback()` discards pending changes since the last `commit()`. It cannot undo committed changes.
 
+Both calls return a `StoreOutcome`. `StoreOutcome.APPLIED` means the call wrote or discarded pending changes. `StoreOutcome.NO_OP` means nothing was pending.
+
 ### Published state
 
 Some callers need only the current value for a key. They can accept a stale value or a race with a concurrent update.
@@ -1194,8 +1196,8 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 - `get() -> Optional[T]`
 - `set(value: T) -> None`
 - `clear() -> None`
-- `commit() -> None`
-- `rollback() -> None`
+- `commit() -> StoreOutcome`
+- `rollback() -> StoreOutcome`
 
 `MapState[V]` (keys are `str`):
 
@@ -1211,8 +1213,8 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 - `keys(direction=Direction.FORWARD, *, ...)` — async iterator over `str` keys, with the same options
 - `values(*, direction=Direction.FORWARD, ...)` — async iterator over `V` values, with the same options
 - `__aiter__()` — forward async iteration over `str` keys (like `dict`)
-- `commit() -> None`
-- `rollback() -> None`
+- `commit() -> StoreOutcome`
+- `rollback() -> StoreOutcome`
 
 `SetState` (members are `str`):
 
@@ -1224,8 +1226,8 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 - `clear() -> None`
 - `members(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, limit=None)` — async iterator over `str` members
 - `__aiter__()` — forward async iteration over `str` members
-- `commit() -> None`
-- `rollback() -> None`
+- `commit() -> StoreOutcome`
+- `rollback() -> StoreOutcome`
 
 `DequeState[T]`:
 
@@ -1241,10 +1243,12 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 - `get(index: int) -> Optional[T]`
 - `values(direction=Direction.FORWARD, *, from_=None, after=None, to=None, before=None, range=None, limit=None)` — async iterator over `T` elements
 - `__aiter__()` — forward async iteration over `T` elements
-- `commit() -> None`
-- `rollback() -> None`
+- `commit() -> StoreOutcome`
+- `rollback() -> StoreOutcome`
 
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
+
+`StoreOutcome`: an enum with `StoreOutcome.APPLIED` and `StoreOutcome.NO_OP`.
 
 Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `items`, `keys`, and `values`. `PublishedSet` provides `contains`, `contains_many`, `is_empty`, and `members`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, `values`, and `members` return async iterators directly and accept the handler query options.
 

@@ -51,6 +51,7 @@ from prosody.state import (
     MapState,
     SetState,
     DequeState,
+    StoreOutcome,
     PublishedValue,
     PublishedMap,
     PublishedSet,

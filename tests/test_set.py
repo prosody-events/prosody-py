@@ -1,4 +1,4 @@
-"""Pure-Python tests for the set surface.
+"""Pure-Python tests for the set surface and store outcomes.
 
 Recording stubs stand in for the native handles. ``test_keyed_state.py``
 checks the same wiring against a live consumer.
@@ -7,9 +7,12 @@ checks the same wiring against a live consumer.
 import pytest
 
 from prosody import (
+    DequeState,
     MapState,
     PublishedSet,
     SetState,
+    StoreOutcome,
+    ValueState,
     set as set_definition,
 )
 from prosody.query import _KeyQuery
@@ -107,6 +110,18 @@ async def test_map_presence_reads_map_to_native_reads():
     assert await totals.contains_many(["a", "b"]) == [True, False]
     assert await totals.is_empty() is False
     assert native.calls == [("contains_many", (["a", "b"],)), ("is_empty", ())]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("handle", [ValueState, MapState, SetState, DequeState])
+@pytest.mark.parametrize(
+    ("token", "outcome"),
+    [("applied", StoreOutcome.APPLIED), ("no_op", StoreOutcome.NO_OP)],
+)
+async def test_commit_and_rollback_return_the_store_outcome(handle, token, outcome):
+    state = handle(_Native({"commit": token, "rollback": token}))
+    assert await state.commit() is outcome
+    assert await state.rollback() is outcome
 
 
 class _Scan:
