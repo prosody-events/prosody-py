@@ -77,7 +77,9 @@ macro_rules! value_state {
                 let env = self.env.clone();
                 future_into_py(py, async move {
                     let out = state.commit().with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                    Python::attach(|py| {
+                        out.map(drop).map_err(|error| state_error(py, &env, &error))
+                    })
                 })
             }
 
@@ -212,7 +214,10 @@ macro_rules! map_state {
             fn scan(&self, py: Python, direction: &str) -> PyResult<$scan> {
                 let direction = parse_direction(py, &self.env, direction)?;
                 let _guard = self.env.op_context(py)?.attach();
-                Ok($scan::new(self.state.scan(direction), self.env.clone()))
+                Ok($scan::new(
+                    self.state.entries().direction(direction).stream(),
+                    self.env.clone(),
+                ))
             }
 
             /// Opens a key cursor.
@@ -220,7 +225,7 @@ macro_rules! map_state {
                 let direction = parse_direction(py, &self.env, direction)?;
                 let _guard = self.env.op_context(py)?.attach();
                 Ok(NativeMapKeyScan::new(
-                    self.state.keys(direction),
+                    self.state.keys().direction(direction).stream(),
                     self.env.clone(),
                 ))
             }
@@ -232,7 +237,9 @@ macro_rules! map_state {
                 let env = self.env.clone();
                 future_into_py(py, async move {
                     let out = state.commit().with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                    Python::attach(|py| {
+                        out.map(drop).map_err(|error| state_error(py, &env, &error))
+                    })
                 })
             }
 
@@ -428,7 +435,10 @@ macro_rules! deque_state {
             fn scan(&self, py: Python, direction: &str) -> PyResult<$scan> {
                 let direction = parse_direction(py, &self.env, direction)?;
                 let _guard = self.env.op_context(py)?.attach();
-                Ok($scan::new(self.state.scan(direction), self.env.clone()))
+                Ok($scan::new(
+                    self.state.values().direction(direction).stream(),
+                    self.env.clone(),
+                ))
             }
 
             /// Durably commits the buffered operations.
@@ -438,7 +448,9 @@ macro_rules! deque_state {
                 let env = self.env.clone();
                 future_into_py(py, async move {
                     let out = state.commit().with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                    Python::attach(|py| {
+                        out.map(drop).map_err(|error| state_error(py, &env, &error))
+                    })
                 })
             }
 

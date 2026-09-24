@@ -28,7 +28,7 @@ use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::FutureExt;
 use prosody::consumer::Keyed;
 use prosody::consumer::event_context::{
-    BoxDequeState, BoxMapState, BoxStateCursor, BoxValueState, ErasedCategory, ErasedStateError,
+    BoxDequeState, BoxMapState, BoxValueState, ErasedCategory, ErasedStateError, StateCursor,
 };
 use prosody::consumer::message::ConsumerMessage;
 use prosody::state::Direction;
@@ -284,7 +284,7 @@ fn json_write_item(
 }
 
 struct ScanInner<T> {
-    cursor: BoxStateCursor<T>,
+    cursor: StateCursor<T>,
     retained: VecDeque<T>,
 }
 
@@ -328,7 +328,7 @@ macro_rules! native_scan {
         }
 
         impl $name {
-            pub(crate) fn new(cursor: BoxStateCursor<$item>, env: StateEnv) -> Self {
+            pub(crate) fn new(cursor: StateCursor<$item>, env: StateEnv) -> Self {
                 Self {
                     inner: Arc::new(Mutex::new(ScanInner {
                         cursor,

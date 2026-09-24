@@ -71,12 +71,12 @@ pub struct PreparedClient {
 
 impl PreparedClient {
     pub async fn connect(mut self) -> PyResult<ProsodyClient> {
-        let client = new_erased(
+        let client = Box::pin(new_erased(
             self.mode,
             &mut self.producer,
             &self.consumer,
             &self.cassandra,
-        )
+        ))
         .await
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
