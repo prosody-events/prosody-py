@@ -663,7 +663,7 @@ Map, set, and deque scans accept keyword options. Prosody applies them in storag
 - `limit` returns at most that number of items.
 - Deque scans take positions from the front instead of keys. `range` also accepts a `range` or a `slice` of positions, such as `range=slice(2, 5)`.
 
-The edges follow the scan direction, so a `Direction.BACKWARD` scan starts at the high end. Options narrow a scan and never widen it. Positions cannot be negative. To read the last items of a deque, scan `Direction.BACKWARD` with a `limit`.
+The edges follow the scan direction, so a `Direction.BACKWARD` scan starts at the high end. Options narrow a scan and never widen it. Positions cannot be negative: a negative position, or a `range` or `slice` with a negative bound or a step other than 1, raises `ValueError`. To read the last N elements of a deque, call `values(Direction.BACKWARD, limit=N)`. `get(index)` still accepts negative indexes.
 
 To read a large map one page at a time, pass the last key of each page as `after`:
 

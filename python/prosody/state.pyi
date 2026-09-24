@@ -373,8 +373,9 @@ class DequeState(Generic[T]):
         ``after`` start at or after a position. ``to`` and ``before`` stop at
         or before a position. These edges are in iteration order. ``range``
         takes a ``range`` or a ``slice`` of positions with step 1 and applies
-        in either direction. ``limit`` caps the number of elements. To read
-        the back of the deque, iterate ``BACKWARD`` with a ``limit``.
+        in either direction. ``limit`` caps the number of elements. Negative
+        positions raise ``ValueError``; read the last N elements with
+        ``values(Direction.BACKWARD, limit=N)``.
         """
         ...
     def __aiter__(self) -> _StateScan[T]:
