@@ -87,7 +87,7 @@ async def test_map_query_options_reach_core(state_client):
             "page": await keys(after="a2", limit=2),
             "items": await _wait(_collect(m.items(prefix="b", limit=1))),
             "values": await _wait(
-                _collect(m.values(direction=Direction.BACKWARD, prefix="a"))
+                _collect(m.values(Direction.BACKWARD, prefix="a"))
             ),
         }
 
@@ -166,6 +166,7 @@ async def test_deque_position_options_reach_core(state_client):
             "tail": await values(Direction.BACKWARD, limit=3),
             "reverse_from": await values(Direction.BACKWARD, from_=5, to=3),
             "page": await values(after=6, limit=2),
+            "empty": await values(range=range(5, 2)),
         }
 
     obs = await _observe(client, topic, scans)
@@ -177,6 +178,7 @@ async def test_deque_position_options_reach_core(state_client):
     assert obs["tail"] == [9, 8, 7]
     assert obs["reverse_from"] == [5, 4, 3]
     assert obs["page"] == [7, 8]
+    assert obs["empty"] == []
 
 
 async def test_commit_and_rollback_report_store_outcomes(state_client):

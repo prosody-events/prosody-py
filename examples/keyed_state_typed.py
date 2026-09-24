@@ -107,7 +107,7 @@ class OrderHandler(EventHandler[OrderEvent]):
                 break
             last = page[-1]
         _flags: List[bool] = await totals.contains_many(["a", "b"])
-        latest = totals.values(direction=Direction.BACKWARD, limit=3)
+        latest = totals.values(Direction.BACKWARD, limit=3)
         _latest: List[int] = [total async for total in latest]
 
         tags = context.state(TAGS)  # SetState

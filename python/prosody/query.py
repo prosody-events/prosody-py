@@ -6,6 +6,7 @@ builders reject only values that have no native form.
 """
 
 import enum
+import sys
 from dataclasses import dataclass
 from typing import (
     Awaitable,
@@ -17,6 +18,10 @@ from typing import (
     TypeVar,
     Union,
 )
+
+# The largest limit or position the native layer accepts: the platform
+# ``usize`` maximum.
+_NATIVE_MAX = sys.maxsize * 2 + 1
 
 X = TypeVar("X")
 Y = TypeVar("Y")
@@ -80,9 +85,15 @@ def _edge(
 
 
 def _whole(name: str, number: object) -> int:
-    """Return ``number`` when it is an ``int`` and not a ``bool``."""
+    """Return ``number`` when it is an ``int`` within the native range.
+
+    A ``bool`` or a non-``int`` raises ``TypeError``. A value above the
+    native maximum raises ``ValueError``.
+    """
     if isinstance(number, bool) or not isinstance(number, int):
         raise TypeError(f"{name}: expected an int, got {type(number).__name__}")
+    if number > _NATIVE_MAX:
+        raise ValueError(f"{name}: must be at most {_NATIVE_MAX}, got {number}")
     return number
 
 
@@ -108,7 +119,10 @@ def _position(name: str, position: Optional[int]) -> Optional[int]:
 
 
 def _span(span: Union[range, slice, None]) -> Optional[Tuple[int, Optional[int]]]:
-    """Resolve a ``range`` or ``slice`` of positions into an ascending span."""
+    """Resolve a ``range`` or ``slice`` of positions into an ascending span.
+
+    A span whose stop precedes its start is empty, as in Python.
+    """
     if span is None:
         return None
     if isinstance(span, range):
@@ -122,11 +136,7 @@ def _span(span: Union[range, slice, None]) -> Optional[Tuple[int, Optional[int]]
 
     if step != 1:
         raise ValueError(f"range: the step must be 1, got {step}")
-    low = _position("range start", start) or 0
-    high = _position("range stop", stop)
-    if high is not None and high < low:
-        raise ValueError(f"range: the stop {high} precedes the start {low}")
-    return (low, high)
+    return (_position("range start", start) or 0, _position("range stop", stop))
 
 
 def _key_query(

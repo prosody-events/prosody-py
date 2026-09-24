@@ -54,13 +54,11 @@ def _key_scans(native):
     return [
         lambda direction, **options: handle.items(direction, **options),
         lambda direction, **options: handle.keys(direction, **options),
-        lambda direction, **options: handle.values(direction=direction, **options),
+        lambda direction, **options: handle.values(direction, **options),
         lambda direction, **options: members.members(direction, **options),
         lambda direction, **options: published.items("user", direction, **options),
         lambda direction, **options: published.keys("user", direction, **options),
-        lambda direction, **options: published.values(
-            "user", direction=direction, **options
-        ),
+        lambda direction, **options: published.values("user", direction, **options),
         lambda direction, **options: published_set.members(
             "user", direction, **options
         ),
@@ -111,6 +109,7 @@ def test_key_options_translate_on_every_scan(options, expected):
         ({"limit": 1.5}, TypeError),
         ({"limit": "2"}, TypeError),
         ({"limit": True}, TypeError),
+        ({"limit": 2**64}, ValueError),
     ],
 )
 def test_key_options_reject_values_without_a_native_form(options, error):
@@ -134,6 +133,8 @@ POSITION_CASES = [
     ({"range": slice(None, 4)}, _PositionQuery("forward", range=(0, 4))),
     ({"range": slice(6, None)}, _PositionQuery("forward", range=(6, None))),
     ({"range": slice(1, 3, 1)}, _PositionQuery("forward", range=(1, 3))),
+    ({"range": range(5, 2)}, _PositionQuery("forward", range=(5, 2))),
+    ({"range": slice(5, 2)}, _PositionQuery("forward", range=(5, 2))),
     (
         {"from_": 1, "before": 9, "range": slice(2, None), "limit": 2},
         _PositionQuery("forward", (1, True), (9, False), (2, None), 2),
@@ -159,12 +160,13 @@ def test_position_options_translate_on_every_scan(options, expected):
         ({"after": 1.0}, TypeError),
         ({"range": range(-3, 2)}, ValueError),
         ({"range": range(0, 6, 2)}, ValueError),
-        ({"range": range(5, 2)}, ValueError),
         ({"range": slice(-3, None)}, ValueError),
         ({"range": slice(None, -1)}, ValueError),
         ({"range": slice(0, 4, 2)}, ValueError),
         ({"range": slice("a", "b")}, TypeError),
         ({"range": [1, 2]}, TypeError),
+        ({"from_": 2**64}, ValueError),
+        ({"range": slice(0, 2**64)}, ValueError),
         ({"limit": 0}, ValueError),
     ],
 )

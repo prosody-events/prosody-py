@@ -89,8 +89,8 @@ class PublishedMap(Generic[V]):
     def values(
         self,
         key: str,
-        *,
         direction: Direction = Direction.FORWARD,
+        *,
         prefix: Optional[str] = None,
         from_: Optional[str] = None,
         after: Optional[str] = None,

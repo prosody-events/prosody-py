@@ -39,7 +39,7 @@ async def expected_errors(
     await totals.set("key", "not-an-int")  # type: ignore[arg-type]
 
     totals.keys(limit="10")  # type: ignore[arg-type]
-    totals.values(Direction.BACKWARD)  # type: ignore[call-arg]
+    totals.values(limit=0.5)  # type: ignore[arg-type]
 
     events = context.state(EVENTS)
     await events.append(message.payload)  # type: ignore[arg-type]

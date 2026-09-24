@@ -469,7 +469,7 @@ async def test_map_values_project_the_pair_scan():
     n = _StubNative([("a", 1)])
     async for _ in MapState(n).values():
         pass
-    async for _ in MapState(n).values(direction=Direction.BACKWARD, limit=1):
+    async for _ in MapState(n).values(Direction.BACKWARD, limit=1):
         pass
     assert n.calls == [
         ("scan", _KeyQuery("forward")),

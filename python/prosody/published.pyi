@@ -53,8 +53,8 @@ class PublishedMap(Generic[V]):
     def values(
         self,
         key: str,
-        *,
         direction: Direction = ...,
+        *,
         prefix: Optional[str] = ...,
         from_: Optional[str] = ...,
         after: Optional[str] = ...,

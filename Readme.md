@@ -661,7 +661,7 @@ Map, set, and deque scans accept keyword options. Prosody applies them in storag
 - `prefix` keeps map keys or set members that start with a string.
 - `from_` and `after` start at a key, or after it. `to` and `before` stop at a key, or before it.
 - `limit` returns at most that number of items.
-- Deque scans take positions from the front instead of keys. `range` also accepts a `range` or a `slice` of positions, such as `range=slice(2, 5)`.
+- Deque scans take positions from the front instead of keys. They also take `range`: an ascending span of positions, given as a `range` or a `slice` such as `range=slice(2, 5)`. The span applies in either direction, so `values(Direction.BACKWARD, range=slice(None, 3))` yields positions 2, 1, and 0. An empty span yields nothing.
 
 The edges follow the scan direction, so a `Direction.BACKWARD` scan starts at the high end. Options narrow a scan and never widen it. Positions cannot be negative: a negative position, or a `range` or `slice` with a negative bound or a step other than 1, raises `ValueError`. To read the last N elements of a deque, call `values(Direction.BACKWARD, limit=N)`. `get(index)` still accepts negative indexes.
 
@@ -679,7 +679,7 @@ async def order_pages(context: Context) -> None:
         last = page[-1]
 ```
 
-Setting both `from_` and `after`, or both `to` and `before`, raises `ValueError`. A `limit` below 1 also raises `ValueError`.
+An option of the wrong type, such as `limit=1.5`, raises `TypeError`. A bad value raises `ValueError`: both `from_` and `after`, both `to` and `before`, a `limit` below 1, or a number above the platform maximum.
 
 `None` means absence. Do not store this value. Use `clear()` or `remove()`. Payload annotations guide the type checker but do not validate data.
 
@@ -1224,7 +1224,7 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 - `clear() -> None`
 - `items(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, limit=None)` — async iterator over `(str, V)` entries
 - `keys(direction=Direction.FORWARD, *, ...)` — async iterator over `str` keys, with the same options
-- `values(*, direction=Direction.FORWARD, ...)` — async iterator over `V` values, with the same options
+- `values(direction=Direction.FORWARD, *, ...)` — async iterator over `V` values, with the same options
 - `__aiter__()` — forward async iteration over `str` keys (like `dict`)
 - `commit() -> StoreOutcome`
 - `rollback() -> StoreOutcome`

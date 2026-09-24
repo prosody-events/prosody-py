@@ -219,8 +219,8 @@ class MapState(Generic[V]):
 
     def values(
         self,
-        *,
         direction: Direction = Direction.FORWARD,
+        *,
         prefix: Optional[str] = None,
         from_: Optional[str] = None,
         after: Optional[str] = None,
@@ -415,8 +415,9 @@ class DequeState(Generic[T]):
         Positions count from the front and cannot be negative. ``from_`` and
         ``after`` start at or after a position. ``to`` and ``before`` stop at
         or before a position. These edges are in iteration order. ``range``
-        takes a ``range`` or a ``slice`` of positions with step 1 and applies
-        in either direction. ``limit`` caps the number of elements. Negative
+        takes a ``range`` or a ``slice`` of positions with step 1. It is an
+        ascending span that applies in either direction, and an empty span
+        yields nothing. ``limit`` caps the number of elements. Negative
         positions raise ``ValueError``; read the last N elements with
         ``values(Direction.BACKWARD, limit=N)``.
         """
