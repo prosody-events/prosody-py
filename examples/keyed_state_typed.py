@@ -104,6 +104,7 @@ class OrderHandler(EventHandler[OrderEvent]):
             if not page:
                 break
             last = page[-1]
+        _flags: List[bool] = await totals.contains_many(["a", "b"])
         latest = totals.values(direction=Direction.BACKWARD, limit=3)
         _latest: List[int] = [total async for total in latest]
 

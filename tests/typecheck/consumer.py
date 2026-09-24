@@ -79,6 +79,8 @@ class Handler(EventHandler[Event, Response]):
             assert_type(key, str)
         async for entry in totals.items(Direction.BACKWARD, prefix="a", after="a1", limit=5):
             assert_type(entry, tuple[str, int])
+        assert_type(await totals.contains_many(["a"]), list[bool])
+        assert_type(await totals.is_empty(), bool)
 
         tags = context.state(TAGS)
         assert_type(tags, SetState)

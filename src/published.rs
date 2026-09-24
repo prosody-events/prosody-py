@@ -93,6 +93,33 @@ impl PublishedMap {
         })
     }
 
+    fn contains_many<'p>(
+        &self,
+        py: Python<'p>,
+        key: String,
+        map_keys: Vec<String>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            inner
+                .contains_many(key, map_keys)
+                .await
+                .map_err(|error| published_error(&env, &error))
+        })
+    }
+
+    fn is_empty<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            inner
+                .is_empty(key)
+                .await
+                .map_err(|error| published_error(&env, &error))
+        })
+    }
+
     fn scan(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeJsonMapScan> {
         let cursor = query.stream(py, &self.env, self.inner.entries(key))?;
         Ok(NativeJsonMapScan::new(cursor, self.env.clone()))

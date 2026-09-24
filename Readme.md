@@ -646,7 +646,7 @@ Do not reuse a durable name for a different collection kind or payload type. Cre
 | Collection | JSON payload | Kafka message | Main operations |
 | --- | --- | --- | --- |
 | Value | `value` | `message_value` | `get`, `set`, `clear` |
-| Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `set`, `remove`, `items`, `keys`, `values`, `clear` |
+| Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `set`, `remove`, `items`, `keys`, `values`, `clear` |
 | Ordered string set | `set` | - | `add`, `discard`, `contains`, `contains_many`, `is_empty`, `members`, `clear` |
 | Deque | `deque` | `message_deque` | `append`, `appendleft`, `pop`, `popleft`, `get`, `size`, `values`, `clear` |
 
@@ -1202,6 +1202,8 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 - `get(key: str, default=None) -> Optional[V] | default` — default only on absence
 - `contains(key: str) -> bool` — test whether the map contains the key
 - `get_many(keys: List[str]) -> List[Optional[V]]`
+- `contains_many(keys: List[str]) -> List[bool]` — test several keys in one batch
+- `is_empty() -> bool`
 - `set(key: str, value: V) -> None`
 - `remove(key: str) -> None`
 - `clear() -> None`
@@ -1244,7 +1246,7 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
 
-Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedSet` provides `contains`, `contains_many`, `is_empty`, and `members`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, `values`, and `members` return async iterators directly and accept the handler query options.
+Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `items`, `keys`, and `values`. `PublishedSet` provides `contains`, `contains_many`, `is_empty`, and `members`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, `values`, and `members` return async iterators directly and accept the handler query options.
 
 Errors:
 

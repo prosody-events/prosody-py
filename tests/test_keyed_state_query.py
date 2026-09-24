@@ -61,6 +61,7 @@ async def test_map_query_options_reach_core(state_client):
 
     async def scans(ctx):
         m = ctx.state(STATE_DEFS["totals"])
+        empty_before = await _wait(m.is_empty())
         for number, key in enumerate(["a1", "a2", "a3", "b1", "b2"]):
             await _wait(m.set(key, number))
 
@@ -68,6 +69,9 @@ async def test_map_query_options_reach_core(state_client):
             return await _wait(_collect(m.keys(*args, **options)))
 
         return {
+            "empty_before": empty_before,
+            "empty_after": await _wait(m.is_empty()),
+            "contains_many": await _wait(m.contains_many(["a2", "zz", "b1"])),
             "prefix": await keys(prefix="a"),
             "prefix_reverse": await keys(Direction.BACKWARD, prefix="a"),
             "from": await keys(from_="a2"),
@@ -84,6 +88,9 @@ async def test_map_query_options_reach_core(state_client):
         }
 
     obs = await _observe(client, topic, scans)
+    assert obs["empty_before"] is True
+    assert obs["empty_after"] is False
+    assert obs["contains_many"] == [True, False, True]
     assert obs["prefix"] == ["a1", "a2", "a3"]
     assert obs["prefix_reverse"] == ["a3", "a2", "a1"]
     assert obs["from"] == ["a2", "a3", "b1", "b2"]
@@ -197,6 +204,8 @@ async def test_published_readers_accept_query_options(
             d = await _wait(client.state(subsystem, backlog))
             await results.send(
                 {
+                    "map_empty": await _wait(m.is_empty(key)),
+                    "map_contains_many": await _wait(m.contains_many(key, ["a2", "zz"])),
                     "map_keys": await _wait(_collect(m.keys(key, prefix="a"))),
                     "map_items": await _wait(_collect(m.items(key, after="a1", limit=1))),
                     "map_values": await _wait(
@@ -222,6 +231,8 @@ async def test_published_readers_accept_query_options(
     obs = await _wait(handler.results.receive())
 
     assert obs.get("error") is None
+    assert obs["map_empty"] is False
+    assert obs["map_contains_many"] == [True, False]
     assert obs["map_keys"] == ["a1", "a2"]
     assert obs["map_items"] == [("a2", 1)]
     assert obs["map_values"] == [2, 1, 0]

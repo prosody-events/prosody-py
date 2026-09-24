@@ -50,6 +50,12 @@ class PublishedMap(Generic[V]):
     async def contains(self, key: str, map_key: str) -> bool:
         return await self._native.contains_key(key, map_key)
 
+    async def contains_many(self, key: str, map_keys: List[str]) -> List[bool]:
+        return await self._native.contains_many(key, map_keys)
+
+    async def is_empty(self, key: str) -> bool:
+        return await self._native.is_empty(key)
+
     def items(
         self,
         key: str,
@@ -178,6 +184,12 @@ class _PublishedMapNative(Protocol[V]):
         raise NotImplementedError
 
     async def contains_key(self, key: str, map_key: str) -> bool:
+        raise NotImplementedError
+
+    async def contains_many(self, key: str, map_keys: List[str]) -> List[bool]:
+        raise NotImplementedError
+
+    async def is_empty(self, key: str) -> bool:
         raise NotImplementedError
 
     def scan(self, key: str, query: _KeyQuery) -> "_NativeScan[tuple[str, V]]":

@@ -114,6 +114,15 @@ class MapState(Generic[V]):
         it over iterating :meth:`keys` and calling :meth:`get` per key.
         """
         ...
+    async def contains_many(self, keys: List[str]) -> List[bool]:
+        """Report presence for several keys in one batch, one result per key.
+
+        The batched form of :meth:`contains`: it never decodes a value.
+        """
+        ...
+    async def is_empty(self) -> bool:
+        """Whether the map holds no entries."""
+        ...
     async def set(self, key: str, value: V) -> None:
         """Insert or overwrite ``key``.
 

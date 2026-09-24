@@ -7,6 +7,7 @@ checks the same wiring against a live consumer.
 import pytest
 
 from prosody import (
+    MapState,
     PublishedSet,
     SetState,
     set as set_definition,
@@ -96,6 +97,16 @@ async def test_published_set_reads_map_to_native_reads():
         ("contains_many", ("user", ["b"])),
         ("is_empty", ("user",)),
     ]
+
+
+@pytest.mark.asyncio
+async def test_map_presence_reads_map_to_native_reads():
+    native = _Native({"contains_many": [True, False], "is_empty": False})
+    totals = MapState(native)
+
+    assert await totals.contains_many(["a", "b"]) == [True, False]
+    assert await totals.is_empty() is False
+    assert native.calls == [("contains_many", (["a", "b"],)), ("is_empty", ())]
 
 
 class _Scan:

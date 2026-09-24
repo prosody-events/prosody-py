@@ -64,6 +64,32 @@ macro_rules! map_state {
                 })
             }
 
+            /// Reports whether each key exists, in input order.
+            fn contains_many<'p>(
+                &self,
+                py: Python<'p>,
+                keys: Vec<String>,
+            ) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.contains_many(keys).with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
+            /// Reports whether the map is empty.
+            fn is_empty<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+                let ctx = self.env.op_context(py)?;
+                let state = Arc::clone(&self.state);
+                let env = self.env.clone();
+                future_into_py(py, async move {
+                    let out = state.is_empty().with_context(ctx).await;
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
+                })
+            }
+
             /// Inserts or overwrites one entry.
             fn set<'p>(
                 &self,

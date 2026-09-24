@@ -133,6 +133,17 @@ class MapState(Generic[V]):
         """
         return await self._native.get_many(keys)
 
+    async def contains_many(self, keys: List[str]) -> List[bool]:
+        """Report presence for several keys in one batch, one result per key.
+
+        The batched form of :meth:`contains`: it never decodes a value.
+        """
+        return await self._native.contains_many(keys)
+
+    async def is_empty(self) -> bool:
+        """Whether the map holds no entries."""
+        return await self._native.is_empty()
+
     async def set(self, key: str, value: V) -> None:
         """Insert or overwrite ``key`` (``None`` raises ``NullValueError``)."""
         await self._native.set(key, value)
