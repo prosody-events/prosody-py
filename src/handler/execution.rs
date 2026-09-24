@@ -135,6 +135,7 @@ where
             inject: execution_context.otel_inject.clone_ref(py),
             propagator: execution_context.propagator,
             message_class: execution_context.message_class.clone_ref(py),
+            demand: execution_context.demand,
             state_handles: Mutex::new(HashMap::new()),
         };
         let message = message.into_python(py, execution_context.record_class)?;
@@ -194,6 +195,7 @@ where
             inject: timer_context.otel_inject.clone_ref(py),
             propagator: timer_context.propagator,
             message_class: timer_context.message_class.clone_ref(py),
+            demand: timer_context.demand,
             state_handles: Mutex::new(HashMap::new()),
         };
 

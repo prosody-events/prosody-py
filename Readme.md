@@ -695,6 +695,18 @@ This transaction applies only to keyed state. Some workflows need state changes 
 
 Both calls return a `StoreOutcome`. `StoreOutcome.APPLIED` means the call wrote or discarded pending changes. `StoreOutcome.NO_OP` means nothing was pending.
 
+### Retries
+
+`context.demand` tells a handler why the current attempt runs. It is a `Demand` with a `kind` and a `retry` ordinal. `DemandKind.NORMAL` has `retry == 0`. `DemandKind.FAILURE` marks a retry after a failure, and `retry` is 1 on the first retry.
+
+```python
+async def on_message(self, context: Context, message: Message) -> None:
+    if context.demand.kind is DemandKind.FAILURE:
+        log.warning("retry %d for %s", context.demand.retry, message.key)
+```
+
+The ordinal is an estimate. It restarts at 1 when Prosody defers an event after immediate retries. Keep an exact attempt count in keyed state if a handler needs one.
+
 ### Published state
 
 Some callers need only the current value for a key. They can accept a stale value or a race with a concurrent update.
@@ -1152,6 +1164,7 @@ Represents the current event context:
 - `scheduled() -> List[datetime]`: Returns a list of all scheduled timer times
 - `should_cancel() -> bool`: Check if cancellation has been requested (includes timeout and shutdown)
 - `on_cancel() -> None`: Completes when cancellation occurs
+- `demand: Demand`: Why this attempt runs. See [Retries](#retries).
 - `state(definition) -> ValueState[T] | MapState[V] | SetState | DequeState[T]`: Bind a registered collection for the current attempt. Message definitions return handles that contain `Message[P]`. An unregistered or mismatched definition raises `PermanentStateError`. See [Keyed State](#keyed-state-2).
 
 ### Timer
@@ -1249,6 +1262,8 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
 
 `StoreOutcome`: an enum with `StoreOutcome.APPLIED` and `StoreOutcome.NO_OP`.
+
+`Demand`: a frozen dataclass with `kind: DemandKind` and `retry: int`. `DemandKind` is an enum with `DemandKind.NORMAL` and `DemandKind.FAILURE`.
 
 Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `items`, `keys`, and `values`. `PublishedSet` provides `contains`, `contains_many`, `is_empty`, and `members`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, `values`, and `members` return async iterators directly and accept the handler query options.
 

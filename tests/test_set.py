@@ -1,12 +1,16 @@
-"""Pure-Python tests for the set surface and store outcomes.
+"""Pure-Python tests for the set surface, store outcomes, and demand values.
 
 Recording stubs stand in for the native handles. ``test_keyed_state.py``
 checks the same wiring against a live consumer.
 """
 
+import dataclasses
+
 import pytest
 
 from prosody import (
+    Demand,
+    DemandKind,
     DequeState,
     MapState,
     PublishedSet,
@@ -122,6 +126,15 @@ async def test_commit_and_rollback_return_the_store_outcome(handle, token, outco
     state = handle(_Native({"commit": token, "rollback": token}))
     assert await state.commit() is outcome
     assert await state.rollback() is outcome
+
+
+def test_demand_is_a_frozen_value():
+    demand = Demand(DemandKind.FAILURE, 1)
+    assert demand == Demand(DemandKind.FAILURE, 1)
+    assert (demand.kind, demand.retry) == (DemandKind.FAILURE, 1)
+    assert DemandKind.NORMAL.value == "normal"
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        demand.retry = 2
 
 
 class _Scan:

@@ -14,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from prosody import (
+    Demand,
+    DemandKind,
     Direction,
     Message,
     value,
@@ -294,6 +296,8 @@ def test_exports_present():
         "set",
         "SetDefinition",
         "PublishedSet",
+        "Demand",
+        "DemandKind",
         "StateError",
         "PermanentStateError",
         "TransientStateError",

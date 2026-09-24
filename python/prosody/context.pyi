@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, overload
 
+from prosody.demand import Demand
 from prosody.message import Message
 from prosody.state import (
     DequeDefinition,
@@ -82,6 +83,17 @@ class Context:
 
         Returns:
             True if cancellation has been requested, False otherwise
+        """
+        ...
+
+    @property
+    def demand(self) -> Demand:
+        """
+        Why this attempt runs: a normal delivery or a retry after a failure.
+
+        ``demand.retry`` is the retry ordinal. It is 0 for a normal delivery
+        and 1 on the first retry. It is an estimate; keep an exact attempt
+        count in keyed state if the handler needs one.
         """
         ...
 

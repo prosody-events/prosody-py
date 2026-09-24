@@ -1,5 +1,5 @@
-"""Infra-backed checks that query options, sets, and store outcomes cross the
-native boundary intact.
+"""Infra-backed checks that query options, sets, store outcomes, and the demand
+cross the native boundary intact.
 
 Each scenario runs inside a live handler with the fixtures and collections of
 ``test_keyed_state.py``. Core owns the query semantics; these tests check that
@@ -7,8 +7,11 @@ each Python option reaches core as the matching query setting.
 """
 
 from prosody import (
+    Demand,
+    DemandKind,
     Direction,
     StoreOutcome,
+    TransientStateError,
     deque as deque_definition,
     map as map_definition,
     set as set_definition,
@@ -206,6 +209,24 @@ async def test_commit_and_rollback_report_store_outcomes(state_client):
         StoreOutcome.NO_OP,
     ]
     assert obs == {name: expected for name in ["cart", "totals", "tags", "backlog"]}
+
+
+async def test_context_demand_reports_the_retry_ordinal(state_client):
+    client, topic, _ = state_client
+    demands = []
+
+    async def cb(ctx, msg, results):
+        demands.append(ctx.demand)
+        if len(demands) == 1:
+            raise TransientStateError("fail the first attempt")
+        await results.send(list(demands))
+
+    handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, nonce(), {"go": True}))
+    obs = await _wait(handler.results.receive())
+
+    assert obs == [Demand(DemandKind.NORMAL, 0), Demand(DemandKind.FAILURE, 1)]
 
 
 async def test_published_readers_accept_query_options(

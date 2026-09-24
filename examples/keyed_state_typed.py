@@ -15,6 +15,7 @@ from typing_extensions import TypedDict, assert_type
 
 from prosody import (
     Context,
+    DemandKind,
     Direction,
     EventHandler,
     ExciseMessage,
@@ -111,6 +112,8 @@ class OrderHandler(EventHandler[OrderEvent]):
 
         tags = context.state(TAGS)  # SetState
         await tags.add(payload["order_id"])
+        if context.demand.kind is DemandKind.FAILURE:
+            await tags.discard(payload["order_id"])
         _tagged: bool = await tags.contains(payload["order_id"])
         async for _member in tags.members(prefix="ord-", limit=10):
             _tag: str = _member

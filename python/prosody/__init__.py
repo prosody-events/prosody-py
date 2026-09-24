@@ -18,6 +18,7 @@ from prosody.request import (
 )
 
 from prosody.context import Context
+from prosody.demand import Demand, DemandKind
 from prosody.errors import (
     EventHandlerError,
     PermanentError,

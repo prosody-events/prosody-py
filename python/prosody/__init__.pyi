@@ -1,4 +1,5 @@
 from prosody.context import Context as Context
+from prosody.demand import Demand as Demand, DemandKind as DemandKind
 from prosody.errors import (
     EventHandlerError as EventHandlerError,
     NullValueError as NullValueError,

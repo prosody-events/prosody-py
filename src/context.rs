@@ -10,6 +10,7 @@ use crate::state::{
 };
 use chrono::{DateTime, Utc};
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
+use prosody::consumer::DemandType;
 use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::TimerType;
 use pyo3::exceptions::PyRuntimeError;
@@ -45,6 +46,8 @@ pub struct Context {
     pub inject: Py<PyAny>,
     pub propagator: Arc<TextMapCompositePropagator>,
     pub message_class: Py<PyAny>,
+    /// Whether this attempt is a normal delivery or a retry after a failure.
+    pub(crate) demand: DemandType,
     /// Typed-wrapper cache keyed by descriptor type and collection name.
     pub(crate) state_handles: Mutex<HashMap<(StateDefinitionKind, String), Py<PyAny>>>,
 }
@@ -274,6 +277,26 @@ impl Context {
     /// True if cancellation has been requested, False otherwise
     fn should_cancel(&self) -> bool {
         self.inner.should_cancel()
+    }
+
+    /// Reports why this attempt runs: a normal delivery, or a retry after a
+    /// failure with its retry ordinal.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the `prosody.demand` import fails.
+    #[getter]
+    fn demand(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let module = py.import("prosody.demand")?;
+        let kind = module.getattr("DemandKind")?;
+        let kind = match self.demand {
+            DemandType::Normal => kind.getattr("NORMAL")?,
+            DemandType::Failure { .. } => kind.getattr("FAILURE")?,
+        };
+        let demand = module
+            .getattr("Demand")?
+            .call1((kind, self.demand.retry()))?;
+        Ok(demand.unbind())
     }
 
     /// Waits for a cancellation signal.

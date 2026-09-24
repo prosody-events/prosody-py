@@ -7,6 +7,8 @@ from typing_extensions import TypedDict, assert_type
 
 from prosody import (
     Context,
+    Demand,
+    DemandKind,
     Direction,
     EventHandler,
     ExciseMessage,
@@ -92,6 +94,9 @@ class Handler(EventHandler[Event, Response]):
         async for member in tags.members(from_="a", before="z"):
             assert_type(member, str)
         assert_type(await tags.rollback(), StoreOutcome)
+        assert_type(context.demand, Demand)
+        assert_type(context.demand.kind, DemandKind)
+        assert_type(context.demand.retry, int)
 
         events = context.state(EVENTS)
         await events.append(message)
