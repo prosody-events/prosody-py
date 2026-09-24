@@ -3,8 +3,8 @@
 The type parameter of every definition (``T`` / ``V`` / ``P``) is a
 **structural JSON annotation** — TypedDict-oriented. Payloads cross the
 boundary as plain JSON with no model construction or validation, so
-``dataclass`` / Pydantic types are **not** valid type arguments. Map keys are
-always ``str``.
+``dataclass`` / Pydantic types are **not** valid type arguments. Map keys and
+set members are always ``str``.
 """
 
 from datetime import timedelta
@@ -67,6 +67,36 @@ class MapDefinition(Generic[D_co]):
 
     ``kind = "map"``, ``payload = "json"``. Vends :class:`MapState` ``[V]``.
     ``keyset_limit`` bounds ordered-scan tracking.
+    """
+
+    name: str
+    ttl: Optional[Union[timedelta, int]]
+    read_uncommitted: Optional[bool]
+    published: Optional[bool]
+    read_cache: ReadCache
+    keyset_limit: Optional[int]
+    kind: str
+    payload: str
+
+    def __init__(
+        self,
+        name: str,
+        ttl: Optional[Union[timedelta, int]] = ...,
+        read_uncommitted: Optional[bool] = ...,
+        published: Optional[bool] = ...,
+        read_cache: ReadCache = ...,
+        keyset_limit: Optional[int] = ...,
+    ) -> None: ...
+    def to_config(self) -> _StateConfig:
+        """Return the config dict passed to the client and to ``state()``."""
+        ...
+
+
+class SetDefinition:
+    """A presence-only ordered set of string members.
+
+    ``kind = "set"``, ``payload = "presence"``. Vends :class:`SetState`.
+    ``keyset_limit`` bounds ordered-scan tracking, as on a map.
     """
 
     name: str
@@ -228,6 +258,22 @@ def map(
 
     Map keys are always ``str``; ``keyset_limit`` bounds ordered-scan tracking.
     ``V`` is a structural JSON annotation only (no runtime validation).
+    """
+    ...
+
+
+def set(
+    name: str,
+    *,
+    ttl: Optional[Union[timedelta, int]] = ...,
+    read_uncommitted: Optional[bool] = ...,
+    published: Optional[bool] = ...,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
+    keyset_limit: Optional[int] = ...,
+) -> SetDefinition:
+    """Define a presence-only ordered set of string members.
+
+    Vends :class:`SetState`. ``keyset_limit`` bounds ordered-scan tracking.
     """
     ...
 

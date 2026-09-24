@@ -145,7 +145,7 @@ Register keyed-state collections before you subscribe. Persistence is backed by 
 | `state_owned_cache_size` / `PROSODY_STATE_OWNED_CACHE_SIZE` | Capacity of the owning keyed-state cache; accepts sizes such as `64 MiB` or `500 MB` | storage-engine default |
 | `state_read_cache_size` / `PROSODY_STATE_READ_CACHE_SIZE` | Capacity of the published-state read cache; accepts sizes such as `1 MiB` | `state_owned_cache_size` or `PROSODY_STATE_OWNED_CACHE_SIZE` when set; otherwise 1 MiB |
 | `state_read_cache` / `PROSODY_STATE_READ_CACHE_TTL`          | Default published-read cache TTL. Use `False` or the environment value `none` to bypass the cache                                                                         | 5s                  |
-| `subsystem` / `PROSODY_SUBSYSTEM` | Subsystem name used to advertise JSON descriptors declared with `published=True` | (none) |
+| `subsystem` / `PROSODY_SUBSYSTEM` | Subsystem name used to advertise collections declared with `published=True` | (none) |
 
 Each `state_collections` entry has these fields. Prefer the definition constructors from the [API reference](Readme.md#api-reference). They serialize into `state_collections`, so you can reuse the same object with `context.state()`.
 
@@ -154,11 +154,11 @@ Published collections require `subsystem`. Keep it configured for one deployment
 | Field              | Description                                                                          | Default    |
 |--------------------|-------------------------------------------------------------------------------------|------------|
 | `name`             | Collection name; non-empty and unique within the client                             | (required) |
-| `kind`             | `"value"`, `"map"`, or `"deque"`                                                     | (required) |
-| `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received) | (required) |
+| `kind`             | `"value"`, `"map"`, `"set"`, or `"deque"`                                            | (required) |
+| `payload`          | `"json"` (JSON values), `"message"` (the full Kafka message the handler received), or `"presence"` (a set, which stores only members) | (required) |
 | `ttl`              | Per-write TTL, whole seconds >= 1; `timedelta` or int seconds | (none)     |
 | `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
-| `published`        | Allow other clients to read this JSON collection without subscribing                | false      |
+| `published`        | Allow other clients to read this JSON or set collection without subscribing         | false      |
 | `read_cache`       | Published-read cache override: a duration, `False`, or inherit when omitted          | inherit    |
-| `keyset_limit`     | Map-only; ordered-scan bound in `0..=4096` (`0` disables ordered-scan tracking)      | 128        |
+| `keyset_limit`     | Map and set only; ordered-scan bound in `0..=4096` (`0` disables ordered-scan tracking) | 128        |
 | `capacity`         | Deque-only; positive int max slot count, enforced lazily on push (runtime-only, may change across deploys) | (unbounded) |

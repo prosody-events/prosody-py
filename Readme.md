@@ -647,15 +647,18 @@ Do not reuse a durable name for a different collection kind or payload type. Cre
 | --- | --- | --- | --- |
 | Value | `value` | `message_value` | `get`, `set`, `clear` |
 | Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `set`, `remove`, `items`, `keys`, `values`, `clear` |
+| Ordered string set | `set` | - | `add`, `discard`, `contains`, `contains_many`, `is_empty`, `members`, `clear` |
 | Deque | `deque` | `message_deque` | `append`, `appendleft`, `pop`, `popleft`, `get`, `size`, `values`, `clear` |
 
-All operations are asynchronous. Map and deque scans use `async for`. Map keys are strings.
+All operations are asynchronous. Map, set, and deque scans use `async for`. Map keys and set members are strings. A set stores only its members.
+
+The `map` and `set` constructors share their names with Python built-ins. Import them under other names, such as `from prosody import set as set_state`, when a module also uses the built-ins.
 
 ### Query a part of a collection
 
-Map and deque scans accept keyword options. Prosody applies them in storage, so a scan reads only the selected entries:
+Map, set, and deque scans accept keyword options. Prosody applies them in storage, so a scan reads only the selected entries:
 
-- `prefix` keeps map keys that start with a string.
+- `prefix` keeps map keys or set members that start with a string.
 - `from_` and `after` start at a key, or after it. `to` and `before` stop at a key, or before it.
 - `limit` returns at most that number of items.
 - Deque scans take positions from the front instead of keys. `range` also accepts a `range` or a `slice` of positions, such as `range=slice(2, 5)`.
@@ -722,7 +725,7 @@ current_order = await order_reader.get("customer-123")
 
 The reader cannot see pending changes that exist only in a handler. It cannot change the collection. Each read takes an explicit key because no handler supplies one.
 
-Map and deque readers fetch data in chunks. They do not load the complete collection before iteration starts. Their scans accept the same query options as the handler scans.
+Map, set, and deque readers fetch data in chunks. They do not load the complete collection before iteration starts. Their scans accept the same query options as the handler scans.
 
 The default cache window is five seconds. Set `read_cache=timedelta(...)` to select a different window. Set `read_cache=False` to bypass the cache.
 
@@ -1074,6 +1077,7 @@ Await client operations unless an entry returns a property or an async iterator.
 - `source_system: str`: Get the configured source system identifier.
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
+- `state(subsystem: str, definition: SetDefinition) -> PublishedSet`: Open a read-only published set.
 - `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
 - `subscribe(handler: EventHandler[P, R]) -> None`: Start event processing with the specified handler.
 - `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
@@ -1146,7 +1150,7 @@ Represents the current event context:
 - `scheduled() -> List[datetime]`: Returns a list of all scheduled timer times
 - `should_cancel() -> bool`: Check if cancellation has been requested (includes timeout and shutdown)
 - `on_cancel() -> None`: Completes when cancellation occurs
-- `state(definition) -> ValueState[T] | MapState[V] | DequeState[T]`: Bind a registered collection for the current attempt. Message definitions return handles that contain `Message[P]`. An unregistered or mismatched definition raises `PermanentStateError`. See [Keyed State](#keyed-state-2).
+- `state(definition) -> ValueState[T] | MapState[V] | SetState | DequeState[T]`: Bind a registered collection for the current attempt. Message definitions return handles that contain `Message[P]`. An unregistered or mismatched definition raises `PermanentStateError`. See [Keyed State](#keyed-state-2).
 
 ### Timer
 
@@ -1173,6 +1177,7 @@ Definition constructors return frozen objects used both in `state_collections` a
 
 - `value(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None) -> ValueDefinition[T]`
 - `map(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, keyset_limit=None) -> MapDefinition[V]`
+- `set(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, keyset_limit=None) -> SetDefinition`
 - `deque(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, capacity=None) -> DequeDefinition[T]`
 - `message_value(name, *, ttl=None, read_uncommitted=None) -> MessageValueDefinition[P]`
 - `message_map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MessageMapDefinition[P]`
@@ -1180,9 +1185,9 @@ Definition constructors return frozen objects used both in `state_collections` a
 
 Each definition type provides `to_config()`. It returns an entry for `state_collections`.
 
-All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`. JSON definitions also expose `published` and `read_cache`. Map definitions expose `keyset_limit`. Deque definitions expose `capacity`.
+All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`. JSON and set definitions also expose `published` and `read_cache`. Map and set definitions expose `keyset_limit`. Deque definitions expose `capacity`.
 
-Map scans (`MapState.items`, `keys`, and `values`) accept the keyword options `prefix`, `from_`, `after`, `to`, `before`, and `limit`. Deque scans accept `from_`, `after`, `to`, `before`, `range`, and `limit` with positions. See [Query a part of a collection](#query-a-part-of-a-collection).
+Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accept the keyword options `prefix`, `from_`, `after`, `to`, `before`, and `limit`. Deque scans accept `from_`, `after`, `to`, `before`, `range`, and `limit` with positions. See [Query a part of a collection](#query-a-part-of-a-collection).
 
 `ValueState[T]`:
 
@@ -1207,6 +1212,19 @@ Map scans (`MapState.items`, `keys`, and `values`) accept the keyword options `p
 - `commit() -> None`
 - `rollback() -> None`
 
+`SetState` (members are `str`):
+
+- `add(member: str) -> None`
+- `discard(member: str) -> None` — no effect when the member is absent
+- `contains(member: str) -> bool`
+- `contains_many(members: List[str]) -> List[bool]`
+- `is_empty() -> bool`
+- `clear() -> None`
+- `members(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, limit=None)` — async iterator over `str` members
+- `__aiter__()` — forward async iteration over `str` members
+- `commit() -> None`
+- `rollback() -> None`
+
 `DequeState[T]`:
 
 - `append(item: T) -> None`
@@ -1226,7 +1244,7 @@ Map scans (`MapState.items`, `keys`, and `values`) accept the keyword options `p
 
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
 
-Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, and `values` return async iterators directly and accept the handler query options.
+Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedSet` provides `contains`, `contains_many`, `is_empty`, and `members`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, `values`, and `members` return async iterators directly and accept the handler query options.
 
 Errors:
 

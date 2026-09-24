@@ -14,8 +14,10 @@ from prosody import (
     Message,
     MessageDequeDefinition,
     ProsodyClient,
+    SetDefinition,
     map,
     message_deque,
+    set,
 )
 
 
@@ -25,6 +27,7 @@ class Event(TypedDict):
 
 TOTALS: MapDefinition[int] = map("negative-totals")
 EVENTS: MessageDequeDefinition[Event] = message_deque("negative-events")
+TAGS: SetDefinition = set("negative-tags")
 
 
 async def expected_errors(
@@ -41,5 +44,8 @@ async def expected_errors(
     events = context.state(EVENTS)
     await events.append(message.payload)  # type: ignore[arg-type]
     events.values(range=[0, 1])  # type: ignore[arg-type]
+
+    tags = context.state(TAGS)
+    await tags.add(1)  # type: ignore[arg-type]
 
     await ProsodyClient.create(unknown_option=True)  # type: ignore[call-arg]

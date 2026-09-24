@@ -31,6 +31,7 @@ from prosody import (
     Message,
     value,
     map,
+    set as set_definition,
     deque,
     message_value,
     message_map,
@@ -55,6 +56,7 @@ CASSANDRA_KEYSPACE = "prosody_test"
 STATE_DEFS = {
     "cart": value("cart"),
     "totals": map("totals", keyset_limit=256),
+    "tags": set_definition("tags"),
     "backlog": deque("backlog"),
     "bounded": deque("bounded", capacity=3),
     "last_msg": message_value("last-msg"),

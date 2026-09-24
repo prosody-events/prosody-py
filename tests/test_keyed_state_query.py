@@ -1,4 +1,5 @@
-"""Infra-backed checks that query options cross the native boundary intact.
+"""Infra-backed checks that query options and sets cross the native boundary
+intact.
 
 Each scenario runs inside a live handler with the fixtures and collections of
 ``test_keyed_state.py``. Core owns the query semantics; these tests check that
@@ -9,6 +10,7 @@ from prosody import (
     Direction,
     deque as deque_definition,
     map as map_definition,
+    set as set_definition,
 )
 
 from test_keyed_state import (  # noqa: F401 (fixtures)
@@ -95,6 +97,44 @@ async def test_map_query_options_reach_core(state_client):
     assert obs["values"] == [2, 1, 0]
 
 
+async def test_set_operations_reach_core(state_client):
+    client, topic, _ = state_client
+
+    async def operations(ctx):
+        tags = ctx.state(STATE_DEFS["tags"])
+        empty_before = await _wait(tags.is_empty())
+        for member in ["red", "green", "blue", "gold"]:
+            await _wait(tags.add(member))
+        await _wait(tags.discard("green"))
+        await _wait(tags.discard("absent"))
+        report = {
+            "empty_before": empty_before,
+            "contains": await _wait(tags.contains("red")),
+            "discarded": await _wait(tags.contains("green")),
+            "contains_many": await _wait(tags.contains_many(["blue", "green"])),
+            "members": await _wait(_collect(tags)),
+            "reverse_limit": await _wait(
+                _collect(tags.members(Direction.BACKWARD, limit=2))
+            ),
+            "prefix": await _wait(_collect(tags.members(prefix="g"))),
+            "after": await _wait(_collect(tags.members(after="blue", before="red"))),
+        }
+        await _wait(tags.clear())
+        report["empty_after_clear"] = await _wait(tags.is_empty())
+        return report
+
+    obs = await _observe(client, topic, operations)
+    assert obs["empty_before"] is True
+    assert obs["contains"] is True
+    assert obs["discarded"] is False
+    assert obs["contains_many"] == [True, False]
+    assert obs["members"] == ["blue", "gold", "red"]
+    assert obs["reverse_limit"] == ["red", "gold"]
+    assert obs["prefix"] == ["gold"]
+    assert obs["after"] == ["gold"]
+    assert obs["empty_after_clear"] is True
+
+
 async def test_deque_position_options_reach_core(state_client):
     client, topic, _ = state_client
 
@@ -134,11 +174,12 @@ async def test_published_readers_accept_query_options(
     topic, group = random_topic_and_group
     subsystem = f"query-{nonce()}"
     totals = map_definition("pub-totals", published=True, read_cache=False)
+    tags = set_definition("pub-tags", published=True, read_cache=False)
     backlog = deque_definition("pub-backlog", published=True, read_cache=False)
     client = await client_factory(
         **_client_config(topic, group),
         subsystem=subsystem,
-        state_collections=[totals, backlog],
+        state_collections=[totals, tags, backlog],
     )
 
     async def cb(ctx, msg, results):
@@ -146,11 +187,13 @@ async def test_published_readers_accept_query_options(
             if msg.payload["step"] == "write":
                 for number, key in enumerate(["a1", "a2", "b1"]):
                     await _wait(ctx.state(totals).set(key, number))
+                    await _wait(ctx.state(tags).add(key))
                     await _wait(ctx.state(backlog).append(number))
                 return
 
             key = msg.key
             m = await _wait(client.state(subsystem, totals))
+            s = await _wait(client.state(subsystem, tags))
             d = await _wait(client.state(subsystem, backlog))
             await results.send(
                 {
@@ -158,6 +201,12 @@ async def test_published_readers_accept_query_options(
                     "map_items": await _wait(_collect(m.items(key, after="a1", limit=1))),
                     "map_values": await _wait(
                         _collect(m.values(key, direction=Direction.BACKWARD))
+                    ),
+                    "set_contains": await _wait(s.contains(key, "b1")),
+                    "set_contains_many": await _wait(s.contains_many(key, ["a1", "zz"])),
+                    "set_empty": await _wait(s.is_empty(key)),
+                    "set_members": await _wait(
+                        _collect(s.members(key, Direction.BACKWARD, before="a1"))
                     ),
                     "deque_values": await _wait(_collect(d.values(key, range=range(1, 3)))),
                 }
@@ -176,4 +225,8 @@ async def test_published_readers_accept_query_options(
     assert obs["map_keys"] == ["a1", "a2"]
     assert obs["map_items"] == [("a2", 1)]
     assert obs["map_values"] == [2, 1, 0]
+    assert obs["set_contains"] is True
+    assert obs["set_contains_many"] == [True, False]
+    assert obs["set_empty"] is False
+    assert obs["set_members"] == ["b1", "a2"]
     assert obs["deque_values"] == [1, 2]

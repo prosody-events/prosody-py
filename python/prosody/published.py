@@ -96,6 +96,37 @@ class PublishedMap(Generic[V]):
         return _StateScan(self._native.scan(key, query), lambda entry: entry[1])
 
 
+class PublishedSet:
+    """Read-only access to a published set collection."""
+
+    def __init__(self, native: "_PublishedSetNative") -> None:
+        self._native = native
+
+    async def contains(self, key: str, member: str) -> bool:
+        return await self._native.contains(key, member)
+
+    async def contains_many(self, key: str, members: List[str]) -> List[bool]:
+        return await self._native.contains_many(key, members)
+
+    async def is_empty(self, key: str) -> bool:
+        return await self._native.is_empty(key)
+
+    def members(
+        self,
+        key: str,
+        direction: Direction = Direction.FORWARD,
+        *,
+        prefix: Optional[str] = None,
+        from_: Optional[str] = None,
+        after: Optional[str] = None,
+        to: Optional[str] = None,
+        before: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> "_StateScan[str]":
+        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        return _StateScan(self._native.keys(key, query), _identity)
+
+
 class PublishedDeque(Generic[T]):
     """Read-only access to a published deque collection."""
 
@@ -150,6 +181,20 @@ class _PublishedMapNative(Protocol[V]):
         raise NotImplementedError
 
     def scan(self, key: str, query: _KeyQuery) -> "_NativeScan[tuple[str, V]]":
+        raise NotImplementedError
+
+    def keys(self, key: str, query: _KeyQuery) -> "_NativeScan[str]":
+        raise NotImplementedError
+
+
+class _PublishedSetNative(Protocol):
+    async def contains(self, key: str, member: str) -> bool:
+        raise NotImplementedError
+
+    async def contains_many(self, key: str, members: List[str]) -> List[bool]:
+        raise NotImplementedError
+
+    async def is_empty(self, key: str) -> bool:
         raise NotImplementedError
 
     def keys(self, key: str, query: _KeyQuery) -> "_NativeScan[str]":

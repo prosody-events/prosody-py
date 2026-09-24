@@ -18,12 +18,14 @@ from prosody import (
     Message,
     value,
     map,
+    set as set_definition,
     deque,
     message_value,
     message_map,
     message_deque,
     ValueState,
     MapState,
+    SetState,
     DequeState,
     StateError,
     PermanentStateError,
@@ -33,6 +35,7 @@ from prosody import (
     TransientError,
     ProsodyClient,
     PublishedMap,
+    PublishedSet,
     PublishedDeque,
 )
 from prosody.query import _KeyQuery, _PositionQuery
@@ -90,6 +93,7 @@ def test_publication_and_read_cache_share_the_descriptor():
     (
         (value("value", read_cache=False), "_published_value"),
         (map("map", read_cache=2.0), "_published_map"),
+        (set_definition("set", read_cache=1.0), "_published_set"),
         (deque("deque"), "_published_deque"),
     ),
 )
@@ -283,7 +287,11 @@ def test_exports_present():
         "MessageDequeDefinition",
         "ValueState",
         "MapState",
+        "SetState",
         "DequeState",
+        "set",
+        "SetDefinition",
+        "PublishedSet",
         "StateError",
         "PermanentStateError",
         "TransientStateError",

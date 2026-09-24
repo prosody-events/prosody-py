@@ -29,7 +29,8 @@ use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::FutureExt;
 use prosody::consumer::Keyed;
 use prosody::consumer::event_context::{
-    BoxDequeState, BoxMapState, BoxValueState, ErasedCategory, ErasedStateError, StateCursor,
+    BoxDequeState, BoxMapState, BoxSetState, BoxValueState, ErasedCategory, ErasedStateError,
+    StateCursor,
 };
 use prosody::consumer::message::ConsumerMessage;
 use prosody::state::Direction;
@@ -48,11 +49,13 @@ use tokio::sync::Mutex;
 mod deque;
 mod map;
 mod query;
+mod set;
 mod value;
 
 pub(crate) use deque::{NativeJsonDequeState, NativeMessageDequeState};
 pub(crate) use map::{NativeJsonMapState, NativeMessageMapState};
 pub(crate) use query::{KeyQuery, PositionQuery};
+pub(crate) use set::NativeSetState;
 pub(crate) use value::{NativeJsonValueState, NativeMessageValueState};
 
 /// Maximum number of immediately-ready scan items transported through `PyO3`

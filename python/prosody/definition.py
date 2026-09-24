@@ -109,6 +109,25 @@ class MapDefinition(Generic[V]):
 
 
 @dataclass(frozen=True)
+class SetDefinition:
+    """A presence-only ordered set of string members."""
+
+    name: str
+    ttl: Optional[Union[timedelta, int]] = None
+    read_uncommitted: Optional[bool] = None
+    published: Optional[bool] = None
+    read_cache: ReadCache = None
+    keyset_limit: Optional[int] = None
+    capacity: ClassVar[Optional[int]] = None
+    kind: ClassVar[str] = "set"
+    payload: ClassVar[str] = "presence"
+
+    def to_config(self) -> _StateConfig:
+        """Return the config dict passed to the client and to ``state()``."""
+        return _config(self)
+
+
+@dataclass(frozen=True)
 class DequeDefinition(Generic[T]):
     """A double-ended-queue JSON collection definition."""
 
@@ -213,6 +232,26 @@ def map(  # this module-local name mirrors the collection kind; no builtin use h
 ) -> MapDefinition[V]:
     """Define an ordered-map JSON collection (string keys)."""
     return MapDefinition(
+        name,
+        ttl=ttl,
+        read_uncommitted=read_uncommitted,
+        published=published,
+        read_cache=read_cache,
+        keyset_limit=keyset_limit,
+    )
+
+
+def set(  # this module-local name mirrors the collection kind; no builtin use here
+    name: str,
+    *,
+    ttl: Optional[Union[timedelta, int]] = None,
+    read_uncommitted: Optional[bool] = None,
+    published: Optional[bool] = None,
+    read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
+    keyset_limit: Optional[int] = None,
+) -> SetDefinition:
+    """Define a presence-only ordered set of string members."""
+    return SetDefinition(
         name,
         ttl=ttl,
         read_uncommitted=read_uncommitted,

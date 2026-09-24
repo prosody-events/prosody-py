@@ -35,21 +35,25 @@ from prosody.state import (
     Direction,
     value,
     map,
+    set,
     deque,
     message_value,
     message_map,
     message_deque,
     ValueDefinition,
     MapDefinition,
+    SetDefinition,
     DequeDefinition,
     MessageValueDefinition,
     MessageMapDefinition,
     MessageDequeDefinition,
     ValueState,
     MapState,
+    SetState,
     DequeState,
     PublishedValue,
     PublishedMap,
+    PublishedSet,
     PublishedDeque,
 )
 from prosody.timer import Timer
@@ -88,6 +92,12 @@ class ProsodyClient:
                     subsystem, definition.name, read_cache=definition.read_cache
                 )
             )
+        if isinstance(definition, SetDefinition):
+            return PublishedSet(
+                await self._published_set(
+                    subsystem, definition.name, read_cache=definition.read_cache
+                )
+            )
         if isinstance(definition, DequeDefinition):
             return PublishedDeque(
                 await self._published_deque(
@@ -95,8 +105,8 @@ class ProsodyClient:
                 )
             )
         raise TypeError(
-            "definition must be a JSON ValueDefinition, MapDefinition, or "
-            "DequeDefinition"
+            "definition must be a JSON ValueDefinition, MapDefinition, "
+            "SetDefinition, or DequeDefinition"
         )
 
 logging.getLogger('prosody.consumer.poll').setLevel(logging.ERROR)

@@ -1,7 +1,7 @@
 """Type-checked keyed-state example.
 
 Exercised by ``mypy`` as a CI gate to keep ``py.typed`` honest: it drives the
-generic definition -> handle -> operation flow over both JSON and message
+generic definition -> handle -> operation flow over JSON, set, and message
 collections and must type-check cleanly. The type parameters are structural JSON
 annotations (TypedDict here) — there is no runtime model validation. A generic
 ``EventHandler[OrderEvent]`` declares the expected payload shape to the checker.
@@ -22,10 +22,12 @@ from prosody import (
     Message,
     MessageDequeDefinition,
     PermanentError,
+    SetDefinition,
     Timer,
     ValueDefinition,
     map,
     message_deque,
+    set,
     value,
 )
 from prosody.message import JSONValue
@@ -45,6 +47,7 @@ class OrderEvent(TypedDict):
 # constructors are generic, so a bare call would default to ``JSONValue``.
 CART: ValueDefinition[Cart] = value("cart", ttl=timedelta(days=30))
 TOTALS: MapDefinition[int] = map("totals")  # keys are always str
+TAGS: SetDefinition = set("tags", ttl=timedelta(days=30))  # members are str
 BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog", capacity=100)
 
 
@@ -103,6 +106,12 @@ class OrderHandler(EventHandler[OrderEvent]):
             last = page[-1]
         latest = totals.values(direction=Direction.BACKWARD, limit=3)
         _latest: List[int] = [total async for total in latest]
+
+        tags = context.state(TAGS)  # SetState
+        await tags.add(payload["order_id"])
+        _tagged: bool = await tags.contains(payload["order_id"])
+        async for _member in tags.members(prefix="ord-", limit=10):
+            _tag: str = _member
 
         backlog = context.state(BACKLOG)  # DequeState[Message[OrderEvent]]
         await backlog.append(message)

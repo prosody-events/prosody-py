@@ -5,7 +5,9 @@ use crate::state::{
     state_error,
 };
 use prosody::consumer::event_context::ErasedStateError;
-use prosody::high_level::erased::{SharedDequeReader, SharedMapReader, SharedValueReader};
+use prosody::high_level::erased::{
+    SharedDequeReader, SharedMapReader, SharedSetReader, SharedValueReader,
+};
 use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::pythonize;
@@ -94,6 +96,64 @@ impl PublishedMap {
     fn scan(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeJsonMapScan> {
         let cursor = query.stream(py, &self.env, self.inner.entries(key))?;
         Ok(NativeJsonMapScan::new(cursor, self.env.clone()))
+    }
+
+    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeKeyScan> {
+        let cursor = query.stream(py, &self.env, self.inner.keys(key))?;
+        Ok(NativeKeyScan::new(cursor, self.env.clone()))
+    }
+}
+
+/// A read-only published set collection.
+#[pyclass(name = "_NativePublishedSet")]
+pub struct PublishedSet {
+    pub(crate) inner: SharedSetReader,
+    pub(crate) env: StateEnv,
+}
+
+#[pymethods]
+impl PublishedSet {
+    fn contains<'p>(
+        &self,
+        py: Python<'p>,
+        key: String,
+        member: String,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            inner
+                .contains(key, member)
+                .await
+                .map_err(|error| published_error(&env, &error))
+        })
+    }
+
+    fn contains_many<'p>(
+        &self,
+        py: Python<'p>,
+        key: String,
+        members: Vec<String>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            inner
+                .contains_many(key, members)
+                .await
+                .map_err(|error| published_error(&env, &error))
+        })
+    }
+
+    fn is_empty<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            inner
+                .is_empty(key)
+                .await
+                .map_err(|error| published_error(&env, &error))
+        })
     }
 
     fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeKeyScan> {

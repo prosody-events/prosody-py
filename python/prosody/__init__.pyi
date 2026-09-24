@@ -39,13 +39,17 @@ from prosody.state import (
     MessageDequeDefinition as MessageDequeDefinition,
     MessageMapDefinition as MessageMapDefinition,
     MessageValueDefinition as MessageValueDefinition,
+    SetDefinition as SetDefinition,
+    SetState as SetState,
     ValueDefinition as ValueDefinition,
     ValueState as ValueState,
     PublishedValue as PublishedValue,
     PublishedMap as PublishedMap,
+    PublishedSet as PublishedSet,
     PublishedDeque as PublishedDeque,
     deque as deque,
     map as map,
+    set as set,
     message_deque as message_deque,
     message_map as message_map,
     message_value as message_value,
@@ -71,6 +75,12 @@ class ProsodyClient(_ProsodyClientApi):
         subsystem: str,
         definition: MapDefinition[V],
     ) -> PublishedMap[V]: ...
+    @overload
+    async def state(
+        self,
+        subsystem: str,
+        definition: SetDefinition,
+    ) -> PublishedSet: ...
     @overload
     async def state(
         self,

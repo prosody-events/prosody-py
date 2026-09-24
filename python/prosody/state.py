@@ -26,18 +26,21 @@ from prosody.definition import (
     MessageMapDefinition,
     MessageValueDefinition,
     ReadCache,
+    SetDefinition,
     ValueDefinition,
     deque,
     map,
     message_deque,
     message_map,
     message_value,
+    set,
     value,
 )
 from prosody.message import JSONValue
 from prosody.published import (
     PublishedDeque,
     PublishedMap,
+    PublishedSet,
     PublishedValue,
 )
 from prosody.query import (
@@ -216,6 +219,71 @@ class MapState(Generic[V]):
         per key).
         """
         return self.keys()
+
+    async def commit(self) -> None:
+        """Durably commit the buffered operations mid-handler."""
+        await self._native.commit()
+
+    async def rollback(self) -> None:
+        """Discard buffered uncommitted operations back to the committed floor."""
+        await self._native.rollback()
+
+
+class SetState:
+    """Typed handle over a presence-only ordered set of string members.
+
+    Valid only within the handler invocation that vended it. ``contains``
+    exists because Python's ``in`` cannot ``await``.
+    """
+
+    def __init__(self, native: Any) -> None:
+        self._native = native
+
+    async def add(self, member: str) -> None:
+        """Add ``member``."""
+        await self._native.insert(member)
+
+    async def discard(self, member: str) -> None:
+        """Remove ``member`` if present."""
+        await self._native.remove(member)
+
+    async def contains(self, member: str) -> bool:
+        """Whether ``member`` belongs to the set (read-your-writes)."""
+        return await self._native.contains(member)
+
+    async def contains_many(self, members: List[str]) -> List[bool]:
+        """Test several members in one batch, one result per member in order."""
+        return await self._native.contains_many(members)
+
+    async def is_empty(self) -> bool:
+        """Whether the set has no members."""
+        return await self._native.is_empty()
+
+    async def clear(self) -> None:
+        """Remove every member."""
+        await self._native.clear()
+
+    def members(
+        self,
+        direction: Direction = Direction.FORWARD,
+        *,
+        prefix: Optional[str] = None,
+        from_: Optional[str] = None,
+        after: Optional[str] = None,
+        to: Optional[str] = None,
+        before: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> _StateScan:
+        """Async iterator over the members in order.
+
+        The query options match :meth:`MapState.keys`.
+        """
+        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        return _StateScan(self._native.keys(query), _identity)
+
+    def __aiter__(self) -> _StateScan:
+        """Forward iteration over the members."""
+        return self.members()
 
     async def commit(self) -> None:
         """Durably commit the buffered operations mid-handler."""

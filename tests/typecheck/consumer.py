@@ -17,10 +17,14 @@ from prosody import (
     Outcome,
     ProsodyClient,
     ProsodyHandler,
+    PublishedSet,
+    SetDefinition,
+    SetState,
     Success,
     Timer,
     map,
     message_deque,
+    set,
     transient,
 )
 from prosody.message import JSONValue
@@ -36,6 +40,7 @@ class Response(TypedDict):
 
 TOTALS: MapDefinition[int] = map("totals")
 EVENTS: MessageDequeDefinition[Event] = message_deque("events", capacity=10)
+TAGS: SetDefinition = set("tags", keyset_limit=64)
 
 
 @transient(ValueError)
@@ -75,6 +80,14 @@ class Handler(EventHandler[Event, Response]):
         async for entry in totals.items(Direction.BACKWARD, prefix="a", after="a1", limit=5):
             assert_type(entry, tuple[str, int])
 
+        tags = context.state(TAGS)
+        assert_type(tags, SetState)
+        await tags.add("a")
+        await tags.discard("a")
+        assert_type(await tags.contains_many(["a"]), list[bool])
+        async for member in tags.members(from_="a", before="z"):
+            assert_type(member, str)
+
         events = context.state(EVENTS)
         await events.append(message)
         async for item in events.values(range=slice(0, 5), limit=2):
@@ -92,6 +105,14 @@ class Handler(EventHandler[Event, Response]):
 wrapped_handler = ProsodyHandler(Handler())
 assert_type(wrapped_handler, ProsodyHandler[Event, Response])
 assert_type(wrapped_handler.handler, EventHandler[Event, Response])
+
+
+async def read_published_set(client: ProsodyClient) -> None:
+    reader = await client.state("checkout", TAGS)
+    assert_type(reader, PublishedSet)
+    assert_type(await reader.contains("user", "a"), bool)
+    async for member in reader.members("user", limit=10):
+        assert_type(member, str)
 
 
 async def subscribe_specialized(client: ProsodyClient) -> None:

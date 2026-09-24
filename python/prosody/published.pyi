@@ -62,6 +62,24 @@ class PublishedMap(Generic[V]):
     ) -> _StateScan[V]: ...
 
 
+class PublishedSet:
+    async def contains(self, key: str, member: str) -> bool: ...
+    async def contains_many(self, key: str, members: List[str]) -> List[bool]: ...
+    async def is_empty(self, key: str) -> bool: ...
+    def members(
+        self,
+        key: str,
+        direction: Direction = ...,
+        *,
+        prefix: Optional[str] = ...,
+        from_: Optional[str] = ...,
+        after: Optional[str] = ...,
+        to: Optional[str] = ...,
+        before: Optional[str] = ...,
+        limit: Optional[int] = ...,
+    ) -> _StateScan[str]: ...
+
+
 class PublishedDeque(Generic[T]):
     async def get(self, key: str, index: int) -> Optional[T]: ...
     async def size(self, key: str) -> int: ...

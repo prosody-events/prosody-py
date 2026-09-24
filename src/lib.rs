@@ -13,11 +13,11 @@ use crate::admin::AdminClient;
 use crate::client::ProsodyClient;
 use crate::context::Context;
 use crate::logging::PythonLoggingLayer;
-use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
+use crate::published::{PublishedDeque, PublishedMap, PublishedSet, PublishedValue};
 use crate::state::{
     NativeJsonDequeScan, NativeJsonDequeState, NativeJsonMapScan, NativeJsonMapState,
     NativeJsonValueState, NativeKeyScan, NativeMessageDequeScan, NativeMessageDequeState,
-    NativeMessageMapScan, NativeMessageMapState, NativeMessageValueState,
+    NativeMessageMapScan, NativeMessageMapState, NativeMessageValueState, NativeSetState,
 };
 use ::prosody::tracing::{
     flush_telemetry as core_flush_telemetry, initialize_tracing,
@@ -86,6 +86,7 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     prosody_module.add_class::<NativeMessageMapState>()?;
     prosody_module.add_class::<NativeJsonDequeState>()?;
     prosody_module.add_class::<NativeMessageDequeState>()?;
+    prosody_module.add_class::<NativeSetState>()?;
     prosody_module.add_class::<NativeJsonDequeScan>()?;
     prosody_module.add_class::<NativeJsonMapScan>()?;
     prosody_module.add_class::<NativeMessageDequeScan>()?;
@@ -93,6 +94,7 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     prosody_module.add_class::<NativeKeyScan>()?;
     prosody_module.add_class::<PublishedValue>()?;
     prosody_module.add_class::<PublishedMap>()?;
+    prosody_module.add_class::<PublishedSet>()?;
     prosody_module.add_class::<PublishedDeque>()?;
 
     prosody_module.add_function(wrap_pyfunction!(flush_telemetry, prosody_module)?)?;

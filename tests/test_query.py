@@ -14,6 +14,8 @@ from prosody import (
     MapState,
     PublishedDeque,
     PublishedMap,
+    PublishedSet,
+    SetState,
 )
 from prosody.query import _KeyQuery, _PositionQuery
 
@@ -46,15 +48,21 @@ class _Empty:
 def _key_scans(native):
     """Every key-ordered scan method, as a call that takes the options."""
     handle = MapState(native)
+    members = SetState(native)
     published = PublishedMap(native)
+    published_set = PublishedSet(native)
     return [
         lambda direction, **options: handle.items(direction, **options),
         lambda direction, **options: handle.keys(direction, **options),
         lambda direction, **options: handle.values(direction=direction, **options),
+        lambda direction, **options: members.members(direction, **options),
         lambda direction, **options: published.items("user", direction, **options),
         lambda direction, **options: published.keys("user", direction, **options),
         lambda direction, **options: published.values(
             "user", direction=direction, **options
+        ),
+        lambda direction, **options: published_set.members(
+            "user", direction, **options
         ),
     ]
 
@@ -90,7 +98,7 @@ def test_key_options_translate_on_every_scan(options, expected):
     for scan in _key_scans(native):
         scan(Direction.BACKWARD, **options)
     assert native.queries == [expected] * len(native.queries)
-    assert len(native.queries) == 6
+    assert len(native.queries) == 8
 
 
 @pytest.mark.parametrize(

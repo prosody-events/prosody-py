@@ -15,6 +15,7 @@ from prosody.query import _KeyQuery, _PositionQuery
 from prosody.state import (
     DequeDefinition,
     MapDefinition,
+    SetDefinition,
     MessageDequeDefinition,
     MessageMapDefinition,
     MessageValueDefinition,
@@ -30,6 +31,7 @@ V = TypeVar("V")
 StateDefinition: TypeAlias = Union[
     ValueDefinition[object],
     MapDefinition[object],
+    SetDefinition,
     DequeDefinition[object],
     MessageValueDefinition[object],
     MessageMapDefinition[object],
@@ -82,6 +84,13 @@ class _NativePublishedMap(Generic[V]):
     async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]: ...
     async def contains_key(self, key: str, map_key: str) -> bool: ...
     def scan(self, key: str, query: _KeyQuery) -> NativeJsonMapScan: ...
+    def keys(self, key: str, query: _KeyQuery) -> NativeKeyScan: ...
+
+
+class _NativePublishedSet:
+    async def contains(self, key: str, member: str) -> bool: ...
+    async def contains_many(self, key: str, members: List[str]) -> List[bool]: ...
+    async def is_empty(self, key: str) -> bool: ...
     def keys(self, key: str, query: _KeyQuery) -> NativeKeyScan: ...
 
 
@@ -234,7 +243,7 @@ class _ProsodyClientApi:
             telemetry_enabled: Whether the telemetry emitter is enabled. Defaults to True.
             message_spans: Span linking for message execution ('child' or 'follows_from'). Defaults to 'child'.
             timer_spans: Span linking for timer execution ('child' or 'follows_from'). Defaults to 'follows_from'.
-            state_collections: Keyed-state collections to register before subscribe. Pass the definition objects from `value`/`map`/`deque`/`message_value`/`message_map`/`message_deque`; each serializes into a collection config entry. Duplicate names are rejected.
+            state_collections: Keyed-state collections to register before subscribe. Pass the definition objects from `value`/`map`/`set`/`deque`/`message_value`/`message_map`/`message_deque`; each serializes into a collection config entry. Duplicate names are rejected.
             state_cache_dir: Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively). Env: PROSODY_STATE_CACHE_DIR. Defaults to a per-client temp dir.
             state_owned_cache_size: Capacity of the owning keyed-state cache, such as ``"64 MiB"``. Env: ``PROSODY_STATE_OWNED_CACHE_SIZE``. The storage engine selects its default when neither is set.
             state_read_cache_size: Capacity of the published-state read cache, such as ``"1 MiB"``. Env: ``PROSODY_STATE_READ_CACHE_SIZE``. Uses the owned cache size when set, or 1 MiB when both sizes are unset.
@@ -315,6 +324,9 @@ class _ProsodyClientApi:
     async def _published_map(
         self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
     ) -> _NativePublishedMap[JSONValue]: ...
+    async def _published_set(
+        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
+    ) -> _NativePublishedSet: ...
     async def _published_deque(
         self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
     ) -> _NativePublishedDeque[JSONValue]: ...

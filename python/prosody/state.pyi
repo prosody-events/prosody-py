@@ -7,7 +7,8 @@ transport over the native handles vended by :meth:`Context.state`; the native
 error-category classification, null/shape/kind guards, and scan flattening).
 
 The type parameter of every handle (``T`` / ``V``) is a structural JSON
-annotation; see :mod:`prosody.definition`. Map keys are always ``str``.
+annotation; see :mod:`prosody.definition`. Map keys and set members are always
+``str``.
 """
 
 from typing import Generic, List, Optional, Tuple, Union, overload
@@ -21,6 +22,7 @@ from prosody.definition import (
     MessageMapDefinition as MessageMapDefinition,
     MessageValueDefinition as MessageValueDefinition,
     ReadCache as ReadCache,
+    SetDefinition as SetDefinition,
     ValueDefinition as ValueDefinition,
     _StateConfig as _StateConfig,
     deque as deque,
@@ -28,12 +30,14 @@ from prosody.definition import (
     message_deque as message_deque,
     message_map as message_map,
     message_value as message_value,
+    set as set,
     value as value,
 )
 from prosody.message import JSONValue
 from prosody.published import (
     PublishedDeque as PublishedDeque,
     PublishedMap as PublishedMap,
+    PublishedSet as PublishedSet,
     PublishedValue as PublishedValue,
 )
 from prosody.query import Direction as Direction, _StateScan as _StateScan
@@ -194,6 +198,58 @@ class MapState(Generic[V]):
         Use :meth:`items` when you need the values — one batched, fully-resolving
         scan — rather than per-key :meth:`get` after key iteration.
         """
+        ...
+    async def commit(self) -> None:
+        """Durably flush the buffered operations mid-handler."""
+        ...
+    async def rollback(self) -> None:
+        """Discard buffered uncommitted operations back to the committed floor."""
+        ...
+
+
+class SetState:
+    """Typed handle over a presence-only ordered set of string members.
+
+    Valid only within the handler invocation that vended it. ``contains``
+    exists because Python's ``in`` cannot ``await``.
+    """
+
+    async def add(self, member: str) -> None:
+        """Add ``member``."""
+        ...
+    async def discard(self, member: str) -> None:
+        """Remove ``member`` if present."""
+        ...
+    async def contains(self, member: str) -> bool:
+        """Whether ``member`` belongs to the set (read-your-writes)."""
+        ...
+    async def contains_many(self, members: List[str]) -> List[bool]:
+        """Test several members in one batch, one result per member in order."""
+        ...
+    async def is_empty(self) -> bool:
+        """Whether the set has no members."""
+        ...
+    async def clear(self) -> None:
+        """Remove every member."""
+        ...
+    def members(
+        self,
+        direction: Direction = ...,
+        *,
+        prefix: Optional[str] = ...,
+        from_: Optional[str] = ...,
+        after: Optional[str] = ...,
+        to: Optional[str] = ...,
+        before: Optional[str] = ...,
+        limit: Optional[int] = ...,
+    ) -> _StateScan[str]:
+        """Async iterator over the members in order.
+
+        The query options match :meth:`MapState.keys`.
+        """
+        ...
+    def __aiter__(self) -> _StateScan[str]:
+        """Forward iteration over the members."""
         ...
     async def commit(self) -> None:
         """Durably flush the buffered operations mid-handler."""

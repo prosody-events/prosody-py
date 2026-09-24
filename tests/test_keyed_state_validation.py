@@ -8,7 +8,16 @@ infrastructure.
 
 import pytest
 
-from prosody import ProsodyClient, value, map, deque, message_value, message_map, message_deque
+from prosody import (
+    ProsodyClient,
+    deque,
+    map,
+    message_deque,
+    message_map,
+    message_value,
+    set as set_definition,
+    value,
+)
 
 
 BASE = dict(
@@ -78,6 +87,7 @@ def raw(
 STATE_COLLECTIONS = [
     value("cart"),
     map("totals", keyset_limit=256),
+    set_definition("tags", keyset_limit=64),
     deque("backlog"),
     message_value("last-msg"),
     message_map("msg-index"),
@@ -115,8 +125,8 @@ async def test_accepts_keyset_zero(client_factory):
 
 async def test_rejects_keyset_on_non_map():
     # The value() helper has no keyset param, so a raw stub carries it onto a
-    # value collection to reach the map-only guard.
-    with pytest.raises(ValueError, match=r"keyset_limit: only valid for map"):
+    # value collection to reach the map and set guard.
+    with pytest.raises(ValueError, match=r"keyset_limit: only valid for map and set"):
         await make_client(state_collections=[raw(kind="value", keyset_limit=5)])
 
 
@@ -158,6 +168,15 @@ async def test_rejects_unknown_kind():
 async def test_rejects_unknown_payload():
     with pytest.raises(ValueError, match=r"payload: expected"):
         await make_client(state_collections=[raw(payload="bogus")])
+
+
+@pytest.mark.parametrize(
+    ("kind", "payload"),
+    [("set", "json"), ("set", "message"), ("value", "presence"), ("map", "presence")],
+)
+async def test_rejects_payload_that_does_not_fit_the_kind(kind, payload):
+    with pytest.raises(ValueError, match=r"payload: a set collection has the"):
+        await make_client(state_collections=[raw(kind=kind, payload=payload)])
 
 
 # --- happy path -----------------------------------------------------------
