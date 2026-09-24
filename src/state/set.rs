@@ -1,8 +1,9 @@
 //! The presence-only set state handle.
 
 use super::{
-    Arc, Bound, BoxSetState, FutureExt, KeyQuery, NativeKeyScan, PyAny, PyResult, PyTraverseError,
-    PyVisit, Python, StateEnv, future_into_py, outcome_token, pyclass, pymethods, state_error,
+    Arc, Bound, BoxSetState, FutureExt, KeyQuery, NativeMapKeyScan, PyAny, PyResult,
+    PyTraverseError, PyVisit, Python, StateEnv, future_into_py, outcome_token, pyclass, pymethods,
+    state_error,
 };
 
 /// Ordered set state handle over string members.
@@ -85,9 +86,9 @@ impl NativeSetState {
     }
 
     /// Opens a member cursor.
-    fn keys(&self, py: Python, query: KeyQuery) -> PyResult<NativeKeyScan> {
+    fn keys(&self, py: Python, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
         let cursor = query.stream(py, &self.env, self.state.keys())?;
-        Ok(NativeKeyScan::new(cursor, self.env.clone()))
+        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
     }
 
     /// Durably commits the buffered operations and reports the outcome.

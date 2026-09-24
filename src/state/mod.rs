@@ -443,7 +443,7 @@ native_scan!(
     message_map_entry
 );
 native_scan!(
-    NativeKeyScan,
+    NativeMapKeyScan,
     String,
     |py, _env: &StateEnv, key: &String| {
         Ok::<Py<PyAny>, PyErr>(PyString::new(py, key).into_any().unbind())

@@ -26,6 +26,7 @@ from prosody.definition import (
     MessageDequeDefinition,
     MessageMapDefinition,
     MessageValueDefinition,
+    P,
     ReadCache,
     SetDefinition,
     ValueDefinition,
@@ -45,6 +46,8 @@ from prosody.published import (
     PublishedValue,
 )
 from prosody.query import (
+    X,
+    Y,
     Direction,
     _StateScan,
     _deque_index,

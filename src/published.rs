@@ -1,7 +1,7 @@
 //! Python-native read-only views over published keyed state.
 
 use crate::state::{
-    KeyQuery, NativeJsonDequeScan, NativeJsonMapScan, NativeKeyScan, PositionQuery, StateEnv,
+    KeyQuery, NativeJsonDequeScan, NativeJsonMapScan, NativeMapKeyScan, PositionQuery, StateEnv,
     state_error,
 };
 use prosody::consumer::event_context::ErasedStateError;
@@ -125,9 +125,9 @@ impl PublishedMap {
         Ok(NativeJsonMapScan::new(cursor, self.env.clone()))
     }
 
-    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeKeyScan> {
+    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
         let cursor = query.stream(py, &self.env, self.inner.keys(key))?;
-        Ok(NativeKeyScan::new(cursor, self.env.clone()))
+        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
     }
 }
 
@@ -183,9 +183,9 @@ impl PublishedSet {
         })
     }
 
-    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeKeyScan> {
+    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
         let cursor = query.stream(py, &self.env, self.inner.keys(key))?;
-        Ok(NativeKeyScan::new(cursor, self.env.clone()))
+        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
     }
 }
 

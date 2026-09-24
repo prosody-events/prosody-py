@@ -22,6 +22,8 @@ from prosody.definition import (
     MessageDequeDefinition as MessageDequeDefinition,
     MessageMapDefinition as MessageMapDefinition,
     MessageValueDefinition as MessageValueDefinition,
+    D_co as D_co,
+    P as P,
     ReadCache as ReadCache,
     SetDefinition as SetDefinition,
     ValueDefinition as ValueDefinition,

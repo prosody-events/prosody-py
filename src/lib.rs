@@ -16,7 +16,7 @@ use crate::logging::PythonLoggingLayer;
 use crate::published::{PublishedDeque, PublishedMap, PublishedSet, PublishedValue};
 use crate::state::{
     NativeJsonDequeScan, NativeJsonDequeState, NativeJsonMapScan, NativeJsonMapState,
-    NativeJsonValueState, NativeKeyScan, NativeMessageDequeScan, NativeMessageDequeState,
+    NativeJsonValueState, NativeMapKeyScan, NativeMessageDequeScan, NativeMessageDequeState,
     NativeMessageMapScan, NativeMessageMapState, NativeMessageValueState, NativeSetState,
 };
 use ::prosody::tracing::{
@@ -91,7 +91,7 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     prosody_module.add_class::<NativeJsonMapScan>()?;
     prosody_module.add_class::<NativeMessageDequeScan>()?;
     prosody_module.add_class::<NativeMessageMapScan>()?;
-    prosody_module.add_class::<NativeKeyScan>()?;
+    prosody_module.add_class::<NativeMapKeyScan>()?;
     prosody_module.add_class::<PublishedValue>()?;
     prosody_module.add_class::<PublishedMap>()?;
     prosody_module.add_class::<PublishedSet>()?;

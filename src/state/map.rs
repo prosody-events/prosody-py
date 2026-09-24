@@ -2,7 +2,7 @@
 
 use super::{
     Arc, Bound, BoxMapState, ConsumerMessage, FutureExt, KeyQuery, NativeJsonMapScan,
-    NativeKeyScan, NativeMessageMapScan, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python,
+    NativeMapKeyScan, NativeMessageMapScan, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python,
     StateEnv, Value, build_message, future_into_py, json_write_item, message_write_item,
     outcome_token, pyclass, pymethods, pythonize, state_error,
 };
@@ -136,9 +136,9 @@ macro_rules! map_state {
             }
 
             /// Opens a key cursor.
-            fn keys(&self, py: Python, query: KeyQuery) -> PyResult<NativeKeyScan> {
+            fn keys(&self, py: Python, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
                 let cursor = query.stream(py, &self.env, self.state.keys())?;
-                Ok(NativeKeyScan::new(cursor, self.env.clone()))
+                Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
             }
 
             /// Durably commits the buffered operations and reports the outcome.
