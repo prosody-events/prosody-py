@@ -6,6 +6,8 @@ Each scenario runs inside a live handler with the fixtures and collections of
 each Python option reaches core as the matching query setting.
 """
 
+from datetime import datetime, timedelta, timezone
+
 from prosody import (
     Demand,
     DemandKind,
@@ -224,6 +226,27 @@ async def test_context_demand_reports_the_retry_ordinal(state_client):
         await results.send(list(demands))
 
     handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, nonce(), {"go": True}))
+    obs = await _wait(handler.results.receive())
+
+    assert obs == [Demand(DemandKind.NORMAL, 0), Demand(DemandKind.FAILURE, 1)]
+
+
+async def test_timer_context_reports_the_retry_ordinal(state_client):
+    client, topic, _ = state_client
+    demands = []
+
+    async def on_msg(ctx, msg, results):
+        await _wait(ctx.schedule(datetime.now(timezone.utc) + timedelta(seconds=1)))
+
+    async def on_tmr(ctx, timer, results):
+        demands.append(ctx.demand)
+        if len(demands) == 1:
+            raise TransientStateError("fail the first timer attempt")
+        await results.send(list(demands))
+
+    handler = StateHandler(on_msg, on_tmr)
     await _wait(client.subscribe(handler))
     await _wait(client.send(topic, nonce(), {"go": True}))
     obs = await _wait(handler.results.receive())
