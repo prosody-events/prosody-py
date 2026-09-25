@@ -27,7 +27,7 @@ use prosody::loader::KafkaLoader;
 use prosody::loader::KafkaLoaderConfiguration;
 use prosody::producer::ProducerConfigurationBuilder;
 use prosody::state::descriptor::{
-    DequeDescriptor, MapDescriptor, StateDescriptor, deque_state, map_state, value_state,
+    DequeDescriptor, MapDescriptor, StateDescriptor, deque_state, map_state, set_state, value_state,
 };
 use prosody::state::order_codec::Utf8KeyCodec;
 use prosody::subsystem::SubsystemName;
@@ -71,12 +71,12 @@ pub struct PreparedClient {
 
 impl PreparedClient {
     pub async fn connect(mut self) -> PyResult<ProsodyClient> {
-        let client = new_erased(
+        let client = Box::pin(new_erased(
             self.mode,
             &mut self.producer,
             &self.consumer,
             &self.cassandra,
-        )
+        ))
         .await
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
 
@@ -647,6 +647,8 @@ enum CollectionKind {
     Value,
     /// A `String`-keyed ordered map.
     Map,
+    /// A presence-only ordered set of `String` members.
+    Set,
     /// A deque.
     Deque,
 }
@@ -657,22 +659,25 @@ enum CollectionPayload {
     Json,
     /// The full Kafka message the handler received.
     Message,
+    /// No payload: a set stores only its members.
+    Presence,
 }
 
 /// Parses a collection-kind token.
 ///
 /// # Errors
 ///
-/// Returns a `PyValueError` if the token is not `"value"`, `"map"`, or
-/// `"deque"`.
+/// Returns a `PyValueError` if the token is not `"value"`, `"map"`, `"set"`,
+/// or `"deque"`.
 fn parse_kind(index: usize, kind: &str) -> PyResult<CollectionKind> {
     match kind {
         "value" => Ok(CollectionKind::Value),
         "map" => Ok(CollectionKind::Map),
+        "set" => Ok(CollectionKind::Set),
         "deque" => Ok(CollectionKind::Deque),
         other => Err(PyValueError::new_err(format!(
-            "state_collections[{index}].kind: expected \"value\", \"map\", or \"deque\", got \
-             {other:?}"
+            "state_collections[{index}].kind: expected \"value\", \"map\", \"set\", or \"deque\", \
+             got {other:?}"
         ))),
     }
 }
@@ -681,13 +686,16 @@ fn parse_kind(index: usize, kind: &str) -> PyResult<CollectionKind> {
 ///
 /// # Errors
 ///
-/// Returns a `PyValueError` if the token is not `"json"` or `"message"`.
+/// Returns a `PyValueError` if the token is not `"json"`, `"message"`, or
+/// `"presence"`.
 fn parse_payload(index: usize, payload: &str) -> PyResult<CollectionPayload> {
     match payload {
         "json" => Ok(CollectionPayload::Json),
         "message" => Ok(CollectionPayload::Message),
+        "presence" => Ok(CollectionPayload::Presence),
         other => Err(PyValueError::new_err(format!(
-            "state_collections[{index}].payload: expected \"json\" or \"message\", got {other:?}"
+            "state_collections[{index}].payload: expected \"json\", \"message\", or \"presence\", \
+             got {other:?}"
         ))),
     }
 }
@@ -735,7 +743,7 @@ fn with_def<D: StateDescriptor>(
     descriptor
 }
 
-/// Applies the map-only keyset bound when configured.
+/// Applies the keyset bound to a map descriptor when configured.
 fn with_keyset<KC, V>(
     descriptor: MapDescriptor<KC, V>,
     keyset_limit: Option<u32>,
@@ -825,6 +833,33 @@ fn parse_capacity(
     }
 }
 
+/// Parses the `keyset_limit` field that only maps and sets accept.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` naming the offending field.
+fn parse_keyset_limit(
+    cfg: &Bound<PyDict>,
+    index: usize,
+    kind: &CollectionKind,
+) -> PyResult<Option<u32>> {
+    let Some(value) = optional_f64(cfg, "keyset_limit")? else {
+        return Ok(None);
+    };
+    if !matches!(kind, CollectionKind::Map | CollectionKind::Set) {
+        return Err(PyValueError::new_err(format!(
+            "state_collections[{index}].keyset_limit: only valid for map and set collections"
+        )));
+    }
+    whole_number_field(
+        value,
+        &format!("state_collections[{index}].keyset_limit"),
+        0,
+        u32::MAX,
+    )
+    .map(Some)
+}
+
 /// Reads an optional `bool` field from a collection's config dict.
 fn optional_bool(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<bool>> {
     match cfg.get_item(field)? {
@@ -837,8 +872,9 @@ fn optional_bool(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<bool>> {
 ///
 /// The config dict is produced by the definition's `to_config()` method with
 /// keys `name`, `kind`, `payload`, `ttl_seconds`, `read_uncommitted`,
-/// `keyset_limit` (map-only), and `capacity` (deque-only). This function checks
-/// only whether host values map into the corresponding Prosody types.
+/// `keyset_limit` (map and set only), and `capacity` (deque-only). This
+/// function checks only whether host values map into the corresponding Prosody
+/// types.
 ///
 /// # Errors
 ///
@@ -863,23 +899,7 @@ fn register_state_collection(
         None => None,
     };
 
-    let keyset_limit = match optional_f64(cfg, "keyset_limit")? {
-        Some(value) => {
-            if !matches!(kind, CollectionKind::Map) {
-                return Err(PyValueError::new_err(format!(
-                    "state_collections[{index}].keyset_limit: only valid for map collections"
-                )));
-            }
-            Some(whole_number_field(
-                value,
-                &format!("state_collections[{index}].keyset_limit"),
-                0,
-                u32::MAX,
-            )?)
-        }
-        None => None,
-    };
-
+    let keyset_limit = parse_keyset_limit(cfg, index, &kind)?;
     let capacity = parse_capacity(cfg, index, &kind)?;
 
     let read_uncommitted = optional_bool(cfg, "read_uncommitted")?;
@@ -902,6 +922,24 @@ fn register_state_collection(
                 published,
             );
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
+        }
+        (CollectionKind::Set, CollectionPayload::Presence) => {
+            let descriptor = with_def(
+                set_state::<Utf8KeyCodec>(name),
+                ttl_seconds,
+                read_uncommitted,
+                published,
+            );
+            let _ = keyed.register(match keyset_limit {
+                Some(limit) => descriptor.keyset_limit(limit as usize),
+                None => descriptor,
+            });
+        }
+        (CollectionKind::Set, _) | (_, CollectionPayload::Presence) => {
+            return Err(PyValueError::new_err(format!(
+                "state_collections[{index}].payload: a set collection has the \"presence\" \
+                 payload, and only a set has it"
+            )));
         }
         (CollectionKind::Deque, CollectionPayload::Json) => {
             let descriptor = with_def(
@@ -945,7 +983,7 @@ fn register_state_collection(
 
 /// Builds the `KeyedStateConfiguration` from the provided Python configuration.
 ///
-/// Reads the keyed-state cache, recovery, and collection settings. It maps
+/// Reads the keyed-state cache and collection settings. It maps
 /// every definition into a Prosody descriptor. The normal Prosody construction
 /// path validates the resulting configuration.
 ///
@@ -960,23 +998,6 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
     {
         let dir: String = dir.extract()?;
         builder.cache_dir(PathBuf::from(dir));
-    }
-
-    if let Some(delay) = config.get_item("state_recovery_delay")?
-        && !delay.is_none()
-    {
-        let duration = decode_duration(&delay).map_err(|error| {
-            PyValueError::new_err(format!("state_recovery_delay: {}", error.value(delay.py())))
-        })?;
-        if duration.subsec_nanos() != 0 {
-            return Err(PyValueError::new_err(
-                "state_recovery_delay: must be a whole number of seconds",
-            ));
-        }
-        let seconds = u32::try_from(duration.as_secs()).map_err(|_| {
-            PyValueError::new_err("state_recovery_delay: exceeds the u32 seconds range")
-        })?;
-        builder.recovery_delay(CompactDuration::new(seconds));
     }
 
     if let Some(subsystem) = config.get_item("subsystem")?

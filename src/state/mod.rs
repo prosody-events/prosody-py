@@ -9,9 +9,10 @@
 //! Every operation reads the Python-side OpenTelemetry carrier while the GIL is
 //! held, then activates it while polling the erased future off the GIL, letting
 //! core's semantic collection span join the event trace without an extra
-//! `PyO3` binding span. Scans activate the carrier while core constructs its
-//! stream span; pulls transport vectors of up to 256 immediately-ready items
-//! without creating per-chunk binding spans.
+//! `PyO3` binding span. Opening a scan performs no read. Each pull activates
+//! the carrier, and core starts its stream span on the first pull. Pulls
+//! transport vectors of up to 256 immediately-ready items without creating
+//! per-chunk binding spans.
 //!
 //! Errors carry their category structurally: an [`ErasedStateError`] is raised
 //! as `PermanentStateError` or `TransientStateError` by reading its
@@ -28,10 +29,11 @@ use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::FutureExt;
 use prosody::consumer::Keyed;
 use prosody::consumer::event_context::{
-    BoxDequeState, BoxMapState, BoxStateCursor, BoxValueState, ErasedCategory, ErasedStateError,
+    BoxDequeState, BoxMapState, BoxSetState, BoxValueState, ErasedCategory, ErasedStateError,
+    StateCursor,
 };
 use prosody::consumer::message::ConsumerMessage;
-use prosody::state::Direction;
+use prosody::state::{Direction, StoreOutcome};
 use pyo3::exceptions::PyStopAsyncIteration;
 use pyo3::gc::{PyTraverseError, PyVisit};
 use pyo3::types::{PyAnyMethods, PyDict, PyString, PyTuple};
@@ -44,9 +46,17 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-mod handles;
+mod deque;
+mod map;
+mod query;
+mod set;
+mod value;
 
-pub(crate) use handles::*;
+pub(crate) use deque::{NativeJsonDequeState, NativeMessageDequeState};
+pub(crate) use map::{NativeJsonMapState, NativeMessageMapState};
+pub(crate) use query::{KeyQuery, PositionQuery};
+pub(crate) use set::NativeSetState;
+pub(crate) use value::{NativeJsonValueState, NativeMessageValueState};
 
 /// Maximum number of immediately-ready scan items transported through `PyO3`
 /// in one vector. Core owns ready draining, error ordering, and pull
@@ -195,6 +205,15 @@ pub(crate) fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> Py
     }
 }
 
+/// Names a commit or rollback outcome with the token of the Python
+/// `StoreOutcome` enum.
+fn outcome_token(outcome: StoreOutcome) -> &'static str {
+    match outcome {
+        StoreOutcome::Applied => "applied",
+        StoreOutcome::NoOp => "no_op",
+    }
+}
+
 /// Recovers the consumer message a delivered `Message` carries.
 ///
 /// The dataclass fields are not enough to rebuild one, and rebuilding is
@@ -283,8 +302,21 @@ fn json_write_item(
     Ok(value)
 }
 
+/// Prepares a Kafka-message write.
+fn message_write_item(
+    py: Python,
+    env: &StateEnv,
+    item: &Bound<PyAny>,
+) -> PyResult<ConsumerMessage<Value>> {
+    if item.is_instance(env.0.message_class.bind(py))? {
+        consumer_message(py, env, item)
+    } else {
+        Err(transient_error(py, env, "expected a Kafka message"))
+    }
+}
+
 struct ScanInner<T> {
-    cursor: BoxStateCursor<T>,
+    cursor: StateCursor<T>,
     retained: VecDeque<T>,
 }
 
@@ -328,7 +360,7 @@ macro_rules! native_scan {
         }
 
         impl $name {
-            pub(crate) fn new(cursor: BoxStateCursor<$item>, env: StateEnv) -> Self {
+            pub(crate) fn new(cursor: StateCursor<$item>, env: StateEnv) -> Self {
                 Self {
                     inner: Arc::new(Mutex::new(ScanInner {
                         cursor,

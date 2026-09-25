@@ -31,6 +31,7 @@ from prosody import (
     Message,
     value,
     map,
+    set as set_definition,
     deque,
     message_value,
     message_map,
@@ -41,6 +42,7 @@ from prosody import (
     NullValueError,
 )
 from prosody.prosody import AdminClient
+from prosody.query import _KeyQuery
 
 
 DEFAULT_TIMEOUT = 30.0
@@ -54,6 +56,7 @@ CASSANDRA_KEYSPACE = "prosody_test"
 STATE_DEFS = {
     "cart": value("cart"),
     "totals": map("totals", keyset_limit=256),
+    "tags": set_definition("tags"),
     "backlog": deque("backlog"),
     "bounded": deque("bounded", capacity=3),
     "last_msg": message_value("last-msg"),
@@ -1079,7 +1082,7 @@ async def test_bad_direction_token_is_transient(state_client):
         try:
             # The typed API only passes Direction.value tokens, so drive the
             # native handle directly to reach parse_direction's guard.
-            m._native.scan("sideways")
+            m._native.scan(_KeyQuery("sideways"))
             await results.send({"threw": False})
         except Exception as e:
             await results.send(

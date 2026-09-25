@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, overload
 
+from prosody.demand import Demand
 from prosody.message import Message
 from prosody.state import (
     DequeDefinition,
@@ -10,6 +11,8 @@ from prosody.state import (
     MessageDequeDefinition,
     MessageMapDefinition,
     MessageValueDefinition,
+    SetDefinition,
+    SetState,
     ValueDefinition,
     ValueState,
 )
@@ -83,6 +86,17 @@ class Context:
         """
         ...
 
+    @property
+    def demand(self) -> Demand:
+        """
+        Why this attempt runs: a normal delivery or a retry after a failure.
+
+        ``demand.retry`` is the retry ordinal. It is 0 for a normal delivery
+        and 1 on the first retry. It is an estimate; keep an exact attempt
+        count in keyed state if the handler needs one.
+        """
+        ...
+
     async def on_cancel(self) -> None:
         """
         Waits for a cancellation signal.
@@ -114,11 +128,14 @@ class Context:
     @overload
     def state(self, definition: MapDefinition[V]) -> MapState[V]: ...
     @overload
+    def state(self, definition: SetDefinition) -> SetState: ...
+    @overload
     def state(self, definition: DequeDefinition[T]) -> DequeState[T]:
         """Bind a registered collection for the current event attempt.
 
         Returns a typed handle over the collection: JSON definitions vend
-        ``ValueState[T]`` / ``MapState[V]`` / ``DequeState[T]``; message
+        ``ValueState[T]`` / ``MapState[V]`` / ``DequeState[T]``, set
+        definitions vend ``SetState``, and message
         definitions vend the same handles parameterized by ``Message[P]``. The
         handle — and any iterator it opens — is valid only within the handler
         invocation that created it; do not retain it past the handler.

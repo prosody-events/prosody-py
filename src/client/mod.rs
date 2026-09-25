@@ -2,10 +2,8 @@
 
 use opentelemetry::propagation::TextMapPropagator;
 use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache};
-use prosody::requester::ResponseError;
-use prosody::subsystem::SubsystemName;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyTypeMethods};
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
@@ -13,15 +11,13 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::process;
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::{Instrument, debug, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::client::config::prepare_config;
 use crate::handler::PythonHandler;
-use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
-use crate::request::to_python;
-use crate::util::decode_duration;
+use crate::published::{PublishedDeque, PublishedMap, PublishedSet, PublishedValue};
+use crate::request::{request_outcomes, request_parameters};
 
 mod config;
 mod model;
@@ -278,6 +274,28 @@ impl ProsodyClient {
         })
     }
 
+    /// Opens a read-only published set collection.
+    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
+    fn _published_set<'p>(
+        &self,
+        py: Python<'p>,
+        subsystem: String,
+        name: String,
+        read_cache: Option<&Bound<'p, PyAny>>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        self.check_fork()?;
+        let cache = parse_read_cache(read_cache)?;
+        let env = self.published_env(py)?;
+        let client = self.client.clone();
+        future_into_py(py, async move {
+            let inner = client
+                .set_state(subsystem, name, cache)
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+            Python::attach(|py| Ok(Py::new(py, PublishedSet { inner, env })?.into_any()))
+        })
+    }
+
     /// Opens a read-only published deque collection.
     #[pyo3(signature = (subsystem, name, *, read_cache = None))]
     fn _published_deque<'p>(
@@ -464,29 +482,4 @@ impl ProsodyClient {
 
         Ok(())
     }
-}
-
-fn request_parameters(
-    subsystems: Vec<String>,
-    timeout: &Bound<'_, PyAny>,
-) -> PyResult<(Vec<SubsystemName>, Duration)> {
-    let subsystems = subsystems
-        .into_iter()
-        .map(|name| {
-            SubsystemName::try_new(name).map_err(|error| PyValueError::new_err(error.to_string()))
-        })
-        .collect::<PyResult<Vec<_>>>()?;
-    Ok((subsystems, decode_duration(timeout)?))
-}
-
-fn request_outcomes<I>(py: Python, results: I) -> PyResult<Py<PyAny>>
-where
-    I: IntoIterator<Item = (SubsystemName, Result<Value, ResponseError>)>,
-{
-    let module = py.import("prosody.request")?;
-    let outcomes = PyDict::new(py);
-    for (subsystem, result) in results {
-        outcomes.set_item(subsystem.as_str(), to_python(py, &module, result)?)?;
-    }
-    Ok(outcomes.into_any().unbind())
 }

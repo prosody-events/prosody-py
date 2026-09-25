@@ -7,6 +7,9 @@ from typing_extensions import TypedDict, assert_type
 
 from prosody import (
     Context,
+    Demand,
+    DemandKind,
+    Direction,
     EventHandler,
     ExciseMessage,
     Failure,
@@ -16,10 +19,15 @@ from prosody import (
     Outcome,
     ProsodyClient,
     ProsodyHandler,
+    PublishedSet,
+    SetDefinition,
+    SetState,
+    StoreOutcome,
     Success,
     Timer,
     map,
     message_deque,
+    set,
     transient,
 )
 from prosody.message import JSONValue
@@ -35,6 +43,7 @@ class Response(TypedDict):
 
 TOTALS: MapDefinition[int] = map("totals")
 EVENTS: MessageDequeDefinition[Event] = message_deque("events", capacity=10)
+TAGS: SetDefinition = set("tags", keyset_limit=64)
 
 
 @transient(ValueError)
@@ -71,9 +80,28 @@ class Handler(EventHandler[Event, Response]):
         assert_type(await totals.contains(message.key), bool)
         async for key in totals:
             assert_type(key, str)
+        async for entry in totals.items(Direction.BACKWARD, prefix="a", after="a1", limit=5):
+            assert_type(entry, tuple[str, int])
+        assert_type(await totals.contains_many(["a"]), list[bool])
+        assert_type(await totals.is_empty(), bool)
+        assert_type(await totals.commit(), StoreOutcome)
+
+        tags = context.state(TAGS)
+        assert_type(tags, SetState)
+        await tags.add("a")
+        await tags.discard("a")
+        assert_type(await tags.contains_many(["a"]), list[bool])
+        async for member in tags.members(from_="a", before="z"):
+            assert_type(member, str)
+        assert_type(await tags.rollback(), StoreOutcome)
+        assert_type(context.demand, Demand)
+        assert_type(context.demand.kind, DemandKind)
+        assert_type(context.demand.retry, int)
 
         events = context.state(EVENTS)
         await events.append(message)
+        async for item in events.values(range=slice(0, 5), limit=2):
+            assert_type(item, Message[Event])
         event = await events.peek()
         assert_type(event, Optional[Message[Event]])
         if event is not None:
@@ -87,6 +115,14 @@ class Handler(EventHandler[Event, Response]):
 wrapped_handler = ProsodyHandler(Handler())
 assert_type(wrapped_handler, ProsodyHandler[Event, Response])
 assert_type(wrapped_handler.handler, EventHandler[Event, Response])
+
+
+async def read_published_set(client: ProsodyClient) -> None:
+    reader = await client.state("checkout", TAGS)
+    assert_type(reader, PublishedSet)
+    assert_type(await reader.contains("user", "a"), bool)
+    async for member in reader.members("user", limit=10):
+        assert_type(member, str)
 
 
 async def subscribe_specialized(client: ProsodyClient) -> None:

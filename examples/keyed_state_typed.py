@@ -1,7 +1,7 @@
 """Type-checked keyed-state example.
 
 Exercised by ``mypy`` as a CI gate to keep ``py.typed`` honest: it drives the
-generic definition -> handle -> operation flow over both JSON and message
+generic definition -> handle -> operation flow over JSON, set, and message
 collections and must type-check cleanly. The type parameters are structural JSON
 annotations (TypedDict here) — there is no runtime model validation. A generic
 ``EventHandler[OrderEvent]`` declares the expected payload shape to the checker.
@@ -15,16 +15,21 @@ from typing_extensions import TypedDict, assert_type
 
 from prosody import (
     Context,
+    DemandKind,
+    Direction,
     EventHandler,
     ExciseMessage,
     MapDefinition,
     Message,
     MessageDequeDefinition,
     PermanentError,
+    SetDefinition,
+    StoreOutcome,
     Timer,
     ValueDefinition,
     map,
     message_deque,
+    set,
     value,
 )
 from prosody.message import JSONValue
@@ -44,6 +49,7 @@ class OrderEvent(TypedDict):
 # constructors are generic, so a bare call would default to ``JSONValue``.
 CART: ValueDefinition[Cart] = value("cart", ttl=timedelta(days=30))
 TOTALS: MapDefinition[int] = map("totals")  # keys are always str
+TAGS: SetDefinition = set("tags", ttl=timedelta(days=30))  # members are str
 BACKLOG: MessageDequeDefinition[OrderEvent] = message_deque("backlog", capacity=100)
 
 
@@ -93,11 +99,32 @@ class OrderHandler(EventHandler[OrderEvent]):
         async for _k in totals:
             _key: str = _k
 
+        # Keyset paging: pass the last key of a page as `after`.
+        last: Optional[str] = None
+        while True:
+            page = [key async for key in totals.keys(after=last, limit=100)]
+            if not page:
+                break
+            last = page[-1]
+        _flags: List[bool] = await totals.contains_many(["a", "b"])
+        latest = totals.values(Direction.BACKWARD, limit=3)
+        _latest: List[int] = [total async for total in latest]
+
+        tags = context.state(TAGS)  # SetState
+        await tags.add(payload["order_id"])
+        if context.demand.kind is DemandKind.FAILURE:
+            await tags.discard(payload["order_id"])
+        _tagged: bool = await tags.contains(payload["order_id"])
+        async for _member in tags.members(prefix="ord-", limit=10):
+            _tag: str = _member
+
         backlog = context.state(BACKLOG)  # DequeState[Message[OrderEvent]]
         await backlog.append(message)
         oldest = await backlog.get(0)  # Optional[Message[OrderEvent]]
         if oldest is not None:
             _order_id: str = order_payload(oldest)["order_id"]
+        async for _event in backlog.values(Direction.BACKWARD, range=range(0, 10)):
+            _recent: Message[OrderEvent] = _event
         newest = await backlog.peek()  # Optional[Message[OrderEvent]]
         front = await backlog.peekleft()  # Optional[Message[OrderEvent]]
         if newest is not None and front is not None:
@@ -106,7 +133,8 @@ class OrderHandler(EventHandler[OrderEvent]):
                 + order_payload(front)["order_id"]
             )
 
-        await cart.commit()
+        if await cart.commit() is StoreOutcome.NO_OP:
+            print("nothing to commit")
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
         _key: str = timer.key

@@ -13,11 +13,11 @@ use crate::admin::AdminClient;
 use crate::client::ProsodyClient;
 use crate::context::Context;
 use crate::logging::PythonLoggingLayer;
-use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
+use crate::published::{PublishedDeque, PublishedMap, PublishedSet, PublishedValue};
 use crate::state::{
     NativeJsonDequeScan, NativeJsonDequeState, NativeJsonMapScan, NativeJsonMapState,
     NativeJsonValueState, NativeMapKeyScan, NativeMessageDequeScan, NativeMessageDequeState,
-    NativeMessageMapScan, NativeMessageMapState, NativeMessageValueState,
+    NativeMessageMapScan, NativeMessageMapState, NativeMessageValueState, NativeSetState,
 };
 use ::prosody::tracing::{
     flush_telemetry as core_flush_telemetry, initialize_tracing,
@@ -27,6 +27,8 @@ use mimalloc::MiMalloc;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pyfunction, pymodule, wrap_pyfunction};
+use pyo3_async_runtimes::tokio::init as init_tokio_runtime;
+use tokio::runtime::Builder as TokioBuilder;
 
 mod admin;
 mod client;
@@ -38,6 +40,12 @@ mod published;
 mod request;
 mod state;
 mod util;
+
+/// Stack size of each Tokio worker thread.
+///
+/// Core futures are large in debug builds. A timer write that polls through
+/// the Cassandra driver overflows the Tokio default of 2 MiB.
+const WORKER_STACK_SIZE: usize = 8 * 1024 * 1024;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -58,6 +66,14 @@ static GLOBAL: MiMalloc = MiMalloc;
 /// error occurs.
 #[pymodule]
 fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
+    // Configure the Tokio runtime pyo3-async-runtimes builds on first use.
+    // This must run before any core future is polled.
+    let mut runtime_builder = TokioBuilder::new_multi_thread();
+    runtime_builder
+        .enable_all()
+        .thread_stack_size(WORKER_STACK_SIZE);
+    init_tokio_runtime(runtime_builder);
+
     // Initialize tracing with our non-blocking Python logging layer.
     // This layer queues log events and forwards them to Python's logging
     // system on a dedicated background thread, avoiding GIL deadlocks.
@@ -86,6 +102,7 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     prosody_module.add_class::<NativeMessageMapState>()?;
     prosody_module.add_class::<NativeJsonDequeState>()?;
     prosody_module.add_class::<NativeMessageDequeState>()?;
+    prosody_module.add_class::<NativeSetState>()?;
     prosody_module.add_class::<NativeJsonDequeScan>()?;
     prosody_module.add_class::<NativeJsonMapScan>()?;
     prosody_module.add_class::<NativeMessageDequeScan>()?;
@@ -93,6 +110,7 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
     prosody_module.add_class::<NativeMapKeyScan>()?;
     prosody_module.add_class::<PublishedValue>()?;
     prosody_module.add_class::<PublishedMap>()?;
+    prosody_module.add_class::<PublishedSet>()?;
     prosody_module.add_class::<PublishedDeque>()?;
 
     prosody_module.add_function(wrap_pyfunction!(flush_telemetry, prosody_module)?)?;

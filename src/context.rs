@@ -6,10 +6,11 @@
 
 use crate::state::{
     NativeJsonDequeState, NativeJsonMapState, NativeJsonValueState, NativeMessageDequeState,
-    NativeMessageMapState, NativeMessageValueState, StateEnv, state_error,
+    NativeMessageMapState, NativeMessageValueState, NativeSetState, StateEnv, state_error,
 };
 use chrono::{DateTime, Utc};
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
+use prosody::consumer::DemandType;
 use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::TimerType;
 use pyo3::exceptions::PyRuntimeError;
@@ -27,6 +28,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 pub(crate) enum StateDefinitionKind {
     Value,
     Map,
+    Set,
     Deque,
     MessageValue,
     MessageMap,
@@ -44,6 +46,8 @@ pub struct Context {
     pub inject: Py<PyAny>,
     pub propagator: Arc<TextMapCompositePropagator>,
     pub message_class: Py<PyAny>,
+    /// Whether this attempt is a normal delivery or a retry after a failure.
+    pub(crate) demand: DemandType,
     /// Typed-wrapper cache keyed by descriptor type and collection name.
     pub(crate) state_handles: Mutex<HashMap<(StateDefinitionKind, String), Py<PyAny>>>,
 }
@@ -65,9 +69,10 @@ fn state_definition_kind(
     prosody: &Bound<PyModule>,
     definition: &Bound<PyAny>,
 ) -> PyResult<StateDefinitionKind> {
-    const CLASSES: [(&str, StateDefinitionKind); 6] = [
+    const CLASSES: [(&str, StateDefinitionKind); 7] = [
         ("ValueDefinition", StateDefinitionKind::Value),
         ("MapDefinition", StateDefinitionKind::Map),
+        ("SetDefinition", StateDefinitionKind::Set),
         ("DequeDefinition", StateDefinitionKind::Deque),
         ("MessageValueDefinition", StateDefinitionKind::MessageValue),
         ("MessageMapDefinition", StateDefinitionKind::MessageMap),
@@ -274,6 +279,26 @@ impl Context {
         self.inner.should_cancel()
     }
 
+    /// Reports why this attempt runs: a normal delivery, or a retry after a
+    /// failure with its retry ordinal.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the `prosody.demand` import fails.
+    #[getter]
+    fn demand(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let module = py.import("prosody.demand")?;
+        let kind = module.getattr("DemandKind")?;
+        let kind = match self.demand {
+            DemandType::Normal => kind.getattr("NORMAL")?,
+            DemandType::Failure { .. } => kind.getattr("FAILURE")?,
+        };
+        let demand = module
+            .getattr("Demand")?
+            .call1((kind, self.demand.retry()))?;
+        Ok(demand.unbind())
+    }
+
     /// Waits for a cancellation signal.
     ///
     /// Cancellation includes both message-level cancellation (e.g., timeout)
@@ -356,6 +381,24 @@ impl Context {
             .map_state(name)
             .map_err(|e| state_error(py, &env, &e))?;
         Ok(NativeJsonMapState {
+            state: Arc::new(handle),
+            env,
+        })
+    }
+
+    /// Vends the low-level handle for the named set collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns a permanent error if the name is unregistered or its registered
+    /// identity mismatches.
+    fn set_state(&self, py: Python, name: &str) -> PyResult<NativeSetState> {
+        let env = self.state_env(py)?;
+        let handle = self
+            .inner
+            .set_state(name)
+            .map_err(|e| state_error(py, &env, &e))?;
+        Ok(NativeSetState {
             state: Arc::new(handle),
             env,
         })
@@ -478,6 +521,7 @@ impl Context {
         let native: Py<PyAny> = match kind {
             StateDefinitionKind::Value => Py::new(py, self.value_state(py, &name)?)?.into_any(),
             StateDefinitionKind::Map => Py::new(py, self.map_state(py, &name)?)?.into_any(),
+            StateDefinitionKind::Set => Py::new(py, self.set_state(py, &name)?)?.into_any(),
             StateDefinitionKind::Deque => Py::new(py, self.deque_state(py, &name)?)?.into_any(),
             StateDefinitionKind::MessageValue => {
                 Py::new(py, self.message_value_state(py, &name)?)?.into_any()
@@ -492,6 +536,7 @@ impl Context {
         let wrapper_name = match kind {
             StateDefinitionKind::Value | StateDefinitionKind::MessageValue => "ValueState",
             StateDefinitionKind::Map | StateDefinitionKind::MessageMap => "MapState",
+            StateDefinitionKind::Set => "SetState",
             StateDefinitionKind::Deque | StateDefinitionKind::MessageDeque => "DequeState",
         };
         let wrapper = prosody.getattr(wrapper_name)?.call1((native,))?.unbind();

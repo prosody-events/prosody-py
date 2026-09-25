@@ -1,34 +1,26 @@
 //! Python-native read-only views over published keyed state.
 
 use crate::state::{
-    NativeJsonDequeScan, NativeJsonMapScan, NativeMapKeyScan, StateEnv, parse_direction,
+    KeyQuery, NativeJsonDequeScan, NativeJsonMapScan, NativeMapKeyScan, PositionQuery, StateEnv,
     state_error,
 };
-use prosody::JsonCodec;
 use prosody::consumer::event_context::ErasedStateError;
 use prosody::high_level::erased::{
-    ErasedDirection, SharedDequeReader, SharedMapReader, SharedValueReader,
+    SharedDequeReader, SharedMapReader, SharedSetReader, SharedValueReader,
 };
-use prosody::state::Direction;
-use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::pythonize;
+use serde_json::Value;
 
 fn published_error(env: &StateEnv, error: &ErasedStateError) -> pyo3::PyErr {
     Python::attach(|py| state_error(py, env, error))
 }
 
-fn erased_direction(direction: Direction) -> ErasedDirection {
-    match direction {
-        Direction::Forward => ErasedDirection::Forward,
-        Direction::Backward => ErasedDirection::Backward,
-    }
-}
-
 /// A read-only published value collection.
 #[pyclass(name = "_NativePublishedValue")]
 pub struct PublishedValue {
-    pub(crate) inner: SharedValueReader<JsonCodec>,
+    pub(crate) inner: SharedValueReader<Value>,
     pub(crate) env: StateEnv,
 }
 
@@ -50,7 +42,7 @@ impl PublishedValue {
 /// A read-only published map collection.
 #[pyclass(name = "_NativePublishedMap")]
 pub struct PublishedMap {
-    pub(crate) inner: SharedMapReader<JsonCodec>,
+    pub(crate) inner: SharedMapReader<Value>,
     pub(crate) env: StateEnv,
 }
 
@@ -101,37 +93,106 @@ impl PublishedMap {
         })
     }
 
-    fn scan<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
-        let direction = erased_direction(parse_direction(py, &self.env, direction)?);
+    fn contains_many<'p>(
+        &self,
+        py: Python<'p>,
+        key: String,
+        map_keys: Vec<String>,
+    ) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
         let env = self.env.clone();
         future_into_py(py, async move {
-            let cursor = inner
-                .stream(key, direction)
+            inner
+                .contains_many(key, map_keys)
                 .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(Py::new(py, NativeJsonMapScan::new(cursor, env))?.into_any()))
+                .map_err(|error| published_error(&env, &error))
         })
     }
 
-    fn keys<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
-        let direction = erased_direction(parse_direction(py, &self.env, direction)?);
+    fn is_empty<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
         let env = self.env.clone();
         future_into_py(py, async move {
-            let cursor = inner
-                .keys(key, direction)
+            inner
+                .is_empty(key)
                 .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(Py::new(py, NativeMapKeyScan::new(cursor, env))?.into_any()))
+                .map_err(|error| published_error(&env, &error))
         })
+    }
+
+    fn scan(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeJsonMapScan> {
+        let cursor = query.stream(py, &self.env, self.inner.entries(key))?;
+        Ok(NativeJsonMapScan::new(cursor, self.env.clone()))
+    }
+
+    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
+        let cursor = query.stream(py, &self.env, self.inner.keys(key))?;
+        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
+    }
+}
+
+/// A read-only published set collection.
+#[pyclass(name = "_NativePublishedSet")]
+pub struct PublishedSet {
+    pub(crate) inner: SharedSetReader,
+    pub(crate) env: StateEnv,
+}
+
+#[pymethods]
+impl PublishedSet {
+    fn contains<'p>(
+        &self,
+        py: Python<'p>,
+        key: String,
+        member: String,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            inner
+                .contains(key, member)
+                .await
+                .map_err(|error| published_error(&env, &error))
+        })
+    }
+
+    fn contains_many<'p>(
+        &self,
+        py: Python<'p>,
+        key: String,
+        members: Vec<String>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            inner
+                .contains_many(key, members)
+                .await
+                .map_err(|error| published_error(&env, &error))
+        })
+    }
+
+    fn is_empty<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let env = self.env.clone();
+        future_into_py(py, async move {
+            inner
+                .is_empty(key)
+                .await
+                .map_err(|error| published_error(&env, &error))
+        })
+    }
+
+    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
+        let cursor = query.stream(py, &self.env, self.inner.keys(key))?;
+        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
     }
 }
 
 /// A read-only published deque collection.
 #[pyclass(name = "_NativePublishedDeque")]
 pub struct PublishedDeque {
-    pub(crate) inner: SharedDequeReader<JsonCodec>,
+    pub(crate) inner: SharedDequeReader<Value>,
     pub(crate) env: StateEnv,
 }
 
@@ -195,16 +256,8 @@ impl PublishedDeque {
         })
     }
 
-    fn scan<'p>(&self, py: Python<'p>, key: String, direction: &str) -> PyResult<Bound<'p, PyAny>> {
-        let direction = erased_direction(parse_direction(py, &self.env, direction)?);
-        let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let cursor = inner
-                .stream(key, direction)
-                .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(Py::new(py, NativeJsonDequeScan::new(cursor, env))?.into_any()))
-        })
+    fn scan(&self, py: Python, key: String, query: PositionQuery) -> PyResult<NativeJsonDequeScan> {
+        let cursor = query.stream(py, &self.env, self.inner.values(key))?;
+        Ok(NativeJsonDequeScan::new(cursor, self.env.clone()))
     }
 }

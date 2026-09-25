@@ -8,7 +8,16 @@ infrastructure.
 
 import pytest
 
-from prosody import ProsodyClient, value, map, deque, message_value, message_map, message_deque
+from prosody import (
+    ProsodyClient,
+    deque,
+    map,
+    message_deque,
+    message_map,
+    message_value,
+    set as set_definition,
+    value,
+)
 
 
 BASE = dict(
@@ -78,6 +87,7 @@ def raw(
 STATE_COLLECTIONS = [
     value("cart"),
     map("totals", keyset_limit=256),
+    set_definition("tags", keyset_limit=64),
     deque("backlog"),
     message_value("last-msg"),
     message_map("msg-index"),
@@ -115,8 +125,8 @@ async def test_accepts_keyset_zero(client_factory):
 
 async def test_rejects_keyset_on_non_map():
     # The value() helper has no keyset param, so a raw stub carries it onto a
-    # value collection to reach the map-only guard.
-    with pytest.raises(ValueError, match=r"keyset_limit: only valid for map"):
+    # value collection to reach the map and set guard.
+    with pytest.raises(ValueError, match=r"keyset_limit: only valid for map and set"):
         await make_client(state_collections=[raw(kind="value", keyset_limit=5)])
 
 
@@ -160,25 +170,13 @@ async def test_rejects_unknown_payload():
         await make_client(state_collections=[raw(payload="bogus")])
 
 
-# --- recovery_delay rules -------------------------------------------------
-
-
-async def test_rejects_recovery_delay_fractional():
-    with pytest.raises(
-        ValueError, match="state_recovery_delay: must be a whole number of seconds"
-    ):
-        await make_client(state_recovery_delay=2.5, state_collections=[value("v")])
-
-
-async def test_rejects_recovery_delay_negative():
-    with pytest.raises(ValueError, match=r"state_recovery_delay"):
-        await make_client(state_recovery_delay=-5, state_collections=[value("v")])
-
-
-@pytest.mark.parametrize("delay", [float("nan"), float("inf")])
-async def test_rejects_recovery_delay_nonfinite(delay):
-    with pytest.raises(ValueError, match=r"state_recovery_delay"):
-        await make_client(state_recovery_delay=delay, state_collections=[value("v")])
+@pytest.mark.parametrize(
+    ("kind", "payload"),
+    [("set", "json"), ("set", "message"), ("value", "presence"), ("map", "presence")],
+)
+async def test_rejects_payload_that_does_not_fit_the_kind(kind, payload):
+    with pytest.raises(ValueError, match=r"payload: a set collection has the"):
+        await make_client(state_collections=[raw(kind=kind, payload=payload)])
 
 
 # --- happy path -----------------------------------------------------------

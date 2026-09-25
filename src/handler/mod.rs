@@ -54,6 +54,7 @@ struct MessageExecutionContext<'a> {
     propagator: Arc<TextMapCompositePropagator>,
     otel_get_current: &'a Py<PyAny>,
     otel_inject: &'a Py<PyAny>,
+    demand: DemandType,
 }
 
 /// Python objects and dependencies needed for timer execution
@@ -66,6 +67,7 @@ struct TimerExecutionContext<'a> {
     propagator: Arc<TextMapCompositePropagator>,
     otel_get_current: &'a Py<PyAny>,
     otel_inject: &'a Py<PyAny>,
+    demand: DemandType,
 }
 
 /// Base Python class name for message handlers
@@ -222,6 +224,7 @@ impl PythonHandler {
         &self,
         context: C,
         message: ConsumerMessage<P>,
+        demand: DemandType,
         record_class: &Py<PyAny>,
         method: &Py<PyAny>,
         kind: &str,
@@ -245,6 +248,7 @@ impl PythonHandler {
             propagator: self.0.propagator.clone(),
             otel_get_current: &self.0.otel_get_current,
             otel_inject: &self.0.otel_inject,
+            demand,
         };
         let (shutdown_event, complete_future) =
             execute(context, message, carrier, execution_context)?;
@@ -283,7 +287,7 @@ impl FallibleHandler for PythonHandler {
     ///
     /// * `context` - Message processing context
     /// * `message` - Kafka message to process
-    /// * `_demand_type` - Whether this is normal processing or failure retry
+    /// * `demand_type` - Whether this is normal processing or failure retry
     ///
     /// # Errors
     ///
@@ -299,10 +303,10 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        let _ = demand_type;
         self.handle_record(
             context,
             message,
+            demand_type,
             &self.0.message_class,
             &self.0.handle_method,
             "message",
@@ -320,10 +324,10 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        let _ = demand_type;
         self.handle_record(
             context,
             message,
+            demand_type,
             &self.0.excise_class,
             &self.0.excise_method,
             "excise",
@@ -337,7 +341,7 @@ impl FallibleHandler for PythonHandler {
     ///
     /// * `context` - Timer processing context
     /// * `trigger` - Timer trigger to process
-    /// * `_demand_type` - Whether this is normal processing or failure retry
+    /// * `demand_type` - Whether this is normal processing or failure retry
     ///
     /// # Errors
     ///
@@ -353,8 +357,6 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        let _ = demand_type; // Not used in Python handler
-
         // Only process application timers; internal timers are handled by middleware
         if trigger.timer_type != TimerType::Application {
             return Ok(Value::Null);
@@ -375,6 +377,7 @@ impl FallibleHandler for PythonHandler {
             propagator: self.0.propagator.clone(),
             otel_get_current: &self.0.otel_get_current,
             otel_inject: &self.0.otel_inject,
+            demand: demand_type,
         };
         let (shutdown_event, complete_future) =
             execute_timer(context, trigger, serialized_context, timer_context)?;
