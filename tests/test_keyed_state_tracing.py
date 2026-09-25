@@ -14,12 +14,14 @@ Marked ``tracing``/``integration`` so it is deselected by default; run explicitl
 """
 
 import asyncio
+import json
 import os
 import time
 import uuid
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 import pytest
-import requests
 import tsasync
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -79,20 +81,21 @@ class TracingStateHandler(EventHandler):
         pass
 
 
+def _get_json(url):
+    """GETs ``url`` from Tempo. ``urlopen`` raises on a non-2xx status."""
+    with urlopen(url, timeout=10) as response:
+        return json.load(response)
+
+
 def _search_traces(service):
-    r = requests.get(
-        f"{TEMPO}/api/search",
-        params={"q": f'{{ resource.service.name = "{service}" }}', "limit": 100},
-        timeout=10,
+    query = urlencode(
+        {"q": f'{{ resource.service.name = "{service}" }}', "limit": 100}
     )
-    r.raise_for_status()
-    return r.json().get("traces", [])
+    return _get_json(f"{TEMPO}/api/search?{query}").get("traces", [])
 
 
 def _fetch_trace(trace_id):
-    r = requests.get(f"{TEMPO}/api/traces/{trace_id}", timeout=10)
-    r.raise_for_status()
-    return r.json()
+    return _get_json(f"{TEMPO}/api/traces/{trace_id}")
 
 
 def _flatten_spans(trace_json):
