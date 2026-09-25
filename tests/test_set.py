@@ -47,7 +47,6 @@ def test_set_definition_to_config():
         "ttl_seconds": 60,
         "read_uncommitted": True,
         "published": True,
-        "read_cache": None,
         "keyset_limit": 64,
         "capacity": None,
     }

@@ -38,7 +38,6 @@ class _StateConfig(TypedDict):
     ttl_seconds: Optional[Union[float, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
-    read_cache: ReadCache
     keyset_limit: Optional[int]
     capacity: Optional[int]
 
@@ -50,13 +49,17 @@ class _Definition(Protocol):
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
-    read_cache: ReadCache
     keyset_limit: Optional[int]
     capacity: Optional[int]
 
 
 def _config(definition: _Definition) -> _StateConfig:
-    """Build the registration/vend config dict the client layer consumes."""
+    """Build the registration config dict the owning client consumes.
+
+    Excludes ``read_cache``: the owner-side registration path never reads it.
+    A published reader receives it as an explicit argument instead (see
+    :meth:`ProsodyClient.state`).
+    """
     return {
         "name": definition.name,
         "kind": definition.kind,
@@ -64,7 +67,6 @@ def _config(definition: _Definition) -> _StateConfig:
         "ttl_seconds": _ttl_seconds(definition.ttl),
         "read_uncommitted": definition.read_uncommitted,
         "published": definition.published,
-        "read_cache": definition.read_cache,
         "keyset_limit": definition.keyset_limit,
         "capacity": definition.capacity,
     }

@@ -55,7 +55,6 @@ def test_value_to_config():
         "ttl_seconds": None,
         "read_uncommitted": None,
         "published": None,
-        "read_cache": None,
         "keyset_limit": None,
         "capacity": None,
     }
