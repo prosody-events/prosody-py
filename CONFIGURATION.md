@@ -15,7 +15,7 @@ The Python client reports values it cannot convert to Prosody types. Prosody val
 | `source_system` / `PROSODY_SOURCE_SYSTEM` | Tag for outgoing messages (prevents reprocessing)| `<group_id>` |
 | `mock` / `PROSODY_MOCK`                 | Use in-memory Kafka for testing                   | False        |
 | `mode` / -                              | Processing mode: `pipeline`, `low-latency`, or `best-effort` | `pipeline` |
-| - / `PROSODY_LOG`                       | Rust log filter, such as `info` or `prosody=debug` | `info` |
+| - / `PROSODY_LOG`                       | Rust log filter, such as `info` or `prosody=debug`. Defaults to `info`, with `warn` for `scylla` and `opentelemetry`. A directive replaces the default for its own targets and leaves the rest at `info`. Set `PROSODY_LOG=opentelemetry=info` to restore OpenTelemetry info events | `info`, `warn` for `scylla`/`opentelemetry` |
 
 ## Consumer
 
