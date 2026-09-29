@@ -81,7 +81,7 @@ class ProsodyClient:
         return getattr(object.__getattribute__(self, "_native"), name)
 
     async def state(self, subsystem, definition):
-        """Open a read-only view of a published JSON collection."""
+        """Open a read-only view of a published JSON or set collection."""
         if isinstance(definition, ValueDefinition):
             return PublishedValue(
                 await self._published_value(

@@ -1188,7 +1188,7 @@ Represents a timer that has fired, provided to the `on_timer` method:
 
 ### Keyed State
 
-Definition constructors return frozen objects used both in `state_collections` and with `context.state()`. JSON definitions accept `published` and `read_cache` in addition to the options below:
+Definition constructors return frozen objects used both in `state_collections` and with `context.state()`. JSON and set definitions accept `published` and `read_cache` in addition to the options below:
 
 - `value(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None) -> ValueDefinition[T]`
 - `map(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, keyset_limit=None) -> MapDefinition[V]`
