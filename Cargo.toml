@@ -26,7 +26,7 @@ pythonize = "0.29"
 rustfs-mimalloc = { version = "0.5.6", features = ["local_dynamic_tls"] }
 serde_json = "1.0"
 thiserror = "2.0"
-tokio = { version = "1.50", features = ["rt-multi-thread"] }
+tokio = { version = "1.53", features = ["rt-multi-thread"] }
 tracing = { version = "0.1", features = ["log-always"] }
 tracing-opentelemetry = "0.34"
 tracing-subscriber = "0.3"
