@@ -1010,35 +1010,17 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
         ));
     }
 
-    if let Some(size) = config.get_item("state_owned_cache_size")?
-        && !size.is_none()
-    {
-        let size: String = size
-            .extract()
-            .map_err(|_| PyValueError::new_err("state_owned_cache_size: must be a size string"))?;
-        let size = size
-            .parse::<ByteSize>()
-            .map_err(|error| PyValueError::new_err(format!("state_owned_cache_size: {error}")))?;
+    if let Some(size) = optional_byte_size(config, "state_owned_cache_size")? {
         builder.owned_cache_size(Some(size));
     }
-
-    if let Some(size) = config.get_item("state_memtable_size")?
-        && !size.is_none()
-    {
-        let size: String = size
-            .extract()
-            .map_err(|_| PyValueError::new_err("state_memtable_size: must be a size string"))?;
-        let size = size
-            .parse::<ByteSize>()
-            .map_err(|error| PyValueError::new_err(format!("state_memtable_size: {error}")))?;
+    if let Some(size) = optional_byte_size(config, "state_memtable_size")? {
         builder.memtable_size(Some(size));
     }
-
-    let read_cache = read_cache_config(config)?;
-    if let Some(size) = read_cache.size {
+    if let Some(size) = optional_byte_size(config, "state_read_cache_size")? {
         builder.read_cache_size(Some(size));
     }
-    match read_cache.ttl {
+
+    match read_cache_ttl(config)? {
         ReadCacheTtl::Inherit => {}
         ReadCacheTtl::Disabled => {
             builder.read_cache_ttl(None);
@@ -1070,39 +1052,18 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
     Ok(keyed)
 }
 
-struct ReadCacheConfig {
-    size: Option<ByteSize>,
-    ttl: ReadCacheTtl,
-}
-
 enum ReadCacheTtl {
     Inherit,
     Disabled,
     Ttl(Duration),
 }
 
-fn read_cache_config(config: &Bound<PyDict>) -> PyResult<ReadCacheConfig> {
-    let mut result = ReadCacheConfig {
-        size: None,
-        ttl: ReadCacheTtl::Inherit,
-    };
-    if let Some(size) = config.get_item("state_read_cache_size")?
-        && !size.is_none()
-    {
-        let size: String = size
-            .extract()
-            .map_err(|_| PyValueError::new_err("state_read_cache_size: must be a size string"))?;
-        result.size =
-            Some(size.parse::<ByteSize>().map_err(|error| {
-                PyValueError::new_err(format!("state_read_cache_size: {error}"))
-            })?);
-    }
-
+fn read_cache_ttl(config: &Bound<PyDict>) -> PyResult<ReadCacheTtl> {
     let Some(cache) = config.get_item("state_read_cache")? else {
-        return Ok(result);
+        return Ok(ReadCacheTtl::Inherit);
     };
     if cache.is_none() {
-        return Ok(result);
+        return Ok(ReadCacheTtl::Inherit);
     }
     if cache.is_instance_of::<PyBool>() {
         if cache.is_truthy()? {
@@ -1110,14 +1071,35 @@ fn read_cache_config(config: &Bound<PyDict>) -> PyResult<ReadCacheConfig> {
                 "state_read_cache: True is ambiguous; use a duration or False",
             ));
         }
-        result.ttl = ReadCacheTtl::Disabled;
-        return Ok(result);
+        return Ok(ReadCacheTtl::Disabled);
     }
     let duration = decode_duration(&cache).map_err(|error| {
         PyValueError::new_err(format!("state_read_cache: {}", error.value(cache.py())))
     })?;
-    result.ttl = ReadCacheTtl::Ttl(duration);
-    Ok(result)
+    Ok(ReadCacheTtl::Ttl(duration))
+}
+
+/// Reads an optional byte size, such as `"64 MiB"`, from the client config.
+///
+/// Returns `None` when the field is absent or `None`, so the core default
+/// and its environment variable still apply.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` naming `field` if the value is not a size string.
+fn optional_byte_size(config: &Bound<PyDict>, field: &str) -> PyResult<Option<ByteSize>> {
+    let Some(size) = config.get_item(field)? else {
+        return Ok(None);
+    };
+    if size.is_none() {
+        return Ok(None);
+    }
+    let size: String = size
+        .extract()
+        .map_err(|_| PyValueError::new_err(format!("{field}: must be a size string")))?;
+    size.parse::<ByteSize>()
+        .map(Some)
+        .map_err(|error| PyValueError::new_err(format!("{field}: {error}")))
 }
 
 /// Builds `ConsumerBuilders` from the provided Python configuration.
