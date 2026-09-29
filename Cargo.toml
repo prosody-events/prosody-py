@@ -17,16 +17,13 @@ name = "prosody"
 [dependencies]
 chrono = "0.4"
 futures = "0.3"
-# TODO: Use a crates.io release after it includes the fix for https://github.com/microsoft/mimalloc/issues/1287.
-mimalloc = { git = "https://github.com/xonatius/mimalloc_rust.git", rev = "6d4c41bb10c6d9da1d1b6f07b38c4cc051667f11", features = [
-    "local_dynamic_tls",
-] }
 opentelemetry = "0.33"
 parking_lot = "0.12"
 prosody = { version = "0.6.0", features = ["libz-static"] }
 pyo3 = { version = "0.29", features = ["chrono"] }
 pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
 pythonize = "0.29"
+rustfs-mimalloc = { version = "0.5.6", features = ["local_dynamic_tls"] }
 serde_json = "1.0"
 thiserror = "2.0"
 tokio = { version = "1.50", features = ["rt-multi-thread"] }

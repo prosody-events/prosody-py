@@ -23,11 +23,11 @@ use ::prosody::tracing::{
     flush_telemetry as core_flush_telemetry, initialize_tracing,
     shutdown_telemetry as core_shutdown_telemetry,
 };
-use mimalloc::MiMalloc;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule, PyModuleMethods};
 use pyo3::{Bound, PyResult, Python, pyfunction, pymodule, wrap_pyfunction};
 use pyo3_async_runtimes::tokio::init as init_tokio_runtime;
+use rustfs_mimalloc::MiMalloc;
 use tokio::runtime::Builder as TokioBuilder;
 
 mod admin;
