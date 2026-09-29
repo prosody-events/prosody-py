@@ -39,6 +39,12 @@ async def test_invalid_state_owned_cache_size_is_rejected(state_owned_cache_size
         await make_client(state_owned_cache_size=state_owned_cache_size)
 
 
+@pytest.mark.parametrize("state_memtable_size", ["0", "-1 MiB", "nonsense"])
+async def test_invalid_state_memtable_size_is_rejected(state_memtable_size):
+    with pytest.raises(ValueError, match="state_memtable_size"):
+        await make_client(state_memtable_size=state_memtable_size)
+
+
 @pytest.mark.parametrize("state_read_cache_size", ["0", "-1 MiB", "nonsense"])
 async def test_invalid_state_read_cache_size_is_rejected(state_read_cache_size):
     with pytest.raises(ValueError, match="state_read_cache_size"):

@@ -1022,6 +1022,18 @@ fn build_keyed_state_config(config: &Bound<PyDict>) -> PyResult<KeyedStateConfig
         builder.owned_cache_size(Some(size));
     }
 
+    if let Some(size) = config.get_item("state_memtable_size")?
+        && !size.is_none()
+    {
+        let size: String = size
+            .extract()
+            .map_err(|_| PyValueError::new_err("state_memtable_size: must be a size string"))?;
+        let size = size
+            .parse::<ByteSize>()
+            .map_err(|error| PyValueError::new_err(format!("state_memtable_size: {error}")))?;
+        builder.memtable_size(Some(size));
+    }
+
     let read_cache = read_cache_config(config)?;
     if let Some(size) = read_cache.size {
         builder.read_cache_size(Some(size));

@@ -180,6 +180,7 @@ class _ProsodyClientApi:
             state_collections: Optional[Sequence[StateDefinition]] = None,
             state_cache_dir: Optional[str] = None,
             state_owned_cache_size: Optional[str] = None,
+            state_memtable_size: Optional[str] = None,
             state_read_cache_size: Optional[str] = None,
             state_read_cache: Optional[Union[Duration, Literal[False]]] = None,
             subsystem: Optional[str] = None,
@@ -248,6 +249,7 @@ class _ProsodyClientApi:
             state_collections: Keyed-state collections to register before subscribe. Pass the definition objects from `value`/`map`/`set`/`deque`/`message_value`/`message_map`/`message_deque`; each serializes into a collection config entry. Duplicate names are rejected.
             state_cache_dir: Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively). Env: PROSODY_STATE_CACHE_DIR. Defaults to a per-client temp dir.
             state_owned_cache_size: Capacity of the owning keyed-state cache, such as ``"64 MiB"``. Env: ``PROSODY_STATE_OWNED_CACHE_SIZE``. The storage engine selects its default when neither is set.
+            state_memtable_size: Bytes of in-memory writes the local keyed-state cache holds for each assigned partition before it flushes them to disk, such as ``"16 MiB"``. Env: ``PROSODY_STATE_MEMTABLE_SIZE``. Memory use scales with the number of assigned partitions. Unset uses the storage engine's default of 64 MiB.
             state_read_cache_size: Capacity of the published-state read cache, such as ``"1 MiB"``. Env: ``PROSODY_STATE_READ_CACHE_SIZE``. Uses the owned cache size when set, or 1 MiB when both sizes are unset.
             state_read_cache: Default published-read cache TTL, or `False` to bypass the cache. Env: ``PROSODY_STATE_READ_CACHE_TTL``. Defaults to 5 seconds.
             subsystem: Name under which published collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
