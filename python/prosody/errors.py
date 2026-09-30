@@ -1,4 +1,4 @@
-import asyncio
+import inspect
 from abc import ABC, abstractmethod
 from functools import wraps
 
@@ -107,7 +107,7 @@ def create_error_decorator(error_class, exception_types):
             except exception_types as e:
                 raise error_class(str(e)) from e
 
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
