@@ -5,7 +5,7 @@
 
 use prosody::high_level::erased::ErasedReadCache;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyBool, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
+use pyo3::types::{PyAnyMethods, PyBool, PyDelta, PyDict, PyDictMethods};
 use pyo3::{Bound, PyAny, PyResult};
 use std::process;
 use std::time::Duration;
@@ -50,15 +50,8 @@ pub fn string_or_vec(value: &Bound<PyAny>) -> PyResult<Vec<String>> {
 /// Returns a `PyValueError` if the float conversion fails.
 pub fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
     // Try to decode as a timedelta first
-    if let Ok(delta) = Bound::cast::<PyDelta>(value) {
-        let days = u64::try_from(delta.get_days())?;
-        let seconds = u64::try_from(delta.get_seconds())?;
-        let micros = u64::try_from(delta.get_microseconds())?;
-
-        let mut duration = Duration::from_secs(days * 24 * 60 * 60);
-        duration += Duration::from_secs(seconds);
-        duration += Duration::from_micros(micros);
-        return Ok(duration);
+    if value.is_instance_of::<PyDelta>() {
+        return value.extract();
     }
 
     // If not a timedelta, try to decode as a float
