@@ -4,7 +4,7 @@ use super::{
     Arc, Bound, BoxDequeState, ConsumerMessage, FutureExt, NativeJsonDequeScan,
     NativeMessageDequeScan, PositionQuery, PyAny, PyResult, Python, StateEnv, Value, build_message,
     future_into_py, json_write_item, message_write_item, outcome_token, pyclass, pymethods,
-    pythonize, state_error, transient_error,
+    pythonize, state_error,
 };
 
 macro_rules! deque_state {
@@ -25,16 +25,7 @@ macro_rules! deque_state {
                 let env = self.env.clone();
                 future_into_py(py, async move {
                     let out = state.len().with_context(ctx).await;
-                    Python::attach(|py| match out {
-                        Ok(len) => u32::try_from(len).map_err(|_| {
-                            transient_error(
-                                py,
-                                &env,
-                                &format!("deque length {len} exceeds the u32 range"),
-                            )
-                        }),
-                        Err(error) => Err(state_error(py, &env, &error)),
-                    })
+                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
                 })
             }
 
@@ -50,12 +41,12 @@ macro_rules! deque_state {
             }
 
             /// Reads one element by its position from the front.
-            fn get<'p>(&self, py: Python<'p>, index: u32) -> PyResult<Bound<'p, PyAny>> {
+            fn get<'p>(&self, py: Python<'p>, index: usize) -> PyResult<Bound<'p, PyAny>> {
                 let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
                 let env = self.env.clone();
                 future_into_py(py, async move {
-                    let out = state.get(index as usize).with_context(ctx).await;
+                    let out = state.get(index).with_context(ctx).await;
                     Python::attach(|py| match out {
                         Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
                         Err(error) => Err(state_error(py, &env, &error)),

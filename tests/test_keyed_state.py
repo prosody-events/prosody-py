@@ -1210,7 +1210,9 @@ async def test_deque_index_type_and_negative_index(state_client):
             frac = type(e).__name__
         neg = await _wait(d.get(-1))
         ok = await _wait(d.get(0))
-        await results.send({"frac": frac, "neg": neg, "ok": ok})
+        # An index past the u32 range is past the end, like any other.
+        far = await _wait(d.get(2**32))
+        await results.send({"frac": frac, "neg": neg, "ok": ok, "far": far})
 
     handler = StateHandler(cb)
     await _wait(client.subscribe(handler))
@@ -1220,6 +1222,7 @@ async def test_deque_index_type_and_negative_index(state_client):
     assert obs["frac"] == "TypeError"
     assert obs["neg"] == "x"
     assert obs["ok"] == "x"
+    assert obs["far"] is None
 
 
 # NOTE: identity mismatch across two runs (register the same name with a
