@@ -66,7 +66,7 @@ This is a Python/Rust hybrid project using PyO3 and Maturin.
 ### Prerequisites
 
 - Docker Compose running with Kafka and Cassandra services
-- Python 3.8+ with a virtual environment
+- Python 3.10+ with a virtual environment
 - Rust toolchain
 
 ### Running Tests
@@ -268,15 +268,10 @@ half-deleted designs are where bloat and bug re-introduction live:
 
 ## Error Classification
 
-Distinguish permanent from transient errors for retry logic:
-
-```rust
-#[derive(Debug, Clone, Copy)]
-pub enum ErrorType {
-    Permanent,  // Business logic - don't retry
-    Transient,  // Network/timeout - retry with backoff
-}
-```
+Classify handler errors through the core `ClassifyError` trait and its
+`ErrorCategory` (`prosody::error`). `WrappedPythonError` implements it for
+the handler bridge. `Permanent` discards the message. `Transient` retries
+with backoff. Never invent a parallel classification.
 
 A permanent error discards the in-flight message. An error the caller's code
 causes (bad input, wrong argument shape) classifies as transient unless the
@@ -318,8 +313,8 @@ Constants → Statics → Types → Implementations → Functions → Errors (bo
 - `tests/typecheck/` — self-falsifying negative fixtures. Expected errors use
   precise `type: ignore` codes; `warn_unused_ignores` fails the gate if a
   public signature accidentally permits one.
-- `examples/` — runnable examples (`keyed_state_typed.py`,
-  `keyed_state_windowing.py`, `tracing.py`), type-checked by mypy.
+- `examples/` — runnable examples. mypy checks `keyed_state_typed.py` and
+  `keyed_state_windowing.py`. It does not check `tracing.py`.
 - Run `make mypy`. It resolves `prosody` from the source tree
   (`mypy_path = "python"`), so no maturin build is required.
 

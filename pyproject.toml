@@ -58,7 +58,7 @@ python-source = "python"
 [tool.mypy]
 # ``mypy_path`` resolves ``prosody`` from the source tree (mapping
 # ``prosody.prosody`` to ``prosody.pyi``) so type-checking needs no maturin
-# build. PEP 696 TypeVar defaults require mypy >= 1.11.
+# build. The PEP 696 TypeVar defaults need a recent mypy; the dev extra pins it.
 files = [
     "examples/keyed_state_typed.py",
     "examples/keyed_state_windowing.py",
