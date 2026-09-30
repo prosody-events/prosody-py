@@ -70,6 +70,7 @@ class OrderHandler(EventHandler[OrderEvent]):
         print(f"Excise {message.key}")
         await context.state(CART).clear()
         await context.state(TOTALS).clear()
+        await context.state(TAGS).clear()
         await context.state(BACKLOG).clear()
 
     async def on_message(
