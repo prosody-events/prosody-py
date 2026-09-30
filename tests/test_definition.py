@@ -23,41 +23,64 @@ from prosody import (
 import pytest
 
 
-def test_value_to_config():
-    assert value("cart").to_config() == {
-        "name": "cart",
-        "kind": "value",
-        "payload": "json",
-        "ttl_seconds": None,
-        "read_uncommitted": None,
-        "published": None,
-        "keyset_limit": None,
-        "capacity": None,
-    }
+def _config(name, kind, payload="json", **options):
+    """The expected config dict: every option unset unless named."""
+    config = dict.fromkeys(
+        ("ttl_seconds", "read_uncommitted", "published", "keyset_limit", "capacity")
+    )
+    return {"name": name, "kind": kind, "payload": payload, **config, **options}
 
-def test_ttl_timedelta_and_int():
-    assert value("c", ttl=timedelta(days=30)).to_config()["ttl_seconds"] == 2592000
-    assert value("c", ttl=60).to_config()["ttl_seconds"] == 60
 
-def test_map_keyset_limit():
-    assert map("s", keyset_limit=256).to_config()["keyset_limit"] == 256
-    assert map("s").to_config()["keyset_limit"] is None
+@pytest.mark.parametrize(
+    ("definition", "expected"),
+    [
+        (value("cart"), _config("cart", "value")),
+        (value("c", ttl=timedelta(days=30)), _config("c", "value", ttl_seconds=2592000)),
+        (value("c", ttl=60), _config("c", "value", ttl_seconds=60)),
+        (value("c", read_uncommitted=True), _config("c", "value", read_uncommitted=True)),
+        (value("c", published=True), _config("c", "value", published=True)),
+        (map("s"), _config("s", "map")),
+        (map("s", keyset_limit=256), _config("s", "map", keyset_limit=256)),
+        (
+            set_definition(
+                "tags", ttl=60, read_uncommitted=True, published=True, keyset_limit=64
+            ),
+            _config(
+                "tags",
+                "set",
+                None,
+                ttl_seconds=60,
+                read_uncommitted=True,
+                published=True,
+                keyset_limit=64,
+            ),
+        ),
+        (deque("d"), _config("d", "deque")),
+        (deque("d", capacity=100), _config("d", "deque", capacity=100)),
+        (message_value("mv"), _config("mv", "value", "message")),
+        (message_map("mm"), _config("mm", "map", "message")),
+        (
+            message_map("mm", keyset_limit=128),
+            _config("mm", "map", "message", keyset_limit=128),
+        ),
+        (message_deque("md"), _config("md", "deque", "message")),
+        (
+            message_deque("md", capacity=50),
+            _config("md", "deque", "message", capacity=50),
+        ),
+    ],
+)
+def test_to_config(definition, expected):
+    assert definition.to_config() == expected
 
-def test_deque_capacity_to_config():
-    assert deque("d", capacity=100).to_config()["capacity"] == 100
-    assert message_deque("md", capacity=50).to_config()["capacity"] == 50
-    assert deque("d").to_config()["capacity"] is None
-    # capacity is deque-only: value/map definitions carry it as None.
-    assert value("v").to_config()["capacity"] is None
-    assert map("m").to_config()["capacity"] is None
 
-def test_read_uncommitted_passthrough():
-    assert value("c", read_uncommitted=True).to_config()["read_uncommitted"] is True
+@pytest.mark.parametrize("read_cache", [None, False, 2.0, timedelta(seconds=2)])
+def test_read_cache_stays_off_the_config(read_cache):
+    for define in (value, map, set_definition, deque):
+        definition = define("c", read_cache=read_cache)
+        assert definition.read_cache == read_cache
+        assert "read_cache" not in definition.to_config()
 
-def test_publication_and_read_cache_share_the_descriptor():
-    definition = value("cart", published=True, read_cache=timedelta(seconds=2))
-    assert definition.to_config()["published"] is True
-    assert definition.read_cache == timedelta(seconds=2)
 
 @pytest.mark.parametrize(
     ("definition", "reader"),
@@ -83,18 +106,6 @@ async def test_client_state_dispatches_by_definition_type(definition, reader):
         ("checkout", definition.kind, definition.name),
         {"read_cache": definition.read_cache},
     )
-
-def test_kinds_and_payloads():
-    assert deque("d").to_config()["kind"] == "deque"
-    mv = message_value("mv").to_config()
-    assert (mv["kind"], mv["payload"]) == ("value", "message")
-    mm = message_map("mm").to_config()
-    assert (mm["kind"], mm["payload"]) == ("map", "message")
-    md = message_deque("md").to_config()
-    assert (md["kind"], md["payload"]) == ("deque", "message")
-
-def test_message_map_keyset_limit():
-    assert message_map("mm", keyset_limit=128).to_config()["keyset_limit"] == 128
 
 def test_definitions_frozen():
     d = value("cart")

@@ -1,4 +1,4 @@
-"""Pure-Python tests for the set definition, store outcomes, and demand values.
+"""Pure-Python tests for store outcomes and demand values.
 
 Recording stubs stand in for the native handles.
 """
@@ -15,26 +15,9 @@ from prosody import (
     SetState,
     StoreOutcome,
     ValueState,
-    set as set_definition,
 )
 
 from support import NativeRecorder
-
-
-def test_set_definition_to_config():
-    assert set_definition(
-        "tags", ttl=60, read_uncommitted=True, published=True, keyset_limit=64
-    ).to_config() == {
-        "name": "tags",
-        "kind": "set",
-        "payload": None,
-        "ttl_seconds": 60,
-        "read_uncommitted": True,
-        "published": True,
-        "keyset_limit": 64,
-        "capacity": None,
-    }
-    assert set_definition("tags", read_cache=False).read_cache is False
 
 
 @pytest.mark.parametrize("handle", [ValueState, MapState, SetState, DequeState])
