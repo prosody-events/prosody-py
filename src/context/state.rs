@@ -7,8 +7,9 @@
 use super::{Context, state_env};
 use crate::state::{
     NativeJsonDequeState, NativeJsonMapState, NativeJsonValueState, NativeMessageDequeState,
-    NativeMessageMapState, NativeMessageValueState, NativeSetState, raise, state_error,
+    NativeMessageMapState, NativeMessageValueState, NativeSetState, StateEnv, raise, state_error,
 };
+use prosody::consumer::event_context::ErasedStateError;
 use pyo3::types::{PyAnyMethods, PyModule};
 use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 use std::sync::Arc;
@@ -83,19 +84,36 @@ pub(super) fn bind(
         return Ok(existing.clone_ref(py));
     }
 
+    let env = state_env(context, py)?;
+    let inner = &context.inner;
     let native: Py<PyAny> = match kind {
-        StateDefinitionKind::Value => Py::new(py, value_state(context, py, &name)?)?.into_any(),
-        StateDefinitionKind::Map => Py::new(py, map_state(context, py, &name)?)?.into_any(),
-        StateDefinitionKind::Set => Py::new(py, set_state(context, py, &name)?)?.into_any(),
-        StateDefinitionKind::Deque => Py::new(py, deque_state(context, py, &name)?)?.into_any(),
+        StateDefinitionKind::Value => {
+            let state = vend(py, &env, inner.value_state(&name))?;
+            Py::new(py, NativeJsonValueState { state, env })?.into_any()
+        }
+        StateDefinitionKind::Map => {
+            let state = vend(py, &env, inner.map_state(&name))?;
+            Py::new(py, NativeJsonMapState { state, env })?.into_any()
+        }
+        StateDefinitionKind::Set => {
+            let state = vend(py, &env, inner.set_state(&name))?;
+            Py::new(py, NativeSetState { state, env })?.into_any()
+        }
+        StateDefinitionKind::Deque => {
+            let state = vend(py, &env, inner.deque_state(&name))?;
+            Py::new(py, NativeJsonDequeState { state, env })?.into_any()
+        }
         StateDefinitionKind::MessageValue => {
-            Py::new(py, message_value_state(context, py, &name)?)?.into_any()
+            let state = vend(py, &env, inner.message_value_state(&name))?;
+            Py::new(py, NativeMessageValueState { state, env })?.into_any()
         }
         StateDefinitionKind::MessageMap => {
-            Py::new(py, message_map_state(context, py, &name)?)?.into_any()
+            let state = vend(py, &env, inner.message_map_state(&name))?;
+            Py::new(py, NativeMessageMapState { state, env })?.into_any()
         }
         StateDefinitionKind::MessageDeque => {
-            Py::new(py, message_deque_state(context, py, &name)?)?.into_any()
+            let state = vend(py, &env, inner.message_deque_state(&name))?;
+            Py::new(py, NativeMessageDequeState { state, env })?.into_any()
         }
     };
     let wrapper_name = match kind {
@@ -112,149 +130,18 @@ pub(super) fn bind(
     Ok(wrapper)
 }
 
-/// Vends the low-level handle for the named JSON value collection.
+/// Wraps the core handle that a vend returned.
 ///
-/// Vending verifies the collection's registration (core-side); no span is
-/// opened here — vended handles outlive the call, and every operation opens
+/// Core checks the collection's registration when it vends the handle. The
+/// vend opens no span: the handle outlives the call, and every operation opens
 /// its own span.
 ///
 /// # Errors
 ///
 /// Returns a permanent error if the name is unregistered or its registered
 /// identity mismatches.
-fn value_state(context: &Context, py: Python, name: &str) -> PyResult<NativeJsonValueState> {
-    let env = state_env(context, py)?;
-    let handle = context
-        .inner
-        .value_state(name)
-        .map_err(|e| state_error(py, &env, &e))?;
-    Ok(NativeJsonValueState {
-        state: Arc::new(handle),
-        env,
-    })
-}
-
-/// Vends the low-level handle for the named JSON map collection.
-///
-/// # Errors
-///
-/// Returns a permanent error if the name is unregistered or its registered
-/// identity mismatches.
-fn map_state(context: &Context, py: Python, name: &str) -> PyResult<NativeJsonMapState> {
-    let env = state_env(context, py)?;
-    let handle = context
-        .inner
-        .map_state(name)
-        .map_err(|e| state_error(py, &env, &e))?;
-    Ok(NativeJsonMapState {
-        state: Arc::new(handle),
-        env,
-    })
-}
-
-/// Vends the low-level handle for the named set collection.
-///
-/// # Errors
-///
-/// Returns a permanent error if the name is unregistered or its registered
-/// identity mismatches.
-fn set_state(context: &Context, py: Python, name: &str) -> PyResult<NativeSetState> {
-    let env = state_env(context, py)?;
-    let handle = context
-        .inner
-        .set_state(name)
-        .map_err(|e| state_error(py, &env, &e))?;
-    Ok(NativeSetState {
-        state: Arc::new(handle),
-        env,
-    })
-}
-
-/// Vends the low-level handle for the named JSON deque collection.
-///
-/// # Errors
-///
-/// Returns a permanent error if the name is unregistered or its registered
-/// identity mismatches.
-fn deque_state(context: &Context, py: Python, name: &str) -> PyResult<NativeJsonDequeState> {
-    let env = state_env(context, py)?;
-    let handle = context
-        .inner
-        .deque_state(name)
-        .map_err(|e| state_error(py, &env, &e))?;
-    Ok(NativeJsonDequeState {
-        state: Arc::new(handle),
-        env,
-    })
-}
-
-/// Vends the low-level handle for the named Kafka-message value collection.
-///
-/// Items are the full `Message` the handler received, loader-resolved on
-/// read.
-///
-/// # Errors
-///
-/// Returns a permanent error if the name is unregistered or its registered
-/// identity mismatches.
-fn message_value_state(
-    context: &Context,
-    py: Python,
-    name: &str,
-) -> PyResult<NativeMessageValueState> {
-    let env = state_env(context, py)?;
-    let handle = context
-        .inner
-        .message_value_state(name)
-        .map_err(|e| state_error(py, &env, &e))?;
-    Ok(NativeMessageValueState {
-        state: Arc::new(handle),
-        env,
-    })
-}
-
-/// Vends the low-level handle for the named Kafka-message map collection.
-///
-/// Items are the full `Message` the handler received, loader-resolved on
-/// read.
-///
-/// # Errors
-///
-/// Returns a permanent error if the name is unregistered or its registered
-/// identity mismatches.
-fn message_map_state(context: &Context, py: Python, name: &str) -> PyResult<NativeMessageMapState> {
-    let env = state_env(context, py)?;
-    let handle = context
-        .inner
-        .message_map_state(name)
-        .map_err(|e| state_error(py, &env, &e))?;
-    Ok(NativeMessageMapState {
-        state: Arc::new(handle),
-        env,
-    })
-}
-
-/// Vends the low-level handle for the named Kafka-message deque collection.
-///
-/// Items are the full `Message` the handler received, loader-resolved on
-/// read.
-///
-/// # Errors
-///
-/// Returns a permanent error if the name is unregistered or its registered
-/// identity mismatches.
-fn message_deque_state(
-    context: &Context,
-    py: Python,
-    name: &str,
-) -> PyResult<NativeMessageDequeState> {
-    let env = state_env(context, py)?;
-    let handle = context
-        .inner
-        .message_deque_state(name)
-        .map_err(|e| state_error(py, &env, &e))?;
-    Ok(NativeMessageDequeState {
-        state: Arc::new(handle),
-        env,
-    })
+fn vend<H>(py: Python, env: &StateEnv, handle: Result<H, ErasedStateError>) -> PyResult<Arc<H>> {
+    handle
+        .map(Arc::new)
+        .map_err(|error| state_error(py, env, &error))
 }
