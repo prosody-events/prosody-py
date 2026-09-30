@@ -245,6 +245,10 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.commit_interval(decode_duration(&commit_interval)?);
     }
 
+    if let Some(statistics_interval) = option(config, "statistics_interval")? {
+        builder.statistics_interval(decode_duration(&statistics_interval)?);
+    }
+
     // An explicit `None` turns the probe server off, so only this option
     // reads `None` as a value.
     if let Some(probe_port) = config.get_item("probe_port")? {

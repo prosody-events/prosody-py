@@ -101,6 +101,7 @@ class _ProsodyClientApi:
             shutdown_timeout: Optional[Duration] = None,
             poll_interval: Optional[Duration] = None,
             commit_interval: Optional[Duration] = None,
+            statistics_interval: Optional[Duration] = None,
             mode: Optional[Literal['pipeline', 'low-latency', 'best-effort']] = None,
             retry_base: Optional[Duration] = None,
             max_retries: Optional[int] = None,
@@ -182,6 +183,7 @@ class _ProsodyClientApi:
             shutdown_timeout: Shutdown budget; handlers complete freely before cancellation fires near the deadline.
             poll_interval: Time between message polls.
             commit_interval: Time between offset commits.
+            statistics_interval: Time between librdkafka statistics reports. Env: ``PROSODY_STATISTICS_INTERVAL``. Defaults to 5 seconds.
             mode: Operating mode ('pipeline', 'low-latency', or 'best-effort').
             retry_base: Initial delay for exponential backoff in retries.
             max_retries: Low-latency retries before routing to the failure topic. Zero routes the initial failure without retrying.

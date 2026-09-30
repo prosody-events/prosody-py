@@ -4,9 +4,13 @@ import ast
 import asyncio
 import pathlib
 import uuid
+from datetime import timedelta
+
+import pytest
+import tsasync
 
 import prosody
-from prosody import ProsodyClient
+from prosody import Context, EventHandler, ExciseMessage, Message, ProsodyClient, Timer
 from prosody.prosody import AdminClient
 
 DEFAULT_TIMEOUT = 30.0
@@ -45,3 +49,41 @@ async def test_none_leaves_every_create_topic_option_unset():
 
     await asyncio.wait_for(admin.create_topic(topic, **options), DEFAULT_TIMEOUT)
     await asyncio.wait_for(admin.delete_topic(topic), DEFAULT_TIMEOUT)
+
+
+class _Recorder(EventHandler):
+    """Records each delivered message and signals when ``until`` arrives."""
+
+    def __init__(self, until: str) -> None:
+        self.until = until
+        self.messages: list[Message] = []
+        self.done = tsasync.Event()
+
+    async def on_message(self, context: Context, message: Message) -> None:
+        self.messages.append(message)
+        if message.payload["id"] == self.until:
+            self.done.set()
+
+    async def on_excise(self, context: Context, message: ExciseMessage) -> None:
+        pass
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pass
+
+
+async def test_statistics_interval_reaches_the_consumer(client_factory):
+    options = dict(
+        bootstrap_servers="localhost:9092",
+        group_id=f"test-group-{uuid.uuid4().hex}",
+        subscribed_topics="statistics",
+        source_system="test-statistics",
+        probe_port=None,
+        mock=True,
+    )
+    accepted = await client_factory(**options, statistics_interval=timedelta(minutes=1))
+    await accepted.subscribe(_Recorder("none"))
+
+    rejected = await client_factory(**options, statistics_interval=0.0)
+    with pytest.raises(RuntimeError, match="statistics_interval"):
+        await rejected.subscribe(_Recorder("none"))
+
