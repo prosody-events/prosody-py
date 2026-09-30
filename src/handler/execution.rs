@@ -62,7 +62,7 @@ pub(super) fn cancel_task(event_set_method: &Py<PyAny>, shutdown_event: Py<PyAny
 /// * `context` - Message context
 /// * `message` - Kafka message
 /// * `serialized_context` - OpenTelemetry context
-/// * `execution_context` - Python classes, handler method, and state for the call
+/// * `execution_context` - Python classes, handler method, and state
 ///
 /// # Returns
 ///
