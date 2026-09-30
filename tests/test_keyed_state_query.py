@@ -8,10 +8,13 @@ each Python option reaches core as the matching query setting.
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from prosody import (
     Demand,
     DemandKind,
     Direction,
+    PermanentStateError,
     StoreOutcome,
     TransientStateError,
     deque as deque_definition,
@@ -250,6 +253,9 @@ async def test_published_readers_accept_query_options(
             topic, group, subsystem=subsystem, state_collections=[totals, tags, backlog]
         )
     )
+    zero = map_definition("pub-totals", published=True, read_cache=timedelta(0))
+    with pytest.raises(PermanentStateError):
+        await _wait(client.state(subsystem, zero))
 
     async def cb(ctx, msg, results):
         try:

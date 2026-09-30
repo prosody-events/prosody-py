@@ -97,8 +97,12 @@ class ProsodyClient:
         ``read_cache``.
 
         Raises:
-            RuntimeError: If the reader cannot open, such as for an unknown
-                subsystem.
+            PermanentStateError: If the reader rejects the definition, such as
+                for a zero ``read_cache``.
+            TransientStateError: If the reader fails to open for a reason that
+                a retry can fix.
+            RuntimeError: If the client cannot build the reader for a different
+                reason, such as an empty subsystem name.
             TypeError: If ``definition`` is a message collection definition.
         """
         reader = next((r for cls, r in _READERS.items() if isinstance(definition, cls)), None)

@@ -1,6 +1,7 @@
 //! Python client for Kafka production and consumption.
 
-use prosody::high_level::erased::ErasedConsumerState;
+use prosody::high_level::HighLevelClientError;
+use prosody::high_level::erased::{ErasedConsumerState, ErasedReaderBuildError};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::PyDict;
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
@@ -16,6 +17,7 @@ use crate::client::config::prepare_config;
 use crate::handler::PythonHandler;
 use crate::published::{PublishedDeque, PublishedMap, PublishedSet, PublishedValue};
 use crate::request::{request_outcomes, request_parameters};
+use crate::state::{StateEnv, state_error};
 use crate::util::{check_fork, parse_read_cache};
 
 mod config;
@@ -215,19 +217,19 @@ impl ProsodyClient {
         future_into_py(py, async move {
             match kind.as_str() {
                 "value" => {
-                    let inner = opened(client.value_state(subsystem, name, cache).await)?;
+                    let inner = opened(&env, client.value_state(subsystem, name, cache).await)?;
                     Python::attach(|py| Ok(Py::new(py, PublishedValue { inner, env })?.into_any()))
                 }
                 "map" => {
-                    let inner = opened(client.map_state(subsystem, name, cache).await)?;
+                    let inner = opened(&env, client.map_state(subsystem, name, cache).await)?;
                     Python::attach(|py| Ok(Py::new(py, PublishedMap { inner, env })?.into_any()))
                 }
                 "set" => {
-                    let inner = opened(client.set_state(subsystem, name, cache).await)?;
+                    let inner = opened(&env, client.set_state(subsystem, name, cache).await)?;
                     Python::attach(|py| Ok(Py::new(py, PublishedSet { inner, env })?.into_any()))
                 }
                 "deque" => {
-                    let inner = opened(client.deque_state(subsystem, name, cache).await)?;
+                    let inner = opened(&env, client.deque_state(subsystem, name, cache).await)?;
                     Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner, env })?.into_any()))
                 }
                 other => Err(PyValueError::new_err(format!(
@@ -371,7 +373,18 @@ impl ProsodyClient {
     }
 }
 
-/// Raises a failure to open a published reader as a `RuntimeError`.
-fn opened<T, E: Display>(reader: Result<T, E>) -> PyResult<T> {
-    reader.map_err(|error| PyRuntimeError::new_err(error.to_string()))
+/// Raises a failure to open a published reader.
+///
+/// A reader error raises by its category, as a read does. Any other failure
+/// raises `RuntimeError`.
+fn opened<T, E: Display>(
+    env: &StateEnv,
+    reader: Result<T, ErasedReaderBuildError<E>>,
+) -> PyResult<T> {
+    reader.map_err(|error| match error {
+        ErasedReaderBuildError::Client(HighLevelClientError::StateReader(error)) => {
+            Python::attach(|py| state_error(py, env, &error.into()))
+        }
+        error => PyRuntimeError::new_err(error.to_string()),
+    })
 }
