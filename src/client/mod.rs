@@ -24,11 +24,6 @@ mod model;
 pub use model::ProsodyClient;
 use model::{consumer_state_name, shutdown};
 
-/// Raises a failure to open a published reader as a `RuntimeError`.
-fn opened<T, E: Display>(reader: Result<T, E>) -> PyResult<T> {
-    reader.map_err(|error| PyRuntimeError::new_err(error.to_string()))
-}
-
 /// A client for interacting with Kafka using the Prosody library.
 ///
 /// This client provides methods for sending messages to Kafka topics and
@@ -374,4 +369,9 @@ impl ProsodyClient {
 
         Ok(())
     }
+}
+
+/// Raises a failure to open a published reader as a `RuntimeError`.
+fn opened<T, E: Display>(reader: Result<T, E>) -> PyResult<T> {
+    reader.map_err(|error| PyRuntimeError::new_err(error.to_string()))
 }

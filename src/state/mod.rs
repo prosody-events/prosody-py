@@ -100,6 +100,11 @@ struct StateEnvInner {
     transient_error: Py<PyAny>,
 }
 
+struct ScanInner<T> {
+    cursor: StateCursor<T>,
+    retained: VecDeque<T>,
+}
+
 impl StateEnv {
     /// Resolves the OpenTelemetry functions and the `prosody` classes.
     ///
@@ -292,11 +297,6 @@ fn message_write_item(
                  Kafka position to store",
             )
         })
-}
-
-struct ScanInner<T> {
-    cursor: StateCursor<T>,
-    retained: VecDeque<T>,
 }
 
 /// Converts a stored JSON value into a Python object.

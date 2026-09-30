@@ -46,6 +46,21 @@ use crate::state::StateEnv;
 
 const HANDLER_METHODS: [&str; 3] = ["on_message", "on_excise", "on_timer"];
 
+/// Base Python class name for message handlers
+const HANDLER_CLASS_NAME: &str = "EventHandler";
+
+/// Internal `prosody.handler` class that adds tracing and cancellation.
+const HANDLER_WRAPPER_CLASS_NAME: &str = "ProsodyHandler";
+
+/// Python class name for Kafka messages
+const MESSAGE_CLASS_NAME: &str = "Message";
+
+/// Python class name for excise records.
+const EXCISE_CLASS_NAME: &str = "ExciseMessage";
+
+/// Python class name for timer events
+const TIMER_CLASS_NAME: &str = "Timer";
+
 /// Python objects and dependencies needed for message execution
 #[derive(Clone, Copy)]
 struct MessageExecutionContext<'a> {
@@ -67,21 +82,6 @@ struct TimerExecutionContext<'a> {
     env: &'a StateEnv,
     demand: DemandType,
 }
-
-/// Base Python class name for message handlers
-const HANDLER_CLASS_NAME: &str = "EventHandler";
-
-/// Internal `prosody.handler` class that adds tracing and cancellation.
-const HANDLER_WRAPPER_CLASS_NAME: &str = "ProsodyHandler";
-
-/// Python class name for Kafka messages
-const MESSAGE_CLASS_NAME: &str = "Message";
-
-/// Python class name for excise records.
-const EXCISE_CLASS_NAME: &str = "ExciseMessage";
-
-/// Python class name for timer events
-const TIMER_CLASS_NAME: &str = "Timer";
 
 /// A wrapper for Python-defined message handlers.
 ///
