@@ -148,18 +148,18 @@ Register keyed-state collections before you subscribe. Persistence is backed by 
 | `state_read_cache` / `PROSODY_STATE_READ_CACHE_TTL`          | Default published-read cache TTL. Use `False` or the environment value `none` to bypass the cache                                                                         | 5s                  |
 | `subsystem` / `PROSODY_SUBSYSTEM` | Subsystem name used to advertise collections declared with `published=True` | (none) |
 
-Each `state_collections` entry has these fields. Prefer the definition constructors from the [API reference](Readme.md#api-reference). They serialize into `state_collections`, so you can reuse the same object with `context.state()`.
+Each `state_collections` entry must be a definition object from a definition constructor, such as `value()` or `map()`. See the [API reference](Readme.md#api-reference). A plain dict is not a valid entry. Pass the same object to `context.state()` in the handler. The table lists the definition attributes.
 
 Published collections require `subsystem`. Keep it configured for one deployment after removing `published=True` so readers can observe the collection's retirement.
 
-| Field              | Description                                                                          | Default    |
+| Attribute          | Description                                                                          | Default    |
 |--------------------|-------------------------------------------------------------------------------------|------------|
 | `name`             | Collection name; non-empty and unique within the client                             | (required) |
-| `kind`             | `"value"`, `"map"`, `"set"`, or `"deque"`                                            | (required) |
-| `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received). A set stores only its members and takes no payload | (required, except for a set) |
-| `ttl`              | Per-write TTL, whole seconds >= 1; `timedelta` or int seconds | (none)     |
+| `kind`             | `"value"`, `"map"`, `"set"`, or `"deque"`, set by the constructor                    | -          |
+| `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received), set by the constructor. A set stores only its members and has no payload | -          |
+| `ttl`              | Per-write TTL: a `timedelta` or int seconds, at least 1 second. `to_config()` writes it as `ttl_seconds` | (none)     |
 | `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
 | `published`        | Allow other clients to read this JSON or set collection without subscribing         | false      |
 | `read_cache`       | Published-read cache override: a duration, `False`, or inherit when omitted          | inherit    |
 | `keyset_limit`     | Map and set only; ordered-scan bound in `0..=4096` (`0` disables ordered-scan tracking) | 128        |
-| `capacity`         | Deque-only; positive int max slot count, enforced lazily on push (runtime-only, may change across deploys) | (unbounded) |
+| `capacity`         | Deque-only; the maximum number of values, a positive int. A push enforces it. It is not stored, so it can change across deploys | (unbounded) |
