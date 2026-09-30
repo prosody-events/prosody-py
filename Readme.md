@@ -1145,6 +1145,8 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
 - `payload: P`: The typed message payload. `ExciseMessage` has no payload attribute.
+- `source_system: Optional[str]`: The system that produced the message, or `None` when the record has no source system header.
+- `response_requested: bool`: `True` when a request expects a response from this handler. For an ordinary event, Prosody discards the handler result.
 
 `Message[P]` defaults to `Message[JSONValue]`. Supplying a `TypedDict` payload
 specialization gives field-level checking without runtime model construction or
@@ -1152,7 +1154,7 @@ validation.
 
 ### ExciseMessage
 
-An `ExciseMessage` has `topic`, `partition`, `offset`, `timestamp`, and `key` attributes. It has no `payload` attribute.
+An `ExciseMessage` has `topic`, `partition`, `offset`, `timestamp`, `key`, `source_system`, and `response_requested` attributes. It has no `payload` attribute.
 
 ### Context
 

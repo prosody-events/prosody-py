@@ -11,14 +11,14 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
-use crate::message::MessageCore;
+use crate::message::PythonRecord;
 use chrono::{DateTime, Utc};
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
+use prosody::consumer::DemandType;
 use prosody::consumer::event_context::EventContext;
 use prosody::consumer::message::ConsumerMessage;
 use prosody::consumer::middleware::FallibleHandler;
-use prosody::consumer::{DemandType, Keyed};
 use prosody::error::{ClassifyError, ErrorCategory};
 use prosody::high_level::{ClientHandler, JsonCodecs};
 use prosody::propagator::new_propagator;
@@ -28,7 +28,7 @@ use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
 use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 use pyo3_async_runtimes::{TaskLocals, into_future_with_locals};
-use pythonize::{depythonize, pythonize};
+use pythonize::depythonize;
 use serde_json::Value;
 use thiserror::Error;
 use tokio::select;
@@ -38,7 +38,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 mod execution;
 
 pub use execution::WrappedPythonError;
-use execution::{PythonRecord, cancel_task, execute, execute_timer, log_exception};
+use execution::{cancel_task, execute, execute_timer, log_exception};
 
 use crate::context::Context;
 

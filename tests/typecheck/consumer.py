@@ -71,9 +71,13 @@ class DefaultHandler(EventHandler):
 class Handler(EventHandler[Event, Response]):
     async def on_excise(self, context: Context, message: ExciseMessage) -> Response:
         assert_type(message, ExciseMessage)
+        assert_type(message.source_system, Optional[str])
+        assert_type(message.response_requested, bool)
         return {"accepted": True}
 
     async def on_message(self, context: Context, message: Message[Event]) -> Response:
+        assert_type(message.source_system, Optional[str])
+        assert_type(message.response_requested, bool)
         totals = context.state(TOTALS)
         assert_type(await totals.get(message.key), Optional[int])
         assert_type(await totals.get(message.key, 0), int)

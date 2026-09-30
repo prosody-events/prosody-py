@@ -23,11 +23,10 @@
 //! invalid enum token, an out-of-range index) reject TRANSIENT — a caller code
 //! error retries and stays visible rather than discarding the message.
 
-use crate::message::MessageCore;
+use crate::message::{MessageCore, PythonRecord};
 use opentelemetry::Context as OtelContext;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::FutureExt;
-use prosody::consumer::Keyed;
 use prosody::consumer::event_context::{
     BoxDequeState, BoxMapState, BoxSetState, BoxValueState, ErasedCategory, ErasedStateError,
     StateCursor,
@@ -247,28 +246,16 @@ fn consumer_message(
         })
 }
 
-/// Positionally constructs the Python `Message`, identical to `handler.rs`.
+/// Builds the Python `Message` for a message read out of a collection.
 ///
-/// Carries the resolved message as its [`MessageCore`], so a message read back
-/// out of a collection can be stored into another one and its consumer permit
-/// stays held for as long as Python holds the message.
+/// The message carries its [`MessageCore`], so it can be stored into another
+/// collection, and its consumer permit stays held while Python holds it.
 fn build_message(
     py: Python,
     env: &StateEnv,
     message: &ConsumerMessage<Value>,
 ) -> PyResult<Py<PyAny>> {
-    let payload = pythonize(py, message.payload())?;
-    let core = Py::new(py, MessageCore::new(message.clone()))?;
-    let object = env.0.message_class.bind(py).call1((
-        message.topic().as_ref(),
-        message.partition(),
-        message.offset(),
-        *message.timestamp(),
-        message.key().as_ref(),
-        payload,
-        core,
-    ))?;
-    Ok(object.unbind())
+    message.to_python(py, &env.0.message_class)
 }
 
 /// Prepares a JSON write.

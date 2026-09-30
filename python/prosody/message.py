@@ -54,6 +54,17 @@ class Message(Generic[P]):
     payload: P
     """The message payload."""
 
+    source_system: Optional[str] = None
+    """The system that produced the message, or ``None`` when the record has no
+    source system header."""
+
+    response_requested: bool = False
+    """``True`` when a request expects a response from this handler.
+
+    For an ordinary event, Prosody discards the handler result. Check this flag
+    to skip the work of building a response that nobody reads.
+    """
+
     _core: Optional[object] = field(default=None, compare=False, repr=False)
     """Internal handle to the message prosody delivered.
 
@@ -73,3 +84,10 @@ class ExciseMessage:
     offset: int
     timestamp: datetime
     key: str
+
+    source_system: Optional[str] = None
+    """The system that produced the record, or ``None`` when the record has no
+    source system header."""
+
+    response_requested: bool = False
+    """``True`` when an excise request expects a response from this handler."""

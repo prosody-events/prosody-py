@@ -145,10 +145,10 @@ class TestHandler(EventHandler):
 
 class RequestHandler(EventHandler):
     async def on_message(self, context: Context, message: Message):
-        return {"key": message.key, "accepted": True}
+        return {"key": message.key, "requested": message.response_requested}
 
     async def on_excise(self, context: Context, message: ExciseMessage):
-        return {"key": message.key, "accepted": True}
+        return {"key": message.key, "requested": message.response_requested}
 
     async def on_timer(self, context: Context, timer: Timer):
         return None
@@ -341,6 +341,8 @@ async def test_send_and_receive_message(client, random_topic_and_group):
     assert received_message.topic == topic
     assert received_message.key == test_key
     assert received_message.payload == test_payload
+    assert received_message.source_system == "test-send"
+    assert received_message.response_requested is False
     logger.debug("TEST test_send_and_receive_message: PASSED")
 
 
@@ -352,8 +354,11 @@ async def test_send_and_receive_excise(client, random_topic_and_group):
     await asyncio.wait_for(client.excise(topic, "obsolete-key"), timeout=DEFAULT_TIMEOUT)
     await asyncio.wait_for(handler.message_received.wait(), timeout=DEFAULT_TIMEOUT)
 
-    assert handler.messages[0].key == "obsolete-key"
-    assert isinstance(handler.messages[0], ExciseMessage)
+    excise = handler.messages[0]
+    assert isinstance(excise, ExciseMessage)
+    assert excise.key == "obsolete-key"
+    assert excise.source_system == "test-send"
+    assert excise.response_requested is False
 
 
 async def test_request_returns_the_local_handler_response(random_topic_and_group, client_factory):
@@ -379,7 +384,7 @@ async def test_request_returns_the_local_handler_response(random_topic_and_group
         timeout=DEFAULT_TIMEOUT,
     )
     assert len(results) == 1
-    assert results["inventory"] == Success({"key": "order-1", "accepted": True})
+    assert results["inventory"] == Success({"key": "order-1", "requested": True})
 
 
 async def test_excise_request_returns_the_local_handler_response(
@@ -407,7 +412,7 @@ async def test_excise_request_returns_the_local_handler_response(
     )
 
     assert results == {
-        "inventory": Success({"key": "order-1", "accepted": True})
+        "inventory": Success({"key": "order-1", "requested": True})
     }
 
 

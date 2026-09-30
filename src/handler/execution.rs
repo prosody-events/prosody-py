@@ -1,47 +1,8 @@
 use super::{
     ClassifyError, ConsumerMessage, Context, DateTime, Error, ErrorCategory, EventContext, Future,
-    HashMap, IntoPyDict, Keyed, MessageCore, MessageExecutionContext, Mutex, Py, PyAny,
-    PyAnyMethods, PyErr, PyResult, Python, TimerExecutionContext, Trigger, Utc, error,
-    into_future_with_locals, pythonize,
+    HashMap, IntoPyDict, MessageExecutionContext, Mutex, Py, PyAny, PyAnyMethods, PyErr, PyResult,
+    Python, PythonRecord, TimerExecutionContext, Trigger, Utc, error, into_future_with_locals,
 };
-
-pub(super) trait PythonRecord {
-    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>>;
-}
-
-impl PythonRecord for ConsumerMessage<serde_json::Value> {
-    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>> {
-        let payload = pythonize(py, self.payload())?;
-        let core = Py::new(py, MessageCore::new(self.clone()))?;
-        class.call1(
-            py,
-            (
-                self.topic().as_ref(),
-                self.partition(),
-                self.offset(),
-                *self.timestamp(),
-                self.key().as_ref(),
-                payload,
-                core,
-            ),
-        )
-    }
-}
-
-impl PythonRecord for ConsumerMessage<()> {
-    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>> {
-        class.call1(
-            py,
-            (
-                self.topic().as_ref(),
-                self.partition(),
-                self.offset(),
-                *self.timestamp(),
-                self.key().as_ref(),
-            ),
-        )
-    }
-}
 
 /// Logs Python exceptions with full traceback information.
 ///
@@ -138,7 +99,7 @@ where
             demand: execution_context.demand,
             state_handles: Mutex::new(HashMap::new()),
         };
-        let message = message.into_python(py, execution_context.record_class)?;
+        let message = message.to_python(py, execution_context.record_class)?;
 
         // Convert serialized_context to a Python dict
         let otel_context = serialized_context.into_py_dict(py)?;
