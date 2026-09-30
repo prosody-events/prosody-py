@@ -1,0 +1,454 @@
+//! Configuration of the `ProsodyClient` from Python keyword arguments.
+//!
+//! This module reads the producer, consumer, Cassandra, telemetry, and peer
+//! settings. The `middleware` module reads the middleware settings, and the
+//! `state` module reads the keyed-state settings.
+
+use crate::client::ProsodyClient;
+use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
+use middleware::{
+    build_dedup_config, build_defer_config, build_failure_topic_config,
+    build_monopolization_config, build_retry_config, build_scheduler_config, build_timeout_config,
+};
+use prosody::PeerConfiguration;
+use prosody::PeerEndpoint;
+use prosody::cassandra::config::CassandraConfigurationBuilder;
+use prosody::consumer::ConsumerConfigurationBuilder;
+use prosody::consumer::KeyedStateConfiguration;
+use prosody::consumer::SpanRelation;
+use prosody::consumer::middleware::deduplication::DeduplicationConfigurationBuilder;
+use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
+use prosody::consumer::middleware::monopolization::MonopolizationConfigurationBuilder;
+use prosody::consumer::middleware::retry::RetryConfigurationBuilder;
+use prosody::consumer::middleware::scheduler::SchedulerConfigurationBuilder;
+use prosody::consumer::middleware::timeout::TimeoutConfigurationBuilder;
+use prosody::consumer::middleware::topic::FailureTopicConfigurationBuilder;
+use prosody::high_level::ConsumerBuilders;
+use prosody::high_level::erased::new_erased;
+use prosody::high_level::mode::{Mode, ModeError};
+use prosody::loader::KafkaLoaderConfiguration;
+use prosody::producer::ProducerConfigurationBuilder;
+use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
+use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use state::build_keyed_state_config;
+use std::net::SocketAddr;
+use std::process;
+use std::sync::Arc;
+
+mod collection;
+mod middleware;
+mod state;
+
+/// Builds a `ProsodyClient` configuration based on the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `py` - The Python interpreter context.
+/// * `config` - An optional Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the configured `ProsodyClient`.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if the configuration is invalid or parsing fails.
+/// Returns a `PyRuntimeError` if client initialization fails.
+pub struct PreparedClient {
+    mode: Mode,
+    producer: ProducerConfigurationBuilder,
+    consumer: ConsumerBuilders,
+    cassandra: CassandraConfigurationBuilder,
+    get_context: Py<PyAny>,
+    inject: Py<PyAny>,
+}
+
+impl PreparedClient {
+    pub async fn connect(mut self) -> PyResult<ProsodyClient> {
+        let client = Box::pin(new_erased(
+            self.mode,
+            &mut self.producer,
+            &self.consumer,
+            &self.cassandra,
+        ))
+        .await
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+
+        Ok(ProsodyClient {
+            shutdown: super::shutdown(&client),
+            client,
+            get_context: self.get_context,
+            inject: self.inject,
+            handler: Arc::new(parking_lot::Mutex::new(None)),
+            pid: process::id(),
+        })
+    }
+}
+
+pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<PreparedClient> {
+    // Get handles to OpenTelemetry functions
+    let get_context = py
+        .import("opentelemetry.context")?
+        .getattr("get_current")?
+        .into_py_any(py)?;
+
+    let inject = py
+        .import("opentelemetry.propagate")?
+        .getattr("inject")?
+        .into_py_any(py)?;
+
+    // If no config is provided, create a client with default configurations
+    let Some(config) = config else {
+        let consumer_builders = ConsumerBuilders {
+            consumer: ConsumerConfigurationBuilder::default(),
+            dedup: DeduplicationConfigurationBuilder::default(),
+            retry: RetryConfigurationBuilder::default(),
+            failure_topic: FailureTopicConfigurationBuilder::default(),
+            scheduler: SchedulerConfigurationBuilder::default(),
+            monopolization: MonopolizationConfigurationBuilder::default(),
+            defer: DeferConfigurationBuilder::default(),
+            timeout: TimeoutConfigurationBuilder::default(),
+            keyed_state: KeyedStateConfiguration::builder()
+                .build()
+                .map_err(|error| PyValueError::new_err(error.to_string()))?,
+            emitter: TelemetryEmitterConfiguration::builder()
+                .build()
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+            peer: PeerConfiguration::builder()
+                .build()
+                .map_err(|error| PyValueError::new_err(error.to_string()))?,
+        };
+
+        return Ok(PreparedClient {
+            mode: Mode::default(),
+            producer: ProducerConfigurationBuilder::default(),
+            consumer: consumer_builders,
+            cassandra: CassandraConfigurationBuilder::default(),
+            get_context,
+            inject,
+        });
+    };
+
+    // Extract and set configuration options
+    let mode = match config.get_item("mode")? {
+        Some(mode_str) => mode_str
+            .extract::<String>()?
+            .parse()
+            .map_err(|e: ModeError| PyValueError::new_err(e.to_string()))?,
+
+        None => Mode::default(),
+    };
+
+    Ok(PreparedClient {
+        mode,
+        producer: build_producer_config(config)?,
+        consumer: build_consumer_builders(config)?,
+        cassandra: build_cassandra_config(config)?,
+        get_context,
+        inject,
+    })
+}
+
+/// Builds a `ProducerConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `ProducerConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurationBuilder> {
+    let mut builder = ProducerConfigurationBuilder::default();
+
+    if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
+        builder.bootstrap_servers(string_or_vec(&bootstrap)?);
+    }
+
+    if let Some(mock) = config.get_item("mock")? {
+        builder.mock(mock.extract::<bool>()?);
+    }
+
+    if let Some(source_system) = config.get_item("source_system")? {
+        builder.source_system(source_system.extract::<String>()?);
+    }
+
+    if let Some(send_timeout) = config.get_item("send_timeout")? {
+        builder.send_timeout(decode_optional_duration(&send_timeout)?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `ConsumerConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `ConsumerConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurationBuilder> {
+    let mut builder = ConsumerConfigurationBuilder::default();
+
+    if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
+        builder.bootstrap_servers(string_or_vec(&bootstrap)?);
+    }
+
+    if let Some(mock) = config.get_item("mock")? {
+        builder.mock(mock.extract::<bool>()?);
+    }
+
+    if let Some(group_id) = config.get_item("group_id")? {
+        builder.group_id(group_id.extract::<String>()?);
+    }
+
+    if let Some(subscribed_topics) = config.get_item("subscribed_topics")? {
+        builder.subscribed_topics(string_or_vec(&subscribed_topics)?);
+    }
+
+    if let Some(allowed_event_types) = config.get_item("allowed_events")? {
+        builder.allowed_events(string_or_vec(&allowed_event_types)?);
+    }
+
+    if let Some(max_uncommitted) = config.get_item("max_uncommitted")? {
+        builder.max_uncommitted(max_uncommitted.extract::<usize>()?);
+    }
+
+    if let Some(value) = config.get_item("stall_threshold")? {
+        builder.stall_threshold(decode_duration(&value)?);
+    }
+
+    if let Some(value) = config.get_item("shutdown_timeout")? {
+        builder.shutdown_timeout(decode_duration(&value)?);
+    }
+
+    if let Some(poll_interval) = config.get_item("poll_interval")? {
+        builder.poll_interval(decode_duration(&poll_interval)?);
+    }
+
+    if let Some(commit_interval) = config.get_item("commit_interval")? {
+        builder.commit_interval(decode_duration(&commit_interval)?);
+    }
+
+    if let Some(probe_port) = config.get_item("probe_port")? {
+        builder.probe_port(probe_port.extract::<Option<u16>>()?);
+    }
+
+    if let Some(slab_size) = config.get_item("slab_size")? {
+        builder.slab_size(decode_duration(&slab_size)?);
+    }
+
+    if let Some(message_spans) = config.get_item("message_spans")?
+        && !message_spans.is_none()
+    {
+        let s: String = message_spans.extract()?;
+        let relation = s
+            .parse::<SpanRelation>()
+            .map_err(|e| PyValueError::new_err(format!("message_spans: {e}")))?;
+        builder.message_spans(relation);
+    }
+
+    if let Some(timer_spans) = config.get_item("timer_spans")?
+        && !timer_spans.is_none()
+    {
+        let s: String = timer_spans.extract()?;
+        let relation = s
+            .parse::<SpanRelation>()
+            .map_err(|e| PyValueError::new_err(format!("timer_spans: {e}")))?;
+        builder.timer_spans(relation);
+    }
+
+    // Kafka message loader tuning (deferred-retry reload and keyed-state
+    // message resolution). Only build a loader configuration if at least one
+    // knob is provided, otherwise the consumer keeps its own defaults.
+    let loader_cache_size = config.get_item("loader_cache_size")?;
+    let loader_seek_timeout = config.get_item("loader_seek_timeout")?;
+    let loader_discard_threshold = config.get_item("loader_discard_threshold")?;
+    if loader_cache_size.is_some()
+        || loader_seek_timeout.is_some()
+        || loader_discard_threshold.is_some()
+    {
+        let mut loader = KafkaLoaderConfiguration::builder();
+
+        if let Some(cache_size) = loader_cache_size {
+            loader.cache_size(cache_size.extract::<usize>()?);
+        }
+
+        if let Some(seek_timeout) = loader_seek_timeout {
+            loader.seek_timeout(decode_duration(&seek_timeout)?);
+        }
+
+        if let Some(discard_threshold) = loader_discard_threshold {
+            loader.discard_threshold(discard_threshold.extract::<i64>()?);
+        }
+
+        let loader = loader
+            .build()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        builder.loader(loader);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `CassandraConfigurationBuilder` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `CassandraConfigurationBuilder`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_cassandra_config(config: &Bound<PyDict>) -> PyResult<CassandraConfigurationBuilder> {
+    let mut builder = CassandraConfigurationBuilder::default();
+
+    // Cassandra nodes (optional, uses environment variable if not provided)
+    if let Some(nodes) = config.get_item("cassandra_nodes")? {
+        builder.nodes(string_or_vec(&nodes)?);
+    }
+
+    // Cassandra keyspace (optional, defaults to "prosody")
+    if let Some(keyspace) = config.get_item("cassandra_keyspace")? {
+        builder.keyspace(keyspace.extract::<String>()?);
+    }
+
+    // Cassandra datacenter (optional)
+    if let Some(datacenter) = config.get_item("cassandra_datacenter")? {
+        builder.datacenter(Some(datacenter.extract::<String>()?));
+    }
+
+    // Cassandra rack (optional)
+    if let Some(rack) = config.get_item("cassandra_rack")? {
+        builder.rack(Some(rack.extract::<String>()?));
+    }
+
+    // Cassandra user (optional)
+    if let Some(user) = config.get_item("cassandra_user")? {
+        builder.user(Some(user.extract::<String>()?));
+    }
+
+    // Cassandra password (optional)
+    if let Some(password) = config.get_item("cassandra_password")? {
+        builder.password(Some(password.extract::<String>()?));
+    }
+
+    // Cassandra retention (optional, defaults to 30 days)
+    if let Some(retention) = config.get_item("cassandra_retention")? {
+        builder.retention(decode_duration(&retention)?);
+    }
+
+    Ok(builder)
+}
+
+/// Builds a `TelemetryEmitterConfiguration` from the provided Python
+/// configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `TelemetryEmitterConfiguration`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_telemetry_emitter_config(
+    config: &Bound<PyDict>,
+) -> PyResult<TelemetryEmitterConfiguration> {
+    let mut builder = TelemetryEmitterConfiguration::builder();
+
+    if let Some(topic) = config.get_item("telemetry_topic")? {
+        builder.topic(topic.extract::<String>()?);
+    }
+
+    if let Some(enabled) = config.get_item("telemetry_enabled")? {
+        builder.enabled(enabled.extract::<bool>()?);
+    }
+
+    builder
+        .build()
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// Builds `ConsumerBuilders` from the provided Python configuration.
+///
+/// # Arguments
+///
+/// * `config` - A Python dictionary containing configuration options.
+///
+/// # Returns
+///
+/// A `PyResult` containing the constructed `ConsumerBuilders`.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction of configuration values fails.
+fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders> {
+    Ok(ConsumerBuilders {
+        consumer: build_consumer_config(config)?,
+        dedup: build_dedup_config(config)?,
+        retry: build_retry_config(config)?,
+        failure_topic: build_failure_topic_config(config)?,
+        scheduler: build_scheduler_config(config)?,
+        monopolization: build_monopolization_config(config)?,
+        defer: build_defer_config(config)?,
+        timeout: build_timeout_config(config)?,
+        keyed_state: build_keyed_state_config(config)?,
+        emitter: build_telemetry_emitter_config(config)?,
+        peer: build_peer_config(config)?,
+    })
+}
+
+fn build_peer_config(config: &Bound<PyDict>) -> PyResult<PeerConfiguration> {
+    let mut builder = PeerConfiguration::builder();
+    if let Some(value) = config.get_item("peer_bind_address")? {
+        builder.bind_address(
+            value
+                .extract::<String>()?
+                .parse::<SocketAddr>()
+                .map_err(|error| PyValueError::new_err(format!("peer_bind_address: {error}")))?,
+        );
+    }
+    if let Some(value) = config.get_item("peer_advertised_connect")? {
+        builder.advertised_connect(
+            PeerEndpoint::try_from(value.extract::<String>()?).map_err(|error| {
+                PyValueError::new_err(format!("peer_advertised_connect: {error}"))
+            })?,
+        );
+    }
+    if let Some(value) = config.get_item("peer_network_name")? {
+        builder.network_name(value.extract::<String>()?);
+    }
+    if let Some(value) = config.get_item("peer_cache_capacity")? {
+        builder.peer_cache_capacity(value.extract::<usize>()?);
+    }
+    if let Some(value) = config.get_item("peer_registration_ttl")? {
+        builder.registration_ttl(decode_duration(&value)?);
+    }
+    builder
+        .build()
+        .map_err(|error| PyValueError::new_err(error.to_string()))
+}
