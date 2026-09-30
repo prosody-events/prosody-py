@@ -16,7 +16,7 @@ module re-exports them.
 """
 
 import enum
-from typing import Any, List, Optional, Generic, Union
+from typing import Any, List, Optional, Generic
 
 from typing_extensions import TypeVar
 
@@ -168,35 +168,17 @@ class MapState(Generic[V]):
         await self._native.clear()
 
     def items(
-        self,
-        direction: Direction = Direction.FORWARD,
-        *,
-        prefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        after: Optional[str] = None,
-        to: Optional[str] = None,
-        before: Optional[str] = None,
-        range: Optional[slice] = None,
-        limit: Optional[int] = None,
+        self, direction: Direction = Direction.FORWARD, **options: Any
     ) -> _StateScan:
         """Async iterator over ``(key, value)`` entries in key order.
 
         The query options select a part of the map; see :meth:`keys`.
         """
-        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
+        query = _key_query(direction, **options)
         return _StateScan(self._native.scan(query), _identity)
 
     def keys(
-        self,
-        direction: Direction = Direction.FORWARD,
-        *,
-        prefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        after: Optional[str] = None,
-        to: Optional[str] = None,
-        before: Optional[str] = None,
-        range: Optional[slice] = None,
-        limit: Optional[int] = None,
+        self, direction: Direction = Direction.FORWARD, **options: Any
     ) -> _StateScan:
         """Async iterator over the keys in key order.
 
@@ -214,27 +196,18 @@ class MapState(Generic[V]):
         Options narrow the scan and never widen it. To page, pass the last key
         of a page as ``after``.
         """
-        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
+        query = _key_query(direction, **options)
         return _StateScan(self._native.keys(query), _identity)
 
     def values(
-        self,
-        direction: Direction = Direction.FORWARD,
-        *,
-        prefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        after: Optional[str] = None,
-        to: Optional[str] = None,
-        before: Optional[str] = None,
-        range: Optional[slice] = None,
-        limit: Optional[int] = None,
+        self, direction: Direction = Direction.FORWARD, **options: Any
     ) -> _StateScan:
         """Async iterator over the values in key order.
 
         The scan decodes each value, so it costs the same as :meth:`items`.
         The query options match :meth:`keys`.
         """
-        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
+        query = _key_query(direction, **options)
         return _StateScan(self._native.scan(query), lambda e: e[1])
 
     def __aiter__(self) -> _StateScan:
@@ -289,22 +262,13 @@ class SetState:
         await self._native.clear()
 
     def members(
-        self,
-        direction: Direction = Direction.FORWARD,
-        *,
-        prefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        after: Optional[str] = None,
-        to: Optional[str] = None,
-        before: Optional[str] = None,
-        range: Optional[slice] = None,
-        limit: Optional[int] = None,
+        self, direction: Direction = Direction.FORWARD, **options: Any
     ) -> _StateScan:
         """Async iterator over the members in order.
 
         The query options match :meth:`MapState.keys`.
         """
-        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
+        query = _key_query(direction, **options)
         return _StateScan(self._native.keys(query), _identity)
 
     def __aiter__(self) -> _StateScan:
@@ -397,15 +361,7 @@ class DequeState(Generic[T]):
         await self._native.clear()
 
     def values(
-        self,
-        direction: Direction = Direction.FORWARD,
-        *,
-        from_: Optional[int] = None,
-        after: Optional[int] = None,
-        to: Optional[int] = None,
-        before: Optional[int] = None,
-        range: Union[range, slice, None] = None,
-        limit: Optional[int] = None,
+        self, direction: Direction = Direction.FORWARD, **options: Any
     ) -> _StateScan:
         """Async iterator over the elements in index order.
 
@@ -418,7 +374,7 @@ class DequeState(Generic[T]):
         positions raise ``ValueError``; read the last N elements with
         ``values(Direction.BACKWARD, limit=N)``.
         """
-        query = _position_query(direction, from_, after, to, before, range, limit)
+        query = _position_query(direction, **options)
         return _StateScan(self._native.scan(query), _identity)
 
     def __aiter__(self) -> _StateScan:

@@ -4,7 +4,7 @@
 as its first argument because no handler supplies one.
 """
 
-from typing import Any, Generic, List, Optional, Union
+from typing import Any, Generic, List, Optional
 
 from typing_extensions import TypeVar
 
@@ -54,51 +54,21 @@ class PublishedMap(Generic[V]):
         return await self._native.is_empty(key)
 
     def items(
-        self,
-        key: str,
-        direction: Direction = Direction.FORWARD,
-        *,
-        prefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        after: Optional[str] = None,
-        to: Optional[str] = None,
-        before: Optional[str] = None,
-        range: Optional[slice] = None,
-        limit: Optional[int] = None,
+        self, key: str, direction: Direction = Direction.FORWARD, **options: Any
     ) -> "_StateScan[tuple[str, V]]":
-        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
+        query = _key_query(direction, **options)
         return _StateScan(self._native.scan(key, query), _identity)
 
     def keys(
-        self,
-        key: str,
-        direction: Direction = Direction.FORWARD,
-        *,
-        prefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        after: Optional[str] = None,
-        to: Optional[str] = None,
-        before: Optional[str] = None,
-        range: Optional[slice] = None,
-        limit: Optional[int] = None,
+        self, key: str, direction: Direction = Direction.FORWARD, **options: Any
     ) -> "_StateScan[str]":
-        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
+        query = _key_query(direction, **options)
         return _StateScan(self._native.keys(key, query), _identity)
 
     def values(
-        self,
-        key: str,
-        direction: Direction = Direction.FORWARD,
-        *,
-        prefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        after: Optional[str] = None,
-        to: Optional[str] = None,
-        before: Optional[str] = None,
-        range: Optional[slice] = None,
-        limit: Optional[int] = None,
+        self, key: str, direction: Direction = Direction.FORWARD, **options: Any
     ) -> "_StateScan[V]":
-        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
+        query = _key_query(direction, **options)
         return _StateScan(self._native.scan(key, query), lambda entry: entry[1])
 
 
@@ -118,19 +88,9 @@ class PublishedSet:
         return await self._native.is_empty(key)
 
     def members(
-        self,
-        key: str,
-        direction: Direction = Direction.FORWARD,
-        *,
-        prefix: Optional[str] = None,
-        from_: Optional[str] = None,
-        after: Optional[str] = None,
-        to: Optional[str] = None,
-        before: Optional[str] = None,
-        range: Optional[slice] = None,
-        limit: Optional[int] = None,
+        self, key: str, direction: Direction = Direction.FORWARD, **options: Any
     ) -> "_StateScan[str]":
-        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
+        query = _key_query(direction, **options)
         return _StateScan(self._native.keys(key, query), _identity)
 
 
@@ -157,17 +117,8 @@ class PublishedDeque(Generic[T]):
         return await self._native.peek_front(key)
 
     def values(
-        self,
-        key: str,
-        direction: Direction = Direction.FORWARD,
-        *,
-        from_: Optional[int] = None,
-        after: Optional[int] = None,
-        to: Optional[int] = None,
-        before: Optional[int] = None,
-        range: Union[range, slice, None] = None,
-        limit: Optional[int] = None,
+        self, key: str, direction: Direction = Direction.FORWARD, **options: Any
     ) -> "_StateScan[T]":
-        query = _position_query(direction, from_, after, to, before, range, limit)
+        query = _position_query(direction, **options)
         return _StateScan(self._native.scan(key, query), _identity)
 

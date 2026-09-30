@@ -162,42 +162,44 @@ def _key_span(span: Optional[slice]) -> Optional[Tuple[Optional[str], Optional[s
 
 def _key_query(
     direction: Direction,
-    prefix: Optional[str],
-    from_: Optional[str],
-    after: Optional[str],
-    to: Optional[str],
-    before: Optional[str],
-    span: Optional[slice],
-    limit: Optional[int],
+    *,
+    prefix: Optional[str] = None,
+    from_: Optional[str] = None,
+    after: Optional[str] = None,
+    to: Optional[str] = None,
+    before: Optional[str] = None,
+    range: Optional[slice] = None,
+    limit: Optional[int] = None,
 ) -> _KeyQuery:
-    """Resolve map or set query options."""
+    """Resolve map or set query options. An unknown option raises ``TypeError``."""
     return _KeyQuery(
         Direction(direction) is Direction.BACKWARD,
         prefix,
         _edge("from_", from_, "after", after),
         _edge("to", to, "before", before),
-        _key_span(span),
+        _key_span(range),
         _limit(limit),
     )
 
 
 def _position_query(
     direction: Direction,
-    from_: Optional[int],
-    after: Optional[int],
-    to: Optional[int],
-    before: Optional[int],
-    span: Union[range, slice, None],
-    limit: Optional[int],
+    *,
+    from_: Optional[int] = None,
+    after: Optional[int] = None,
+    to: Optional[int] = None,
+    before: Optional[int] = None,
+    range: Union[range, slice, None] = None,
+    limit: Optional[int] = None,
 ) -> _PositionQuery:
-    """Resolve deque query options."""
+    """Resolve deque query options. An unknown option raises ``TypeError``."""
     return _PositionQuery(
         Direction(direction) is Direction.BACKWARD,
         _edge(
             "from_", _position("from_", from_), "after", _position("after", after)
         ),
         _edge("to", _position("to", to), "before", _position("before", before)),
-        _span(span),
+        _span(range),
         _limit(limit),
     )
 
