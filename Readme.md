@@ -30,12 +30,12 @@ separate stub package. For example, run `mypy your_application/` after installin
 Prosody and mypy. Keyed-state definitions carry their declared value type through
 `Context.state(...)`. `EventHandler[Payload, Response]` preserves both declared types.
 An unsubscripted handler uses `JSONValue` for both types.
-See [Keyed State](#keyed-state-cassandra) for typed examples.
+See [Keyed State](#keyed-state) for typed examples.
 
 ## Quick Start
 
 ```python
-from prosody import Context, EventHandler, Message, ProsodyClient
+from prosody import Context, EventHandler, ExciseMessage, Message, ProsodyClient
 from prosody.message import JSONValue
 import datetime
 
@@ -78,7 +78,7 @@ class MyHandler(EventHandler):
 
 
 # Subscribe to messages using the custom handler
-client.subscribe(MyHandler())
+await client.subscribe(MyHandler())
 
 # Send a message to a topic
 await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
@@ -760,9 +760,9 @@ all traces to Python.
 To use OpenTelemetry tracing with Prosody, you need to install the following packages:
 
 ```
-opentelemetry-sdk>=1.26.0
-opentelemetry-api>=1.26.0
-opentelemetry-exporter-otlp-proto-grpc>=1.26.0
+opentelemetry-sdk>=1.45.0
+opentelemetry-api>=1.45.0
+opentelemetry-exporter-otlp-proto-grpc>=1.45.0
 ```
 
 ### Initializing Tracing
@@ -790,7 +790,7 @@ Set the following standard OpenTelemetry environment variables:
 
 ```
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 OTEL_SERVICE_NAME=my-service-name
 ```
 
@@ -942,7 +942,7 @@ The error classes and decorators apply to `on_message`, `on_excise`, and `on_tim
 Use the `@permanent` decorator to classify exceptions that should not be retried:
 
 ```python
-from prosody import EventHandler, Context, Message, permanent
+from prosody import Context, EventHandler, ExciseMessage, Message, Timer, permanent
 
 
 class MyHandler(EventHandler):
@@ -1176,7 +1176,7 @@ Represents the current event context:
 - `should_cancel() -> bool`: Check if cancellation has been requested (includes timeout and shutdown)
 - `on_cancel() -> None`: Completes when cancellation occurs
 - `demand: Demand`: Why this attempt runs. See [Retries](#retries).
-- `state(definition) -> ValueState[T] | MapState[V] | SetState | DequeState[T]`: Bind a registered collection for the current attempt. Message definitions return handles that contain `Message[P]`. An unregistered or mismatched definition raises `PermanentStateError`. See [Keyed State](#keyed-state-2).
+- `state(definition) -> ValueState[T] | MapState[V] | SetState | DequeState[T]`: Bind a registered collection for the current attempt. Message definitions return handles that contain `Message[P]`. An unregistered or mismatched definition raises `PermanentStateError`. See [Keyed State](#keyed-state).
 
 ### Timer
 

@@ -426,7 +426,7 @@ class AdminClient:
             partition_count: Number of partitions for the topic. Uses broker default if not specified.
             replication_factor: Replication factor for the topic. Uses broker default if not specified.
             cleanup_policy: Cleanup policy ("delete", "compact", "delete,compact"). Uses cluster default if not specified.
-            retention: Message retention time. Can be a timedelta object, float seconds, or duration string.
+            retention: Message retention time as a timedelta or float seconds.
                       Uses cluster default if not specified.
 
         Raises:
