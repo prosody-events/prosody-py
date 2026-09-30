@@ -2,9 +2,9 @@
 
 use super::{
     Arc, Bound, BoxMapState, ConsumerMessage, FutureExt, KeyQuery, NativeJsonMapScan,
-    NativeMapKeyScan, NativeMessageMapScan, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python,
-    StateEnv, Value, build_message, future_into_py, json_write_item, message_write_item,
-    outcome_token, pyclass, pymethods, pythonize, state_error,
+    NativeMapKeyScan, NativeMessageMapScan, Py, PyAny, PyResult, Python, StateEnv, Value,
+    build_message, future_into_py, json_write_item, message_write_item, outcome_token, pyclass,
+    pymethods, pythonize, state_error,
 };
 
 macro_rules! map_state {
@@ -162,11 +162,6 @@ macro_rules! map_state {
                 future_into_py(py, async move {
                     Ok(outcome_token(state.rollback().with_context(ctx).await))
                 })
-            }
-
-            /// Traverses the Python handles this state holds for GC.
-            fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-                self.env.traverse(visit).map(|_| ())
             }
         }
     };

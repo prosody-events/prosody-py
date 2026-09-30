@@ -34,7 +34,6 @@ use prosody::consumer::event_context::{
 use prosody::consumer::message::ConsumerMessage;
 use prosody::state::{Direction, StoreOutcome};
 use pyo3::exceptions::PyStopAsyncIteration;
-use pyo3::gc::{PyTraverseError, PyVisit};
 use pyo3::types::{PyAnyMethods, PyDict, PyString, PyTuple};
 use pyo3::{Bound, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
@@ -68,8 +67,12 @@ const SCAN_READY_CHUNK_SIZE: NonZeroUsize = match NonZeroUsize::new(256) {
 
 /// Cheaply-cloned per-handle environment: the OpenTelemetry carrier accessors,
 /// the propagator, the cached Python `Message` class, and the three Python
-/// state-error classes. Every vended handle shares one `Arc`, so cloning it per
-/// vend is a refcount bump.
+/// state-error classes. A handle and every cursor it opens share one `Arc`.
+///
+/// The handles do not visit these objects for GC traversal. They are
+/// module-level objects that cannot form a cycle through a handle, and many
+/// handles share one reference to each, so a visit from each handle would
+/// break the `tp_traverse` contract.
 #[derive(Clone)]
 pub(crate) struct StateEnv(Arc<StateEnvInner>);
 
@@ -130,21 +133,6 @@ impl StateEnv {
         inner.inject.call1(py, (&data, context))?;
         let headers: HashMap<String, String> = data.extract()?;
         Ok(inner.propagator.extract(&headers))
-    }
-
-    /// Visits the Python handles this environment holds for GC traversal.
-    ///
-    /// Takes `visit` by value and returns it so the caller's `__traverse__`
-    /// (whose signature is fixed by `PyO3` to receive `PyVisit` by value)
-    /// consumes it here rather than only borrowing it.
-    fn traverse<'a>(&self, visit: PyVisit<'a>) -> Result<PyVisit<'a>, PyTraverseError> {
-        visit.call(self.0.get_current.as_any())?;
-        visit.call(self.0.inject.as_any())?;
-        visit.call(self.0.message_class.as_any())?;
-        visit.call(self.0.permanent_error.as_any())?;
-        visit.call(self.0.transient_error.as_any())?;
-        visit.call(self.0.null_value_error.as_any())?;
-        Ok(visit)
     }
 }
 
@@ -407,11 +395,6 @@ macro_rules! native_scan {
                     guard.cursor.close().await;
                     Ok(())
                 })
-            }
-
-            /// Traverses the Python handles this cursor holds for GC.
-            fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-                self.env.traverse(visit).map(|_| ())
             }
         }
     };

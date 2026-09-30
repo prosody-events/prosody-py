@@ -20,6 +20,7 @@ here.
 
 import asyncio
 import contextlib
+import gc
 import uuid
 
 import pytest
@@ -805,6 +806,31 @@ async def test_leaked_handle_after_successful_handler_rejects(state_client):
 # ===========================================================================
 # item 7 -- iterators (C7a + strong properties)
 # ===========================================================================
+
+
+async def test_gc_traversal_never_overcounts_the_shared_env(state_client):
+    """A handle and its cursors share one reference to each env object.
+
+    ``tp_traverse`` may visit that reference at most once in total, or the
+    cyclic GC subtracts more references than exist.
+    """
+    client, topic, _ = state_client
+
+    async def cb(ctx, msg, results):
+        totals = ctx.state(STATE_DEFS["totals"])
+        scans = [totals.items(), totals.keys(), totals.values()]
+        natives = [totals._native, *(scan._native for scan in scans)]
+        visits = sum(
+            gc.get_referents(native).count(PermanentStateError) for native in natives
+        )
+        await results.send({"visits": visits})
+
+    handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, nonce(), {"go": True}))
+    obs = await _wait(handler.results.receive())
+
+    assert obs["visits"] <= 1
 
 
 async def test_break_without_aclosing_is_harmless(state_client):

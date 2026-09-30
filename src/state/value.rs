@@ -1,9 +1,9 @@
 //! Single-value state handles.
 
 use super::{
-    Arc, Bound, BoxValueState, ConsumerMessage, FutureExt, PyAny, PyResult, PyTraverseError,
-    PyVisit, Python, StateEnv, Value, build_message, future_into_py, json_write_item,
-    message_write_item, outcome_token, pyclass, pymethods, pythonize, state_error,
+    Arc, Bound, BoxValueState, ConsumerMessage, FutureExt, PyAny, PyResult, Python, StateEnv,
+    Value, build_message, future_into_py, json_write_item, message_write_item, outcome_token,
+    pyclass, pymethods, pythonize, state_error,
 };
 
 macro_rules! value_state {
@@ -79,11 +79,6 @@ macro_rules! value_state {
                 future_into_py(py, async move {
                     Ok(outcome_token(state.rollback().with_context(ctx).await))
                 })
-            }
-
-            /// Traverses the Python handles this state holds for GC.
-            fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-                self.env.traverse(visit).map(|_| ())
             }
         }
     };

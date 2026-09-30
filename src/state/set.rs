@@ -1,9 +1,8 @@
 //! The presence-only set state handle.
 
 use super::{
-    Arc, Bound, BoxSetState, FutureExt, KeyQuery, NativeMapKeyScan, PyAny, PyResult,
-    PyTraverseError, PyVisit, Python, StateEnv, future_into_py, outcome_token, pyclass, pymethods,
-    state_error,
+    Arc, Bound, BoxSetState, FutureExt, KeyQuery, NativeMapKeyScan, PyAny, PyResult, Python,
+    StateEnv, future_into_py, outcome_token, pyclass, pymethods, state_error,
 };
 
 /// Ordered set state handle over string members.
@@ -112,10 +111,5 @@ impl NativeSetState {
         future_into_py(py, async move {
             Ok(outcome_token(state.rollback().with_context(ctx).await))
         })
-    }
-
-    /// Traverses the Python handles this state holds for GC.
-    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.env.traverse(visit).map(|_| ())
     }
 }
