@@ -13,7 +13,7 @@ use prosody::state::order_codec::Utf8KeyCodec;
 use prosody::timers::duration::CompactDuration;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyAnyMethods, PyDict};
-use pyo3::{Bound, PyResult};
+use pyo3::{Bound, FromPyObject, PyResult};
 use std::num::NonZeroUsize;
 
 /// The kind of a keyed-state collection.
@@ -73,29 +73,6 @@ fn parse_payload(cfg: &Bound<PyDict>, index: usize) -> PyResult<Option<Collectio
     }
 }
 
-/// Validates a Python number field as a whole number within `min..=max`.
-///
-/// The field arrives as an `f64` (the raw Python number) so that fractional,
-/// negative, and non-finite values reach this guard instead of being silently
-/// truncated or wrapped by an earlier integer conversion.
-///
-/// # Errors
-///
-/// Returns a `PyValueError` if the value is not a whole number in range.
-fn whole_number_field(value: f64, field: &str, min: u32, max: u32) -> PyResult<u32> {
-    if value.is_finite()
-        && value.fract() == 0.0
-        && value >= f64::from(min)
-        && value <= f64::from(max)
-    {
-        Ok(value as u32)
-    } else {
-        Err(PyValueError::new_err(format!(
-            "{field}: must be a whole number in {min}..={max}"
-        )))
-    }
-}
-
 /// Applies the shared descriptor options (TTL, commit mode) fluently.
 fn with_def<D: StateDescriptor>(
     descriptor: D,
@@ -119,10 +96,10 @@ fn with_def<D: StateDescriptor>(
 /// Applies the keyset bound to a map descriptor when configured.
 fn with_keyset<KC, V>(
     descriptor: MapDescriptor<KC, V>,
-    keyset_limit: Option<u32>,
+    keyset_limit: Option<usize>,
 ) -> MapDescriptor<KC, V> {
     match keyset_limit {
-        Some(limit) => descriptor.keyset_limit(limit as usize),
+        Some(limit) => descriptor.keyset_limit(limit),
         None => descriptor,
     }
 }
@@ -158,19 +135,34 @@ fn required_str(cfg: &Bound<PyDict>, index: usize, field: &str) -> PyResult<Stri
     }
 }
 
-/// Reads an optional `f64` field from a collection's config dict (None when
-/// absent or `None`).
-fn optional_f64(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<f64>> {
-    option(cfg, field)?
-        .map(|value| value.extract::<f64>())
-        .transpose()
+/// Reads an optional whole-number field from a collection's config dict.
+///
+/// The host integer conversion rejects a float, a negative value, and a value
+/// out of range for `T`, so no value is truncated.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` that names the field and states `rule`.
+fn whole_number<'py, T>(
+    cfg: &Bound<'py, PyDict>,
+    index: usize,
+    field: &str,
+    rule: &str,
+) -> PyResult<Option<T>>
+where
+    T: for<'a> FromPyObject<'a, 'py>,
+{
+    let Some(value) = option(cfg, field)? else {
+        return Ok(None);
+    };
+    value.extract().map(Some).map_err(|_| {
+        PyValueError::new_err(format!(
+            "state_collections[{index}].{field}: must be {rule}"
+        ))
+    })
 }
 
-/// Parses the deque-only `capacity` field into a `NonZeroUsize` push bound.
-///
-/// Rejects a capacity on a non-deque collection and validates the value as a
-/// whole number in `1..=u32::MAX`. These are the bounds needed to construct
-/// Prosody's `NonZeroUsize` value.
+/// Parses the deque-only `capacity` field into a push bound.
 ///
 /// # Errors
 ///
@@ -180,29 +172,13 @@ fn parse_capacity(
     index: usize,
     kind: &CollectionKind,
 ) -> PyResult<Option<NonZeroUsize>> {
-    let Some(value) = optional_f64(cfg, "capacity")? else {
-        return Ok(None);
-    };
-    if !matches!(kind, CollectionKind::Deque) {
+    let capacity = whole_number(cfg, index, "capacity", "a positive whole number")?;
+    if capacity.is_some() && !matches!(kind, CollectionKind::Deque) {
         return Err(PyValueError::new_err(format!(
             "state_collections[{index}].capacity: only valid for deque collections"
         )));
     }
-    let n = whole_number_field(
-        value,
-        &format!("state_collections[{index}].capacity"),
-        1,
-        u32::MAX,
-    )?;
-    // `n >= 1`, so `NonZeroUsize::new` is always `Some`; the `None` arm is
-    // unreachable but keeps the conversion panic-free (`unwrap` is denied).
-    match NonZeroUsize::new(n as usize) {
-        Some(nz) => Ok(Some(nz)),
-        None => Err(PyValueError::new_err(format!(
-            "state_collections[{index}].capacity: must be a whole number in 1..={}",
-            u32::MAX
-        ))),
-    }
+    Ok(capacity)
 }
 
 /// Parses the `keyset_limit` field that only maps and sets accept.
@@ -214,22 +190,14 @@ fn parse_keyset_limit(
     cfg: &Bound<PyDict>,
     index: usize,
     kind: &CollectionKind,
-) -> PyResult<Option<u32>> {
-    let Some(value) = optional_f64(cfg, "keyset_limit")? else {
-        return Ok(None);
-    };
-    if !matches!(kind, CollectionKind::Map | CollectionKind::Set) {
+) -> PyResult<Option<usize>> {
+    let limit = whole_number(cfg, index, "keyset_limit", "a non-negative whole number")?;
+    if limit.is_some() && !matches!(kind, CollectionKind::Map | CollectionKind::Set) {
         return Err(PyValueError::new_err(format!(
             "state_collections[{index}].keyset_limit: only valid for map and set collections"
         )));
     }
-    whole_number_field(
-        value,
-        &format!("state_collections[{index}].keyset_limit"),
-        0,
-        u32::MAX,
-    )
-    .map(Some)
+    Ok(limit)
 }
 
 /// Reads an optional `bool` field from a collection's config dict.
@@ -261,15 +229,7 @@ pub(super) fn register_state_collection(
     let kind = parse_kind(index, &required_str(cfg, index, "kind")?)?;
     let payload = parse_payload(cfg, index)?;
 
-    let ttl_seconds = match optional_f64(cfg, "ttl_seconds")? {
-        Some(value) => Some(whole_number_field(
-            value,
-            &format!("state_collections[{index}].ttl_seconds"),
-            0,
-            u32::MAX,
-        )?),
-        None => None,
-    };
+    let ttl_seconds = whole_number(cfg, index, "ttl_seconds", "a whole number of seconds")?;
 
     let keyset_limit = parse_keyset_limit(cfg, index, &kind)?;
     let capacity = parse_capacity(cfg, index, &kind)?;
@@ -303,7 +263,7 @@ pub(super) fn register_state_collection(
                 published,
             );
             let _ = keyed.register(match keyset_limit {
-                Some(limit) => descriptor.keyset_limit(limit as usize),
+                Some(limit) => descriptor.keyset_limit(limit),
                 None => descriptor,
             });
         }

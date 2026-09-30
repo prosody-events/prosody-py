@@ -6,6 +6,8 @@ definitions are mapped. Mock clients exercise both boundaries without external
 infrastructure.
 """
 
+from datetime import timedelta
+
 import pytest
 
 from prosody import (
@@ -94,7 +96,7 @@ def raw(
 
 
 STATE_COLLECTIONS = [
-    value("cart"),
+    value("cart", ttl=timedelta(days=30)),
     map("totals", keyset_limit=256),
     set_definition("tags", keyset_limit=64),
     deque("backlog"),
@@ -112,7 +114,7 @@ async def test_rejects_ttl_negative():
         await make_client(state_collections=[value("v", ttl=-1)])
 
 
-@pytest.mark.parametrize("ttl_seconds", [2.5, float("nan"), float("inf")])
+@pytest.mark.parametrize("ttl_seconds", [2.5, 5.0, float("nan"), float("inf")])
 async def test_rejects_ttl_fractional_or_nonfinite(ttl_seconds):
     with pytest.raises(ValueError, match=r"ttl_seconds: must be a whole number"):
         await make_client(state_collections=[raw(ttl_seconds=ttl_seconds)])
@@ -121,9 +123,9 @@ async def test_rejects_ttl_fractional_or_nonfinite(ttl_seconds):
 # --- keyset_limit rules ---------------------------------------------------
 
 
-@pytest.mark.parametrize("keyset_limit", [2.5, -1, float("nan"), float("inf")])
+@pytest.mark.parametrize("keyset_limit", [2.5, 5.0, -1, float("nan"), float("inf")])
 async def test_rejects_keyset_non_whole(keyset_limit):
-    with pytest.raises(ValueError, match=r"keyset_limit: must be a whole number"):
+    with pytest.raises(ValueError, match=r"keyset_limit: must be a non-negative whole number"):
         await make_client(state_collections=[map("m", keyset_limit=keyset_limit)])
 
 
@@ -147,17 +149,15 @@ async def test_accepts_deque_capacity(client_factory):
 
 
 async def test_rejects_capacity_zero():
-    with pytest.raises(
-        ValueError, match=r"capacity: must be a whole number in 1..=4294967295"
-    ):
+    with pytest.raises(ValueError, match=r"capacity: must be a positive whole number"):
         await make_client(state_collections=[deque("d", capacity=0)])
 
 
-@pytest.mark.parametrize("capacity", [2.5, -1, float("nan"), float("inf")])
+@pytest.mark.parametrize("capacity", [2.5, 5.0, -1, float("nan"), float("inf")])
 async def test_rejects_capacity_non_whole(capacity):
     # The deque() helper passes capacity through unchanged, so it reaches the
-    # Rust whole-number guard directly.
-    with pytest.raises(ValueError, match=r"capacity: must be a whole number"):
+    # Rust integer conversion directly.
+    with pytest.raises(ValueError, match=r"capacity: must be a positive whole number"):
         await make_client(state_collections=[deque("d", capacity=capacity)])
 
 

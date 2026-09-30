@@ -20,12 +20,15 @@ P = TypeVar("P", default=JSONValue)  # message payload type
 
 
 def _ttl_seconds(ttl: Optional[Union[timedelta, int]]) -> Optional[Union[float, int]]:
-    """Expose a TTL in seconds without truncating invalid host values."""
-    if ttl is None:
-        return None
-    if isinstance(ttl, timedelta):
-        return ttl.total_seconds()
-    return ttl
+    """Expose a TTL in seconds without truncating invalid host values.
+
+    A whole timedelta becomes an ``int``. A fractional one stays a ``float``,
+    which the client rejects.
+    """
+    if not isinstance(ttl, timedelta):
+        return ttl
+    seconds = ttl.total_seconds()
+    return int(seconds) if seconds.is_integer() else seconds
 
 
 ReadCache = Optional[Union[timedelta, float, Literal[False]]]
