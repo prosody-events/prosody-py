@@ -6,54 +6,30 @@ from prosody import value, PermanentStateError, TransientStateError
 import pytest
 import tsasync
 
-from support import STATE_DEFS, nonce, _wait, StateHandler
+from support import STATE_DEFS, nonce, _wait, StateHandler, observe, outcome
 
 
 async def test_json_collection_rejects_delivered_message(state_client):
     client, topic, _ = state_client
 
-    async def cb(ctx, msg, results):
-        cart = ctx.state(STATE_DEFS["cart"])
+    async def cb(ctx, msg):
         try:
-            await _wait(cart.set(msg))
-            await results.send({"threw": False})
-        except Exception as error:
-            await results.send(
-                {
-                    "threw": True,
-                    "transient": isinstance(error, TransientStateError),
-                    "message": str(error),
-                }
-            )
+            await _wait(ctx.state(STATE_DEFS["cart"]).set(msg))
+        except TransientStateError as error:
+            return {"message": str(error)}
+        return {"message": None}
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
-
-    assert obs["threw"] is True
-    assert obs["transient"] is True
+    obs = await observe(client, topic, cb)
     assert "cannot be stored in a JSON collection" in obs["message"]
 
 async def test_unregistered_name_is_permanent(state_client):
     client, topic, _ = state_client
 
-    async def cb(ctx, msg, results):
-        try:
-            ctx.state(value("never-registered-" + nonce()))
-            await results.send({"threw": False, "permanent": False})
-        except Exception as e:
-            await results.send(
-                {"threw": True, "permanent": isinstance(e, PermanentStateError)}
-            )
+    async def cb(ctx, _msg):
+        definition = value("never-registered-" + nonce())
+        return {"outcome": await outcome(lambda: ctx.state(definition))}
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
-
-    assert obs["threw"] is True
-    assert obs["permanent"] is True
+    assert (await observe(client, topic, cb))["outcome"] == "permanent"
 
 async def test_malformed_definition_at_vend_is_transient(state_client):
     client, topic, _ = state_client
@@ -62,27 +38,10 @@ async def test_malformed_definition_at_vend_is_transient(state_client):
         def to_config(self):
             return {"name": "x", "kind": "bogus", "payload": "json"}
 
-    async def cb(ctx, msg, results):
-        try:
-            ctx.state(BadDef())
-            await results.send({"threw": False})
-        except Exception as e:
-            await results.send(
-                {
-                    "threw": True,
-                    "transient": isinstance(e, TransientStateError),
-                    "permanent": isinstance(e, PermanentStateError),
-                }
-            )
+    async def cb(ctx, _msg):
+        return {"outcome": await outcome(lambda: ctx.state(BadDef()))}
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
-
-    assert obs["threw"] is True
-    assert obs["transient"] is True
-    assert obs["permanent"] is False
+    assert (await observe(client, topic, cb))["outcome"] == "transient"
 
 async def test_rethrown_permanent_state_error_no_retry(state_client):
     client, topic, _ = state_client
@@ -121,31 +80,20 @@ async def test_rethrown_transient_state_error_retries(state_client):
 async def test_deque_index_type_and_negative_index(state_client):
     client, topic, _ = state_client
 
-    async def cb(ctx, msg, results):
+    async def cb(ctx, _msg):
         d = ctx.state(STATE_DEFS["backlog"])
         await _wait(d.append("x"))
         # Fractional indices remain invalid. Negative indices follow Python's
-        # sequence convention.
-        frac = None
-        try:
-            await _wait(d.get(1.5))
-        except Exception as e:
-            frac = type(e).__name__
-        neg = await _wait(d.get(-1))
-        ok = await _wait(d.get(0))
-        # An index past the u32 range is past the end, like any other.
-        far = await _wait(d.get(2**32))
-        await results.send({"frac": frac, "neg": neg, "ok": ok, "far": far})
+        # sequence convention. An index past the u32 range is past the end.
+        return {
+            "frac": await outcome(lambda: d.get(1.5)),
+            "neg": await _wait(d.get(-1)),
+            "ok": await _wait(d.get(0)),
+            "far": await _wait(d.get(2**32)),
+        }
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
-
-    assert obs["frac"] == "TypeError"
-    assert obs["neg"] == "x"
-    assert obs["ok"] == "x"
-    assert obs["far"] is None
+    obs = await observe(client, topic, cb)
+    assert obs == {"frac": "TypeError", "neg": "x", "ok": "x", "far": None}
 
 # No test here registers one name with two kinds across two runs. Core retries
 # the identity check inside the partition and does not fail the vend, so a
@@ -157,28 +105,15 @@ async def test_null_write_surfaces_core_permanent_error(state_client):
     """Core rejects a JSON null write. The client maps it to PermanentStateError."""
     client, topic, _ = state_client
 
-    async def cb(ctx, msg, results):
+    async def cb(ctx, _msg):
         writes = {
             "value": lambda: ctx.state(STATE_DEFS["cart"]).set(None),
             "map": lambda: ctx.state(STATE_DEFS["totals"]).set("k", None),
             "deque": lambda: ctx.state(STATE_DEFS["backlog"]).append(None),
         }
-        outcome = {}
-        for kind, write in writes.items():
-            try:
-                await _wait(write())
-                outcome[kind] = "accepted"
-            except PermanentStateError:
-                outcome[kind] = "permanent"
-            except Exception as error:  # pragma: no cover - reported, not raised
-                outcome[kind] = f"{type(error).__name__}: {error}"
-        await results.send(outcome)
+        return {kind: await outcome(write) for kind, write in writes.items()}
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
-
+    obs = await observe(client, topic, cb)
     assert obs == {"value": "permanent", "map": "permanent", "deque": "permanent"}
 
 @pytest.mark.parametrize("bad", [object(), lambda: 1], ids=["object", "lambda"])
@@ -186,31 +121,13 @@ async def test_unrepresentable_write_rejects_transient(state_client, bad):
     client, topic, _ = state_client
     v = nonce()
 
-    async def cb(ctx, msg, results):
+    async def cb(ctx, _msg):
         c = ctx.state(STATE_DEFS["cart"])
-        try:
-            await _wait(c.set({"v": v}))
-            await _wait(c.commit())
-            try:
-                await _wait(c.set(bad))
-                outcome = {"threw": False}
-            except Exception as e:
-                outcome = {
-                    "threw": True,
-                    "transient": isinstance(e, TransientStateError),
-                    "permanent": isinstance(e, PermanentStateError),
-                }
-            await results.send({"outcome": outcome, "after": (await _wait(c.get()))["v"]})
-        except Exception as e:  # pragma: no cover
-            await results.send({"error": str(e)})
+        await _wait(c.set({"v": v}))
+        await _wait(c.commit())
+        rejected = await outcome(lambda: c.set(bad))
+        return {"outcome": rejected, "after": (await _wait(c.get()))["v"]}
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
-
-    assert obs.get("error") is None
-    assert obs["outcome"]["threw"] is True
-    assert obs["outcome"]["transient"] is True
-    assert obs["outcome"]["permanent"] is False
+    obs = await observe(client, topic, cb)
+    assert obs["outcome"] == "transient"
     assert obs["after"] == v  # the rejected write left the committed value intact

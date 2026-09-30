@@ -3,7 +3,7 @@
 from prosody import StateError, TransientStateError
 import pytest
 
-from support import STATE_DEFS, nonce, _wait, StateHandler
+from support import STATE_DEFS, nonce, _wait, StateHandler, observe
 
 
 async def test_commit_floor_survives_failed_attempt(state_client):
@@ -33,51 +33,37 @@ async def test_rollback_discards_uncommitted(state_client):
     a = nonce()
     b = nonce()
 
-    async def cb(ctx, msg, results):
+    async def cb(ctx, msg):
         c = ctx.state(STATE_DEFS["cart"])
-        try:
-            await _wait(c.set({"v": a}))
-            await _wait(c.commit())
-            await _wait(c.set({"v": b}))
-            before = await _wait(c.get())
-            await _wait(c.rollback())
-            after = await _wait(c.get())
-            await results.send({"before": before, "after": after})
-        except Exception as e:  # pragma: no cover
-            await results.send({"error": str(e)})
+        await _wait(c.set({"v": a}))
+        await _wait(c.commit())
+        await _wait(c.set({"v": b}))
+        before = await _wait(c.get())
+        await _wait(c.rollback())
+        after = await _wait(c.get())
+        return {"before": before, "after": after}
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
+    obs = await observe(client, topic, cb)
 
-    assert obs.get("error") is None
     assert obs["before"] == {"v": b}  # uncommitted overwrite visible before rollback
     assert obs["after"] == {"v": a}  # rollback reverts to the committed floor
 
 async def test_map_commit_floor_survives_rollback(state_client):
     client, topic, _ = state_client
 
-    async def cb(ctx, msg, results):
+    async def cb(ctx, msg):
         m = ctx.state(STATE_DEFS["totals"])
-        try:
-            await _wait(m.set("kept", 1))
-            await _wait(m.commit())
-            await _wait(m.set("kept", 2))
-            await _wait(m.set("dropped", 9))
-            before = {"kept": await _wait(m.get("kept")), "dropped": await _wait(m.get("dropped"))}
-            await _wait(m.rollback())
-            after = {"kept": await _wait(m.get("kept")), "dropped": await _wait(m.get("dropped"))}
-            await results.send({"before": before, "after": after})
-        except Exception as e:  # pragma: no cover
-            await results.send({"error": str(e)})
+        await _wait(m.set("kept", 1))
+        await _wait(m.commit())
+        await _wait(m.set("kept", 2))
+        await _wait(m.set("dropped", 9))
+        before = {"kept": await _wait(m.get("kept")), "dropped": await _wait(m.get("dropped"))}
+        await _wait(m.rollback())
+        after = {"kept": await _wait(m.get("kept")), "dropped": await _wait(m.get("dropped"))}
+        return {"before": before, "after": after}
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
+    obs = await observe(client, topic, cb)
 
-    assert obs.get("error") is None
     assert obs["before"] == {"kept": 2, "dropped": 9}
     assert obs["after"] == {"kept": 1, "dropped": None}
 

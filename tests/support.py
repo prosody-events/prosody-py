@@ -4,6 +4,7 @@ The fixtures that use these live in ``conftest.py``.
 """
 
 import asyncio
+import inspect
 from typing import List
 import uuid
 
@@ -22,6 +23,8 @@ from prosody import (
     message_value,
     message_map,
     message_deque,
+    PermanentStateError,
+    TransientStateError,
 )
 import tsasync
 
@@ -78,6 +81,24 @@ async def _collect(scan):
         out.append(item)
     return out
 
+async def outcome(operation):
+    """Run ``operation`` and name the error it raised.
+
+    Returns ``None`` when it succeeds, ``"transient"`` or ``"permanent"`` for a
+    state error, and the type name for any other error.
+    """
+    try:
+        result = operation()
+        if inspect.isawaitable(result):
+            await _wait(result)
+    except TransientStateError:
+        return "transient"
+    except PermanentStateError:
+        return "permanent"
+    except Exception as error:
+        return type(error).__name__
+    return None
+
 def _msg_fields(m):
     return {
         "topic": m.topic,
@@ -131,19 +152,41 @@ class StateHandler(EventHandler):
         if self.on_tmr is not None:
             await self.on_tmr(context, timer, self.results)
 
-async def _make_state_client(topic, group, client_factory):
-    return await client_factory(
-        bootstrap_servers=BOOTSTRAP,
-        source_system="test-state",
-        group_id=group,
-        subscribed_topics=topic,
-        probe_port=None,
-        cassandra_nodes=CASSANDRA_NODES,
-        cassandra_keyspace=CASSANDRA_KEYSPACE,
-        state_collections=STATE_COLLECTIONS,
+async def observe(client, topic, callback, key=None):
+    """Run ``callback(ctx, msg)`` in a handler for one message and return its
+    report. The test fails if the callback raises."""
+
+    async def cb(ctx, msg, results):
+        try:
+            await results.send(await callback(ctx, msg))
+        except Exception as e:  # pragma: no cover - reported, not raised
+            await results.send({"error": f"{type(e).__name__}: {e}"})
+
+    handler = StateHandler(cb)
+    await _wait(client.subscribe(handler))
+    await _wait(client.send(topic, key or nonce(), {"go": True}))
+    obs = await _wait(handler.results.receive())
+    assert obs.get("error") is None
+    return obs
+
+def state_config(topic, group, **overrides):
+    """The live keyed-state client options, with ``overrides`` applied."""
+    return {
+        "bootstrap_servers": BOOTSTRAP,
+        "source_system": "test-state",
+        "group_id": group,
+        "subscribed_topics": topic,
+        "probe_port": None,
+        "cassandra_nodes": CASSANDRA_NODES,
+        "cassandra_keyspace": CASSANDRA_KEYSPACE,
+        "state_collections": STATE_COLLECTIONS,
         # >= 2 so the async-bridging test can observe two keys interleaving.
-        max_concurrency=4,
-    )
+        "max_concurrency": 4,
+        **overrides,
+    }
+
+async def _make_state_client(topic, group, client_factory):
+    return await client_factory(**state_config(topic, group))
 
 
 class NativeScan:

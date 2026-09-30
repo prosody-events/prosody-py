@@ -20,50 +20,20 @@ from prosody import (
 )
 
 from support import (
-    BOOTSTRAP,
-    CASSANDRA_KEYSPACE,
-    CASSANDRA_NODES,
     STATE_DEFS,
     StateHandler,
     _collect,
     _wait,
     nonce,
+    observe,
+    state_config,
 )
-
-
-def _client_config(topic, group):
-    return dict(
-        bootstrap_servers=BOOTSTRAP,
-        source_system="test-state-query",
-        group_id=group,
-        subscribed_topics=topic,
-        probe_port=None,
-        cassandra_nodes=CASSANDRA_NODES,
-        cassandra_keyspace=CASSANDRA_KEYSPACE,
-    )
-
-
-async def _observe(client, topic, callback):
-    """Run ``callback`` in a handler for one message and return its report."""
-
-    async def cb(ctx, msg, results):
-        try:
-            await results.send(await callback(ctx))
-        except Exception as e:  # pragma: no cover - reported, not raised
-            await results.send({"error": f"{type(e).__name__}: {e}"})
-
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
-    assert obs.get("error") is None
-    return obs
 
 
 async def test_map_query_options_reach_core(state_client):
     client, topic, _ = state_client
 
-    async def scans(ctx):
+    async def scans(ctx, _msg):
         m = ctx.state(STATE_DEFS["totals"])
         empty_before = await _wait(m.is_empty())
         for number, key in enumerate(["a1", "a2", "a3", "b1", "b2"]):
@@ -101,7 +71,7 @@ async def test_map_query_options_reach_core(state_client):
             ),
         }
 
-    obs = await _observe(client, topic, scans)
+    obs = await observe(client, topic, scans)
     assert obs["empty_before"] is True
     assert obs["empty_after"] is False
     assert obs["contains_many"] == [True, False, True]
@@ -126,7 +96,7 @@ async def test_map_query_options_reach_core(state_client):
 async def test_set_operations_reach_core(state_client):
     client, topic, _ = state_client
 
-    async def operations(ctx):
+    async def operations(ctx, _msg):
         tags = ctx.state(STATE_DEFS["tags"])
         empty_before = await _wait(tags.is_empty())
         for member in ["red", "green", "blue", "gold"]:
@@ -149,7 +119,7 @@ async def test_set_operations_reach_core(state_client):
         report["empty_after_clear"] = await _wait(tags.is_empty())
         return report
 
-    obs = await _observe(client, topic, operations)
+    obs = await observe(client, topic, operations)
     assert obs["empty_before"] is True
     assert obs["contains"] is True
     assert obs["discarded"] is False
@@ -164,7 +134,7 @@ async def test_set_operations_reach_core(state_client):
 async def test_deque_position_options_reach_core(state_client):
     client, topic, _ = state_client
 
-    async def scans(ctx):
+    async def scans(ctx, _msg):
         d = ctx.state(STATE_DEFS["backlog"])
         for number in range(10):
             await _wait(d.append(number))
@@ -184,7 +154,7 @@ async def test_deque_position_options_reach_core(state_client):
             "empty": await values(range=range(5, 2)),
         }
 
-    obs = await _observe(client, topic, scans)
+    obs = await observe(client, topic, scans)
     assert obs["from_to"] == [2, 3, 4, 5]
     assert obs["after_before"] == [3, 4]
     assert obs["range"] == [2, 3, 4]
@@ -199,7 +169,7 @@ async def test_deque_position_options_reach_core(state_client):
 async def test_commit_and_rollback_report_store_outcomes(state_client):
     client, topic, _ = state_client
 
-    async def outcomes(ctx):
+    async def outcomes(ctx, _msg):
         report = {}
         writes = {
             "cart": lambda s: s.set({"v": 1}),
@@ -218,7 +188,7 @@ async def test_commit_and_rollback_report_store_outcomes(state_client):
             report[name] = [committed, idle_commit, rolled_back, idle_rollback]
         return report
 
-    obs = await _observe(client, topic, outcomes)
+    obs = await observe(client, topic, outcomes)
     expected = [
         StoreOutcome.APPLIED,
         StoreOutcome.NO_OP,
@@ -276,9 +246,9 @@ async def test_published_readers_accept_query_options(
     tags = set_definition("pub-tags", published=True, read_cache=False)
     backlog = deque_definition("pub-backlog", published=True, read_cache=False)
     client = await client_factory(
-        **_client_config(topic, group),
-        subsystem=subsystem,
-        state_collections=[totals, tags, backlog],
+        **state_config(
+            topic, group, subsystem=subsystem, state_collections=[totals, tags, backlog]
+        )
     )
 
     async def cb(ctx, msg, results):

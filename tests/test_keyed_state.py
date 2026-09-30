@@ -17,6 +17,7 @@ from support import (
     _wait,
     _collect,
     StateHandler,
+    observe,
 )
 
 
@@ -30,24 +31,17 @@ async def test_value_roundtrip_and_absent(state_client):
         "nested": {"z": [True, 2]},
     }
 
-    async def cb(ctx, msg, results):
+    async def cb(ctx, msg):
         c = ctx.state(STATE_DEFS["cart"])
-        try:
-            before = await _wait(c.get())  # never written -> None
-            await _wait(c.set(rich))
-            after = await _wait(c.get())  # read-your-writes
-            await _wait(c.clear())
-            cleared = await _wait(c.get())
-            await results.send({"before": before, "after": after, "cleared": cleared})
-        except Exception as e:  # pragma: no cover - reported, not raised
-            await results.send({"error": str(e)})
+        before = await _wait(c.get())  # never written -> None
+        await _wait(c.set(rich))
+        after = await _wait(c.get())  # read-your-writes
+        await _wait(c.clear())
+        cleared = await _wait(c.get())
+        return {"before": before, "after": after, "cleared": cleared}
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
+    obs = await observe(client, topic, cb)
 
-    assert obs.get("error") is None
     assert obs["before"] is None
     assert obs["after"] == rich  # nested null preserved through the serde bridge
     assert obs["cleared"] is None
@@ -56,36 +50,27 @@ async def test_map_set_remove_scan_order_getmany(state_client):
     client, topic, _ = state_client
     absent = nonce()
 
-    async def cb(ctx, msg, results):
+    async def cb(ctx, msg):
         m = ctx.state(STATE_DEFS["totals"])
-        try:
-            for k, v in {"k1": 1, "café": 9, "😀": 7, "k2": 5}.items():
-                await _wait(m.set(k, v))
-            await _wait(m.remove("k2"))
-            fwd = await _wait(_collect(m.items()))
-            bwd = await _wait(_collect(m.items(Direction.BACKWARD)))
-            await results.send(
-                {
-                    "fwd": fwd,
-                    "bwd": bwd,
-                    "k2": await _wait(m.get("k2")),
-                    "cafe": await _wait(m.get("café")),
-                    "emoji": await _wait(m.get("😀")),
-                    "many": await _wait(
-                        m.get_many(["k1", "absent", absent, "café", "k1"])
-                    ),
-                    "empty": await _wait(m.get_many([])),
-                }
-            )
-        except Exception as e:  # pragma: no cover
-            await results.send({"error": str(e)})
+        for k, v in {"k1": 1, "café": 9, "😀": 7, "k2": 5}.items():
+            await _wait(m.set(k, v))
+        await _wait(m.remove("k2"))
+        fwd = await _wait(_collect(m.items()))
+        bwd = await _wait(_collect(m.items(Direction.BACKWARD)))
+        return {
+            "fwd": fwd,
+            "bwd": bwd,
+            "k2": await _wait(m.get("k2")),
+            "cafe": await _wait(m.get("café")),
+            "emoji": await _wait(m.get("😀")),
+            "many": await _wait(
+                m.get_many(["k1", "absent", absent, "café", "k1"])
+            ),
+            "empty": await _wait(m.get_many([])),
+        }
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
+    obs = await observe(client, topic, cb)
 
-    assert obs.get("error") is None
     # removed key reads absent; unicode keys round-trip with their values.
     assert obs["k2"] is None
     assert obs["cafe"] == 9
@@ -171,35 +156,26 @@ async def test_map_contains_and_keys_cheap_paths(state_client):
     client, topic, _ = state_client
     absent = nonce()
 
-    async def cb(ctx, msg, results):
+    async def cb(ctx, msg):
         m = ctx.state(STATE_DEFS["totals"])
-        try:
-            for k, v in {"k1": 1, "café": 9, "k2": 5}.items():
-                await _wait(m.set(k, v))
-            await _wait(m.remove("k2"))
-            await _wait(m.set("k3", 0))  # a falsy value is still present
-            await results.send(
-                {
-                    # read-your-writes presence: set -> True, removed -> False,
-                    # never-written -> False, falsy-but-present -> True.
-                    "present": await _wait(m.contains("k1")),
-                    "removed": await _wait(m.contains("k2")),
-                    "never": await _wait(m.contains(absent)),
-                    "falsy": await _wait(m.contains("k3")),
-                    # the cheap key-only scan, both directions.
-                    "fwd_keys": await _wait(_collect(m.keys())),
-                    "bwd_keys": await _wait(_collect(m.keys(Direction.BACKWARD))),
-                }
-            )
-        except Exception as e:  # pragma: no cover
-            await results.send({"error": str(e)})
+        for k, v in {"k1": 1, "café": 9, "k2": 5}.items():
+            await _wait(m.set(k, v))
+        await _wait(m.remove("k2"))
+        await _wait(m.set("k3", 0))  # a falsy value is still present
+        return {
+            # read-your-writes presence: set -> True, removed -> False,
+            # never-written -> False, falsy-but-present -> True.
+            "present": await _wait(m.contains("k1")),
+            "removed": await _wait(m.contains("k2")),
+            "never": await _wait(m.contains(absent)),
+            "falsy": await _wait(m.contains("k3")),
+            # the cheap key-only scan, both directions.
+            "fwd_keys": await _wait(_collect(m.keys())),
+            "bwd_keys": await _wait(_collect(m.keys(Direction.BACKWARD))),
+        }
 
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
+    obs = await observe(client, topic, cb)
 
-    assert obs.get("error") is None
     assert obs["present"] is True
     assert obs["removed"] is False
     assert obs["never"] is False
