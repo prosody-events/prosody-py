@@ -14,12 +14,10 @@ from prosody import (
     ProsodyClient,
     deque,
     map,
-    message_deque,
-    message_map,
-    message_value,
     set as set_definition,
     value,
 )
+from support import STATE_COLLECTIONS
 
 
 BASE = dict(
@@ -30,36 +28,18 @@ BASE = dict(
     mock=True,
 )
 
+NOT_WHOLE = (2.5, 5.0, float("nan"), float("inf"))
 
-def make_client(**overrides):
-    return ProsodyClient.create(**BASE, **overrides)
+SIZE_FIELDS = ("state_owned_cache_size", "state_memtable_size", "state_read_cache_size")
 
-
-@pytest.mark.parametrize("state_owned_cache_size", ["0", "-1 MiB", "nonsense"])
-async def test_invalid_state_owned_cache_size_is_rejected(state_owned_cache_size):
-    with pytest.raises(ValueError, match="state_owned_cache_size"):
-        await make_client(state_owned_cache_size=state_owned_cache_size)
-
-
-@pytest.mark.parametrize("state_memtable_size", ["0", "-1 MiB", "nonsense"])
-async def test_invalid_state_memtable_size_is_rejected(state_memtable_size):
-    with pytest.raises(ValueError, match="state_memtable_size"):
-        await make_client(state_memtable_size=state_memtable_size)
-
-
-@pytest.mark.parametrize("state_read_cache_size", ["0", "-1 MiB", "nonsense"])
-async def test_invalid_state_read_cache_size_is_rejected(state_read_cache_size):
-    with pytest.raises(ValueError, match="state_read_cache_size"):
-        await make_client(state_read_cache_size=state_read_cache_size)
-
-
-@pytest.mark.parametrize("read_cache", [True, -1, "soon"])
-async def test_invalid_read_cache_is_rejected(read_cache, client_factory):
-    with pytest.raises(ValueError, match="state_read_cache"):
-        await make_client(state_read_cache=read_cache)
-    client = await client_factory(**BASE)
-    with pytest.raises(ValueError, match="read_cache"):
-        await client.state("owner", value("v", read_cache=read_cache))
+PAYLOAD_MISMATCHES = [
+    ("value", "bogus", "expected"),
+    ("set", "presence", "expected"),
+    ("set", "json", "a set collection takes no payload"),
+    ("set", "message", "a set collection takes no payload"),
+    ("value", None, "missing"),
+    ("map", None, "missing"),
+]
 
 
 class RawDef:
@@ -73,129 +53,70 @@ class RawDef:
         return self._cfg
 
 
-def raw(
-    name="v",
-    kind="value",
-    payload="json",
-    ttl_seconds=None,
-    read_uncommitted=None,
-    keyset_limit=None,
-    capacity=None,
-):
-    return RawDef(
-        {
-            "name": name,
-            "kind": kind,
-            "payload": payload,
-            "ttl_seconds": ttl_seconds,
-            "read_uncommitted": read_uncommitted,
-            "keyset_limit": keyset_limit,
-            "capacity": capacity,
-        }
-    )
+def raw(name="v", kind="value", payload="json", **options):
+    return RawDef({"name": name, "kind": kind, "payload": payload, **options})
 
 
-STATE_COLLECTIONS = [
-    value("cart", ttl=timedelta(days=30)),
-    map("totals", keyset_limit=256),
-    set_definition("tags", keyset_limit=64),
-    deque("backlog"),
-    message_value("last-msg"),
-    message_map("msg-index"),
-    message_deque("msg-log"),
+def collections(*definitions):
+    return {"state_collections": list(definitions)}
+
+
+def make_client(**overrides):
+    return ProsodyClient.create(**BASE, **overrides)
+
+
+REJECTIONS = [
+    *(({field: size}, field) for field in SIZE_FIELDS for size in ("-1 MiB", "nonsense")),
+    (collections(value("v", ttl=-1)), "ttl_seconds: must be a whole number"),
+    *(
+        (collections(raw(ttl_seconds=ttl)), "ttl_seconds: must be a whole number")
+        for ttl in NOT_WHOLE
+    ),
+    *(
+        (
+            collections(map("m", keyset_limit=limit)),
+            "keyset_limit: must be a non-negative whole number",
+        )
+        for limit in (*NOT_WHOLE, -1)
+    ),
+    (collections(raw(keyset_limit=5)), "keyset_limit: only valid for map and set"),
+    *(
+        (collections(deque("d", capacity=size)), "capacity: must be a positive whole number")
+        for size in (*NOT_WHOLE, 0, -1)
+    ),
+    (collections(raw(capacity=5)), "capacity: only valid for deque"),
+    (collections(raw(kind="bogus")), "kind: expected"),
+    *(
+        (collections(raw(kind=kind, payload=payload)), f"payload: {error}")
+        for kind, payload, error in PAYLOAD_MISMATCHES
+    ),
 ]
 
 
-# --- ttl rules ------------------------------------------------------------
+@pytest.mark.parametrize(("options", "match"), REJECTIONS)
+async def test_invalid_option_is_rejected(options, match):
+    with pytest.raises(ValueError, match=match):
+        await make_client(**options)
 
 
-async def test_rejects_ttl_negative():
-    with pytest.raises(ValueError, match=r"ttl_seconds: must be a whole number"):
-        await make_client(state_collections=[value("v", ttl=-1)])
-
-
-@pytest.mark.parametrize("ttl_seconds", [2.5, 5.0, float("nan"), float("inf")])
-async def test_rejects_ttl_fractional_or_nonfinite(ttl_seconds):
-    with pytest.raises(ValueError, match=r"ttl_seconds: must be a whole number"):
-        await make_client(state_collections=[raw(ttl_seconds=ttl_seconds)])
-
-
-# --- keyset_limit rules ---------------------------------------------------
-
-
-@pytest.mark.parametrize("keyset_limit", [2.5, 5.0, -1, float("nan"), float("inf")])
-async def test_rejects_keyset_non_whole(keyset_limit):
-    with pytest.raises(ValueError, match=r"keyset_limit: must be a non-negative whole number"):
-        await make_client(state_collections=[map("m", keyset_limit=keyset_limit)])
-
-
-async def test_accepts_keyset_zero(client_factory):
-    # 0 disables ordered-scan tracking and is a valid whole number.
-    await client_factory(**BASE, state_collections=[map("m", keyset_limit=0)])
-
-
-async def test_rejects_keyset_on_non_map():
-    # The value() helper has no keyset param, so a raw stub carries it onto a
-    # value collection to reach the map and set guard.
-    with pytest.raises(ValueError, match=r"keyset_limit: only valid for map and set"):
-        await make_client(state_collections=[raw(kind="value", keyset_limit=5)])
-
-
-# --- capacity rules (deque-only) ------------------------------------------
-
-
-async def test_accepts_deque_capacity(client_factory):
-    await client_factory(**BASE, state_collections=[deque("d", capacity=100)])
-
-
-async def test_rejects_capacity_zero():
-    with pytest.raises(ValueError, match=r"capacity: must be a positive whole number"):
-        await make_client(state_collections=[deque("d", capacity=0)])
-
-
-@pytest.mark.parametrize("capacity", [2.5, 5.0, -1, float("nan"), float("inf")])
-async def test_rejects_capacity_non_whole(capacity):
-    # The deque() helper passes capacity through unchanged, so it reaches the
-    # Rust integer conversion directly.
-    with pytest.raises(ValueError, match=r"capacity: must be a positive whole number"):
-        await make_client(state_collections=[deque("d", capacity=capacity)])
-
-
-async def test_rejects_capacity_on_non_deque():
-    with pytest.raises(ValueError, match=r"capacity: only valid for deque"):
-        await make_client(state_collections=[raw(kind="value", capacity=5)])
-
-
-# --- kind / payload tokens ------------------------------------------------
-
-
-async def test_rejects_unknown_kind():
-    with pytest.raises(ValueError, match=r"kind: expected"):
-        await make_client(state_collections=[raw(kind="bogus")])
-
-
-@pytest.mark.parametrize(("kind", "payload"), [("value", "bogus"), ("set", "presence")])
-async def test_rejects_unknown_payload(kind, payload):
-    with pytest.raises(ValueError, match=r"payload: expected"):
-        await make_client(state_collections=[raw(kind=kind, payload=payload)])
+@pytest.mark.parametrize("read_cache", [True, -1, "soon"])
+async def test_invalid_read_cache_is_rejected(read_cache, client_factory):
+    with pytest.raises(ValueError, match="state_read_cache"):
+        await make_client(state_read_cache=read_cache)
+    client = await client_factory(**BASE)
+    with pytest.raises(ValueError, match="read_cache"):
+        await client.state("owner", value("v", read_cache=read_cache))
 
 
 @pytest.mark.parametrize(
-    ("kind", "payload", "error"),
+    "definitions",
     [
-        ("set", "json", "a set collection takes no payload"),
-        ("set", "message", "a set collection takes no payload"),
-        ("value", None, "missing"),
-        ("map", None, "missing"),
+        STATE_COLLECTIONS,
+        # 0 disables ordered-scan tracking and is a valid whole number.
+        [map("m", keyset_limit=0), set_definition("s", keyset_limit=64)],
+        [deque("d", capacity=100)],
+        [value("v", ttl=timedelta(days=30))],
     ],
 )
-async def test_rejects_payload_that_does_not_fit_the_kind(kind, payload, error):
-    with pytest.raises(ValueError, match=rf"payload: {error}"):
-        await make_client(state_collections=[raw(kind=kind, payload=payload)])
-
-
-# --- happy path -----------------------------------------------------------
-
-
-async def test_accepts_canonical_collection_set(client_factory):
-    await client_factory(**BASE, state_collections=STATE_COLLECTIONS)
+async def test_valid_collections_are_accepted(definitions, client_factory):
+    await client_factory(**BASE, state_collections=definitions)
