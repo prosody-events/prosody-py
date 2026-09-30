@@ -117,64 +117,35 @@ async def test_idempotence_cache_size_sizes_the_producer_cache(client_factory):
         await asyncio.wait_for(admin.delete_topic(topic), DEFAULT_TIMEOUT)
 
 
-async def test_client_configuration(random_topic_and_group, client_factory):
-
-    topic, group = random_topic_and_group
+@pytest.mark.parametrize(
+    "options",
+    [
+        dict(
+            bootstrap_servers=["localhost:9092", "localhost:9093"],
+            max_uncommitted=1000,
+            poll_interval=0.1,
+            commit_interval=5.0,
+            mode="low-latency",
+            retry_base=2,
+            max_retries=5,
+            failure_topic="failed-messages",
+            probe_port=None,
+            cassandra_nodes=["localhost:9042", "localhost:9043"],
+        ),
+        dict(idempotence_version="2", idempotence_ttl=timedelta(days=7)),
+        dict(idempotence_ttl=604800.0),
+        dict(message_spans="child", timer_spans="follows_from"),
+    ],
+)
+async def test_mock_client_accepts_options(options, client_factory):
     client = await client_factory(
-        bootstrap_servers=["localhost:9092", "localhost:9093"],
-        source_system="test-send",
-        group_id=group,
-        subscribed_topics=[topic],
-        max_uncommitted=1000,
-        poll_interval=0.1,
-        commit_interval=5.0,
-        mode="low-latency",
-        retry_base=2,
-        max_retries=5,
-        failure_topic="failed-messages",
-        probe_port=None,
-        cassandra_nodes=["localhost:9042", "localhost:9043"],
-        mock=True,
-    )
-    assert isinstance(client, ProsodyClient)
-
-async def test_deduplication_configuration(random_topic_and_group, client_factory):
-    topic, group = random_topic_and_group
-
-    # idempotence_version and idempotence_ttl as timedelta
-    client = await client_factory(
-        bootstrap_servers="localhost:9092",
-        source_system="test-dedup",
-        group_id=group,
-        subscribed_topics=[topic],
-        idempotence_version="2",
-        idempotence_ttl=timedelta(days=7),
-        mock=True,
-    )
-    assert isinstance(client, ProsodyClient)
-
-    # idempotence_ttl as float seconds
-    client = await client_factory(
-        bootstrap_servers="localhost:9092",
-        source_system="test-dedup",
-        group_id=group,
-        subscribed_topics=[topic],
-        idempotence_ttl=604800.0,
-        mock=True,
-    )
-    assert isinstance(client, ProsodyClient)
-
-async def test_span_configuration(random_topic_and_group, client_factory):
-    topic, group = random_topic_and_group
-
-    # valid message_spans and timer_spans
-    client = await client_factory(
-        bootstrap_servers="localhost:9092",
-        source_system="test-spans",
-        group_id=group,
-        subscribed_topics=[topic],
-        message_spans="child",
-        timer_spans="follows_from",
-        mock=True,
+        **{
+            "bootstrap_servers": "localhost:9092",
+            "source_system": "test-options",
+            "group_id": f"test-group-{uuid.uuid4().hex}",
+            "subscribed_topics": "options",
+            "mock": True,
+            **options,
+        }
     )
     assert isinstance(client, ProsodyClient)
