@@ -87,7 +87,19 @@ class ProsodyClient(_ProsodyClientApi):
         self,
         subsystem: str,
         definition: ValueDefinition[T],
-    ) -> PublishedValue[T]: ...
+    ) -> PublishedValue[T]:
+        """Open a read-only view of a collection that ``subsystem`` publishes.
+
+        Pass the JSON value, map, set, or deque definition that the owner
+        registered with ``published=True``. The reader uses the definition's
+        ``read_cache``.
+
+        Raises:
+            RuntimeError: If the reader cannot open, such as for an unknown
+                subsystem.
+            TypeError: If ``definition`` is a message collection definition.
+        """
+        ...
     @overload
     async def state(
         self,

@@ -1,10 +1,10 @@
 """Type stubs for keyed-state collection definitions.
 
-The type parameter of every definition (``T`` / ``V`` / ``P``) is a
-**structural JSON annotation** — TypedDict-oriented. Payloads cross the
-boundary as plain JSON with no model construction or validation, so
-``dataclass`` / Pydantic types are **not** valid type arguments. Map keys and
-set members are always ``str``.
+The type parameter of every definition (``T``, ``V``, or ``P``) describes a
+JSON shape, such as a ``TypedDict``. Values cross the boundary as plain JSON.
+Prosody does not build or validate a model, so a ``dataclass`` or a Pydantic
+model is not a valid type argument. Map keys and set members are always
+``str``.
 """
 
 from datetime import timedelta
@@ -237,9 +237,7 @@ def value(
 ) -> ValueDefinition[T]:
     """Define a single-value JSON collection (vends :class:`ValueState` ``[T]``).
 
-    ``T`` is a structural JSON annotation only — no runtime validation happens,
-    so ``dataclass`` / Pydantic types are not valid arguments (adapter hook is
-    future work).
+    ``T`` describes a JSON shape only. Prosody does not validate the value.
     """
     ...
 

@@ -223,16 +223,8 @@ def _identity(item: X) -> X:
 class _StateScan(Generic[Y]):
     """Async iterator over a native scan cursor, applying a per-flavour transform.
 
-    The native cursor already handles retained-chunk flattening, serialization,
-    and ``StopAsyncIteration`` at exhaustion, so this is a thin adapter: each
-    ``__anext__`` awaits the native pull and reshapes the item (map entries to
-    keys/values/pairs; deque items pass through).
-
-    Iterating with ``async for`` and then ``break`` does NOT call ``aclose()``.
-    That is harmless by construction — no store permit is held between pulls
-    and native ``Drop`` closes it on GC. Owned cursors are attempt-fenced;
-    published cursors follow their standalone reader. For deterministic early
-    close use ``contextlib.aclosing(...)``.
+    Each ``__anext__`` awaits the native pull and applies ``transform`` to the
+    item. The stub documents the iteration contract.
     """
 
     def __init__(self, native: Any, transform: Callable[[Any], Y]) -> None:

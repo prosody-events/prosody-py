@@ -42,18 +42,13 @@ class _PositionQuery:
 class _StateScan(Generic[_Y]):
     """Async iterator over a native scan cursor.
 
-    Every scan method and every ``__aiter__`` returns one. The native cursor
-    owns retained-chunk flattening, serialization, and ``StopAsyncIteration``
-    at exhaustion; this adapter only reshapes each item.
+    Every scan method and every ``__aiter__`` returns one. Drive it with
+    ``async for``.
 
-    Drive it with ``async for``. Exiting the loop early with a bare ``break``
-    does **not** call :meth:`aclose` — that is harmless by construction (no store
-    permit is held between pulls, the cursor is attempt-epoch fenced, and native
-    ``Drop`` closes it on GC). For a deterministic early close wrap it in
-    ``contextlib.aclosing(...)``.
-
-    The generic parameter restores the yielded type even though the runtime
-    class is one non-generic adapter.
+    A ``break`` out of the loop does not call :meth:`aclose`. This is safe:
+    the cursor holds no store permit between pulls, it stops working when the
+    handler attempt ends, and garbage collection closes it. To close it at a
+    known point, wrap it in ``contextlib.aclosing(...)``.
     """
 
     def __aiter__(self) -> "_StateScan[_Y]": ...

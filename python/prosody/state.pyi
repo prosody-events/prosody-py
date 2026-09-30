@@ -122,12 +122,12 @@ class MapState(Generic[V]):
         """
         ...
     async def contains(self, key: str) -> bool:
-        """Report whether a stored cell exists for ``key`` (read-your-writes).
+        """Report whether ``key`` has an entry, including buffered writes.
 
-        The cheap presence check — no value decode, no resolver — so a
-        message-backed map answers ``True`` even for a key whose Kafka message
-        can no longer be fetched. Not zero-I/O: a cache miss still reads
-        Cassandra. Not ``__contains__`` — Python's ``in`` cannot ``await``.
+        This check does not decode the value. A message map reports ``True``
+        even when Prosody can no longer fetch the Kafka message. A cache miss
+        still reads Cassandra. Python's ``in`` cannot ``await``, so this is
+        not ``__contains__``.
         """
         ...
     async def get_many(self, keys: List[str]) -> List[Optional[V]]:
@@ -195,12 +195,12 @@ class MapState(Generic[V]):
         range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[str]:
-        """Async iterator over the keys in key order — the cheap key-only scan.
+        """Async iterator over the keys in key order.
 
-        Never decodes a value or runs the resolver, so a message-backed map
-        enumerates keys with **zero Kafka fetches**. Not zero-I/O: pulling a
-        chunk still does a presence-only read. When you also need the values,
-        iterate :meth:`items`; for a known set of keys, call :meth:`get_many`.
+        The scan does not decode values, so a message map lists its keys
+        without Kafka fetches. Each pull still reads which keys exist. To also
+        read the values, iterate :meth:`items`. For a known list of keys, call
+        :meth:`get_many`.
 
         ``prefix`` keeps keys that start with it. ``from_`` and ``after`` start
         at or after a key. ``to`` and ``before`` stop at or before a key. These
@@ -209,9 +209,9 @@ class MapState(Generic[V]):
         It is an ascending half-open span that applies in either direction. A
         ``None`` bound leaves that end open. ``limit`` caps the number of keys.
         Options narrow the scan and never widen it. To page, pass the last key
-        of a page as ``after``. A wrong type raises ``TypeError``. Both ``from_`` and ``after``, both
-        ``to`` and ``before``, a ``range`` with a step, or a ``limit`` below 1
-        raise ``ValueError``.
+        of a page as ``after``. A wrong type raises ``TypeError``. Both
+        ``from_`` and ``after``, both ``to`` and ``before``, a ``range`` with a
+        step, or a ``limit`` below 1 raise ``ValueError``.
         """
         ...
     def values(
@@ -228,17 +228,15 @@ class MapState(Generic[V]):
     ) -> _StateScan[V]:
         """Async iterator over the values in key order.
 
-        A projection of the full ``(key, value)`` scan that drops the keys.
-        Value iteration inherently decodes and resolves, so it is not the cheap
-        path :meth:`keys` is; it costs the same as :meth:`items`. The query
-        options match :meth:`keys`.
+        The scan decodes each value, so it costs the same as :meth:`items`.
+        The query options match :meth:`keys`.
         """
         ...
     def __aiter__(self) -> _StateScan[str]:
         """Forward iteration over the **keys**, like ``dict``.
 
-        Use :meth:`items` when you need the values — one batched, fully-resolving
-        scan — rather than per-key :meth:`get` after key iteration.
+        To read the values too, iterate :meth:`items`. Do not call :meth:`get`
+        for each key: that makes one read for each key.
         """
         ...
     async def commit(self) -> StoreOutcome:
@@ -350,16 +348,16 @@ class DequeState(Generic[T]):
     async def peek(self) -> Optional[T]:
         """Read the back element without removing it, or ``None`` when empty.
 
-        Pairs with :meth:`pop`. An endpoint-*slot* read — ``get(size - 1)`` minus
-        the length round trip. Under a TTL an expired back slot yields ``None``
-        even when live interior elements exist; a peek never searches inward.
+        This reads the back position only and does not read the length. With a
+        TTL, the back element can expire while elements before it stay live.
+        The peek then returns ``None``. It does not search for a live element.
         """
         ...
     async def peekleft(self) -> Optional[T]:
         """Read the front element without removing it, or ``None`` when empty.
 
-        Pairs with :meth:`popleft`; the front-endpoint counterpart of
-        :meth:`peek` (``get(0)`` minus the length round trip).
+        This reads the front position only, with the same TTL behavior as
+        :meth:`peek`.
         """
         ...
     async def get(self, index: int) -> Optional[T]:
