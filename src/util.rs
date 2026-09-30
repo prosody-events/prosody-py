@@ -74,6 +74,27 @@ pub fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
     ))
 }
 
+/// Decodes an optional Python object into an optional Rust `Duration`.
+///
+/// # Arguments
+///
+/// * `value` - An optional Python object representing a duration.
+///
+/// # Returns
+///
+/// A `PyResult` containing an `Option<Duration>`.
+///
+/// # Errors
+///
+/// Propagates errors from `decode_duration`.
+pub fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> {
+    Ok(if value.is_none() {
+        None
+    } else {
+        Some(decode_duration(value)?)
+    })
+}
+
 /// Reads the option `key` from a keyword-argument dict.
 ///
 /// A missing key and an explicit `None` both read as "not set", so the core
