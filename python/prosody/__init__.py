@@ -61,7 +61,10 @@ from prosody.timer import Timer
 
 
 class ProsodyClient:
-    """Prosody client with typed published-state composition."""
+    """A Kafka client. Create one with ``await ProsodyClient.create(...)``.
+
+    Use it as an async context manager to shut it down when the block exits.
+    """
 
     def __init__(self):
         raise TypeError("Use await ProsodyClient.create(**configuration)")
@@ -83,11 +86,21 @@ class ProsodyClient:
         return self
 
     async def __aexit__(self, exc_type, exc, traceback):
-        """Shut down all client services when the ``async with`` block exits."""
+        """Call :meth:`shutdown`."""
         await self.shutdown()
 
     async def state(self, subsystem, definition):
-        """Open a read-only view of a published JSON or set collection."""
+        """Open a read-only view of a collection that ``subsystem`` publishes.
+
+        Pass the JSON value, map, set, or deque definition that the owner
+        registered with ``published=True``. The reader uses the definition's
+        ``read_cache``.
+
+        Raises:
+            RuntimeError: If the reader cannot open, such as for an unknown
+                subsystem.
+            TypeError: If ``definition`` is a message collection definition.
+        """
         reader = _READERS.get(type(definition))
         if reader is None:
             raise TypeError(

@@ -220,10 +220,16 @@ def _identity(item: X) -> X:
 
 
 class _StateScan(Generic[Y]):
-    """Async iterator over a native scan cursor, applying a per-flavour transform.
+    """Async iterator over a native scan cursor.
 
-    Each ``__anext__`` awaits the native pull and applies ``transform`` to the
-    item. The stub documents the iteration contract.
+    Every scan method and every ``__aiter__`` returns one. Drive it with
+    ``async for``. Each ``__anext__`` awaits the native pull and applies
+    ``transform`` to the item.
+
+    A ``break`` out of the loop does not call :meth:`aclose`. This is safe:
+    the cursor holds no store permit between pulls, it stops working when the
+    handler attempt ends, and garbage collection closes it. To close it at a
+    known point, wrap it in ``contextlib.aclosing(...)``.
     """
 
     def __init__(self, native: Any, transform: Callable[[Any], Y]) -> None:
@@ -239,4 +245,5 @@ class _StateScan(Generic[Y]):
         return self._transform(await self._native.__anext__())
 
     async def aclose(self) -> None:
+        """Close the underlying native cursor (idempotent)."""
         await self._native.aclose()

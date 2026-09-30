@@ -1,12 +1,3 @@
-"""Type stubs for keyed-state collection definitions.
-
-The type parameter of every definition (``T``, ``V``, or ``P``) describes a
-JSON shape, such as a ``TypedDict``. Values cross the boundary as plain JSON.
-Prosody does not build or validate a model, so a ``dataclass`` or a Pydantic
-model is not a valid type argument. Map keys and set members are always
-``str``.
-"""
-
 from datetime import timedelta
 from typing import Final, Generic, Optional, Union
 
@@ -33,13 +24,7 @@ class _StateConfig(TypedDict):
     capacity: Optional[int]
 
 
-
 class ValueDefinition(Generic[D_co]):
-    """A single-value JSON collection definition.
-
-    ``kind = "value"``, ``payload = "json"``. Vends :class:`ValueState` ``[T]``.
-    """
-
     name: Final[str]
     ttl: Final[Optional[Union[timedelta, int]]]
     read_uncommitted: Final[Optional[bool]]
@@ -56,18 +41,10 @@ class ValueDefinition(Generic[D_co]):
         published: Optional[bool] = ...,
         read_cache: ReadCache = ...,
     ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
+    def to_config(self) -> _StateConfig: ...
 
 
 class MapDefinition(Generic[D_co]):
-    """An ordered-map JSON collection definition (string keys).
-
-    ``kind = "map"``, ``payload = "json"``. Vends :class:`MapState` ``[V]``.
-    ``keyset_limit`` bounds ordered-scan tracking.
-    """
-
     name: Final[str]
     ttl: Final[Optional[Union[timedelta, int]]]
     read_uncommitted: Final[Optional[bool]]
@@ -86,18 +63,10 @@ class MapDefinition(Generic[D_co]):
         read_cache: ReadCache = ...,
         keyset_limit: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
+    def to_config(self) -> _StateConfig: ...
 
 
 class SetDefinition:
-    """A presence-only ordered set of string members.
-
-    ``kind = "set"`` with no payload. Vends :class:`SetState`.
-    ``keyset_limit`` bounds ordered-scan tracking, as on a map.
-    """
-
     name: Final[str]
     ttl: Final[Optional[Union[timedelta, int]]]
     read_uncommitted: Final[Optional[bool]]
@@ -116,18 +85,10 @@ class SetDefinition:
         read_cache: ReadCache = ...,
         keyset_limit: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
+    def to_config(self) -> _StateConfig: ...
 
 
 class DequeDefinition(Generic[D_co]):
-    """A double-ended-queue JSON collection definition.
-
-    ``kind = "deque"``, ``payload = "json"``. Vends :class:`DequeState` ``[T]``.
-    ``capacity`` is deque-only.
-    """
-
     name: Final[str]
     ttl: Final[Optional[Union[timedelta, int]]]
     read_uncommitted: Final[Optional[bool]]
@@ -146,18 +107,10 @@ class DequeDefinition(Generic[D_co]):
         read_cache: ReadCache = ...,
         capacity: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
+    def to_config(self) -> _StateConfig: ...
 
 
 class MessageValueDefinition(Generic[D_co]):
-    """A single-value collection storing whole Kafka messages.
-
-    ``kind = "value"``, ``payload = "message"``. Vends
-    :class:`ValueState` ``[Message[P]]``.
-    """
-
     name: Final[str]
     ttl: Final[Optional[Union[timedelta, int]]]
     read_uncommitted: Final[Optional[bool]]
@@ -170,18 +123,10 @@ class MessageValueDefinition(Generic[D_co]):
         ttl: Optional[Union[timedelta, int]] = ...,
         read_uncommitted: Optional[bool] = ...,
     ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
+    def to_config(self) -> _StateConfig: ...
 
 
 class MessageMapDefinition(Generic[D_co]):
-    """An ordered-map collection storing whole Kafka messages.
-
-    ``kind = "map"``, ``payload = "message"``. Vends
-    :class:`MapState` ``[Message[P]]``. ``keyset_limit`` bounds ordered-scan tracking.
-    """
-
     name: Final[str]
     ttl: Final[Optional[Union[timedelta, int]]]
     read_uncommitted: Final[Optional[bool]]
@@ -196,18 +141,10 @@ class MessageMapDefinition(Generic[D_co]):
         read_uncommitted: Optional[bool] = ...,
         keyset_limit: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
+    def to_config(self) -> _StateConfig: ...
 
 
 class MessageDequeDefinition(Generic[D_co]):
-    """A double-ended-queue collection storing whole Kafka messages.
-
-    ``kind = "deque"``, ``payload = "message"``. Vends
-    :class:`DequeState` ``[Message[P]]``. ``capacity`` is deque-only.
-    """
-
     name: Final[str]
     ttl: Final[Optional[Union[timedelta, int]]]
     read_uncommitted: Final[Optional[bool]]
@@ -222,9 +159,7 @@ class MessageDequeDefinition(Generic[D_co]):
         read_uncommitted: Optional[bool] = ...,
         capacity: Optional[int] = ...,
     ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
+    def to_config(self) -> _StateConfig: ...
 
 
 def value(
@@ -234,12 +169,7 @@ def value(
     read_uncommitted: Optional[bool] = ...,
     published: Optional[bool] = ...,
     read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
-) -> ValueDefinition[T]:
-    """Define a single-value JSON collection (vends :class:`ValueState` ``[T]``).
-
-    ``T`` describes a JSON shape only. Prosody does not validate the value.
-    """
-    ...
+) -> ValueDefinition[T]: ...
 
 
 def map(
@@ -250,13 +180,7 @@ def map(
     published: Optional[bool] = ...,
     read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
     keyset_limit: Optional[int] = ...,
-) -> MapDefinition[V]:
-    """Define an ordered-map JSON collection (vends :class:`MapState` ``[V]``).
-
-    Map keys are always ``str``; ``keyset_limit`` bounds ordered-scan tracking.
-    ``V`` is a structural JSON annotation only (no runtime validation).
-    """
-    ...
+) -> MapDefinition[V]: ...
 
 
 def set(
@@ -267,12 +191,7 @@ def set(
     published: Optional[bool] = ...,
     read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
     keyset_limit: Optional[int] = ...,
-) -> SetDefinition:
-    """Define a presence-only ordered set of string members.
-
-    Vends :class:`SetState`. ``keyset_limit`` bounds ordered-scan tracking.
-    """
-    ...
+) -> SetDefinition: ...
 
 
 def deque(
@@ -283,14 +202,7 @@ def deque(
     published: Optional[bool] = ...,
     read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
     capacity: Optional[int] = ...,
-) -> DequeDefinition[T]:
-    """Define a double-ended-queue JSON collection (vends :class:`DequeState` ``[T]``).
-
-    ``capacity`` caps the deque at N slots, enforced lazily on push; runtime-only
-    and freely changed across deploys. ``T`` is a structural JSON annotation only
-    (no runtime validation).
-    """
-    ...
+) -> DequeDefinition[T]: ...
 
 
 def message_value(
@@ -298,15 +210,7 @@ def message_value(
     *,
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
-) -> MessageValueDefinition[P]:
-    """Define a single-value collection of whole Kafka messages.
-
-    Vends :class:`ValueState` ``[Message[P]]``. ``P`` annotates the message
-    payload structurally only (no runtime validation).
-
-    Only a message prosody delivered can be stored; see :class:`Message`.
-    """
-    ...
+) -> MessageValueDefinition[P]: ...
 
 
 def message_map(
@@ -315,15 +219,7 @@ def message_map(
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
     keyset_limit: Optional[int] = ...,
-) -> MessageMapDefinition[P]:
-    """Define an ordered-map collection of whole Kafka messages (string keys).
-
-    Vends :class:`MapState` ``[Message[P]]``. ``P`` annotates the message
-    payload structurally only (no runtime validation).
-
-    Only a message prosody delivered can be stored; see :class:`Message`.
-    """
-    ...
+) -> MessageMapDefinition[P]: ...
 
 
 def message_deque(
@@ -332,14 +228,4 @@ def message_deque(
     ttl: Optional[Union[timedelta, int]] = ...,
     read_uncommitted: Optional[bool] = ...,
     capacity: Optional[int] = ...,
-) -> MessageDequeDefinition[P]:
-    """Define a double-ended-queue collection of whole Kafka messages.
-
-    Vends :class:`DequeState` ``[Message[P]]``. ``capacity`` caps the deque at N
-    slots, enforced lazily on push; runtime-only and freely changed across
-    deploys. ``P`` annotates the message payload structurally only (no runtime
-    validation).
-
-    Only a message prosody delivered can be stored; see :class:`Message`.
-    """
-    ...
+) -> MessageDequeDefinition[P]: ...

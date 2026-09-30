@@ -10,6 +10,11 @@ scan flattening. These wrappers therefore only:
 * resolve scan query options into one native value, and
 * delegate every operation to the native coroutine.
 
+The type parameter of every handle (``T`` / ``V``) is a structural JSON
+annotation; see :mod:`prosody.definition`. Map keys and set members are always
+``str``. A handle with the default ``JSONValue`` type accepts any
+:data:`~prosody.message.JSONInput` write, such as a ``TypedDict``.
+
 Definitions live in :mod:`prosody.definition`, query options in
 :mod:`prosody.query`, and published readers in :mod:`prosody.published`. This
 module re-exports them.
@@ -62,7 +67,7 @@ V = TypeVar("V", default=JSONValue)  # map value type
 
 
 class StoreOutcome(enum.Enum):
-    """The effect of :meth:`commit` or :meth:`rollback` on a collection.
+    """The effect of ``commit()`` or ``rollback()`` on a collection.
 
     ``APPLIED`` means the call wrote or discarded buffered operations.
     ``NO_OP`` means nothing was buffered. The string values are the tokens
@@ -77,19 +82,22 @@ class ValueState(Generic[T]):
     """Typed handle over a single-value collection.
 
     Valid only within the handler invocation that vended it. All methods are
-    async; the native layer owns validation, so writing ``None`` (or an
-    unrepresentable value) raises from the native layer, not from here.
+    async; the native layer owns validation.
     """
 
     def __init__(self, native: Any) -> None:
         self._native = native
 
     async def get(self) -> Optional[T]:
-        """Read the current value, or ``None`` when absent/cleared."""
+        """Read the current value, or ``None`` when absent or cleared."""
         return await self._native.get()
 
     async def set(self, value: T) -> None:
-        """Buffer a write of ``value`` (``None`` raises ``PermanentStateError``)."""
+        """Buffer a write of ``value``.
+
+        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
+        Call :meth:`clear` to delete instead.
+        """
         await self._native.set(value)
 
     async def clear(self) -> None:
@@ -120,8 +128,8 @@ class MapState(Generic[V]):
         absent.
 
         A stored falsy value, such as ``0`` or ``""``, returns that value and
-        not ``default``. ``get`` decodes the value. The stub gives the precise
-        return type.
+        not ``default``. ``get`` decodes the value, unlike :meth:`contains`
+        and :meth:`keys`.
         """
         value = await self._native.get(key)
         return default if value is None else value
@@ -139,8 +147,9 @@ class MapState(Generic[V]):
     async def get_many(self, keys: List[str]) -> List[Optional[V]]:
         """Read several keys in one isolated batch, one result per key in order.
 
-        The batched, cache-populating way to read a known set of keys — prefer
-        it over iterating :meth:`keys` and calling :meth:`get` per key.
+        ``result[i]`` is the value for ``keys[i]``, or ``None`` for a missing
+        key. Prefer this batched read to a :meth:`get` call for each key of
+        :meth:`keys`: it fills the cache in one batch.
         """
         return await self._native.get_many(keys)
 
@@ -152,15 +161,23 @@ class MapState(Generic[V]):
         return await self._native.contains_many(keys)
 
     async def is_empty(self) -> bool:
-        """Whether the map holds no entries."""
+        """Report whether the map holds no entries."""
         return await self._native.is_empty()
 
     async def set(self, key: str, value: V) -> None:
-        """Insert or overwrite ``key`` (``None`` raises ``PermanentStateError``)."""
+        """Insert or overwrite ``key``.
+
+        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
+        Call :meth:`remove` to delete instead.
+        """
         await self._native.set(key, value)
 
     async def remove(self, key: str) -> None:
-        """Remove ``key`` (named ``remove`` because ``del`` cannot be async)."""
+        """Remove ``key``. The name is ``remove`` because ``del`` cannot be async.
+
+        It returns ``None``, so it makes no read to learn whether the key was
+        present.
+        """
         await self._native.remove(key)
 
     async def clear(self) -> None:
@@ -172,7 +189,7 @@ class MapState(Generic[V]):
     ) -> _StateScan:
         """Async iterator over ``(key, value)`` entries in key order.
 
-        The query options select a part of the map; see :meth:`keys`.
+        The query options match :meth:`keys`.
         """
         query = _key_query(direction, **options)
         return _StateScan(self._native.scan(query), _identity)
@@ -193,8 +210,11 @@ class MapState(Generic[V]):
         end. ``range`` takes a ``slice`` of keys, such as ``slice("a", "m")``.
         It is an ascending half-open span that applies in either direction. A
         ``None`` bound leaves that end open. ``limit`` caps the number of keys.
+
         Options narrow the scan and never widen it. To page, pass the last key
-        of a page as ``after``.
+        of a page as ``after``. A wrong type raises ``TypeError``. Both
+        ``from_`` and ``after``, both ``to`` and ``before``, a ``range`` with a
+        step, or a ``limit`` below 1 raise ``ValueError``.
         """
         query = _key_query(direction, **options)
         return _StateScan(self._native.keys(query), _identity)
@@ -246,7 +266,7 @@ class SetState:
         await self._native.remove(member)
 
     async def contains(self, member: str) -> bool:
-        """Whether ``member`` belongs to the set (read-your-writes)."""
+        """Report whether ``member`` belongs to the set, including buffered writes."""
         return await self._native.contains(member)
 
     async def contains_many(self, members: List[str]) -> List[bool]:
@@ -254,7 +274,7 @@ class SetState:
         return await self._native.contains_many(members)
 
     async def is_empty(self) -> bool:
-        """Whether the set has no members."""
+        """Report whether the set has no members."""
         return await self._native.is_empty()
 
     async def clear(self) -> None:
@@ -295,22 +315,25 @@ class DequeState(Generic[T]):
         self._native = native
 
     async def append(self, item: T) -> None:
-        """Append ``item`` at the back (``None`` raises ``PermanentStateError``).
+        """Append ``item`` at the back.
 
-        On a capacity-bounded deque (``capacity=`` on the definition), a push is
-        the only operation that enforces the bound: it evicts from the opposite
-        (front) end toward capacity — decode-free, no Kafka fetch — before
-        appending. Enforcement is lazy and capped per push, so a deque just
-        reconfigured smaller reports its old length until pushes trim it, and a
-        shrunk bound converges over the next few pushes rather than at once.
+        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
+        Call :meth:`clear` to delete the deque.
+
+        On a deque with a ``capacity``, a push is the only operation that
+        enforces the bound. It evicts from the front toward the capacity
+        before it appends, with no decode and no Kafka fetch. Each push evicts
+        a capped number of elements. A deque that a deploy made smaller keeps
+        its old length until later pushes trim it.
         """
         await self._native.push_back(item)
 
     async def appendleft(self, item: T) -> None:
-        """Prepend ``item`` at the front (``None`` raises ``PermanentStateError``).
+        """Prepend ``item`` at the front.
 
-        The front-push counterpart of :meth:`append`; on a bounded deque it
-        evicts from the back toward capacity before prepending.
+        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
+        On a deque with a ``capacity``, it evicts from the back toward the
+        capacity before it prepends, as :meth:`append` does from the front.
         """
         await self._native.push_front(item)
 
@@ -349,11 +372,11 @@ class DequeState(Generic[T]):
         return None if position is None else await self._native.get(position)
 
     async def size(self) -> int:
-        """Number of live elements (named ``size`` because ``len`` cannot be async)."""
+        """Return the number of live elements. ``len`` cannot be async."""
         return await self._native.len()
 
     async def is_empty(self) -> bool:
-        """Whether the deque holds no live elements."""
+        """Report whether the deque holds no live elements."""
         return await self._native.is_empty()
 
     async def clear(self) -> None:

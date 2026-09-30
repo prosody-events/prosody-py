@@ -1,17 +1,3 @@
-"""Type stubs for the keyed-state surface.
-
-These stubs override :mod:`prosody.state` for type-checkers, restoring the
-generic types that the runtime erases to ``Any``. The runtime module is a thin
-transport over the native handles vended by :meth:`Context.state`; the native
-(Rust) layer owns every semantic (carrier injection, chunk draining,
-error-category classification, shape and kind guards, and scan flattening).
-
-The type parameter of every handle (``T`` / ``V``) is a structural JSON
-annotation; see :mod:`prosody.definition`. Map keys and set members are always
-``str``. A handle with the default ``JSONValue`` type accepts any
-:data:`~prosody.message.JSONInput` write, such as a ``TypedDict``.
-"""
-
 import enum
 from typing import Generic, List, Optional, Tuple, Union, overload
 
@@ -53,119 +39,36 @@ D = TypeVar("D")  # get() default's own type, preserved in the return
 
 
 class StoreOutcome(enum.Enum):
-    """The effect of ``commit()`` or ``rollback()`` on a collection.
-
-    ``APPLIED`` means the call wrote or discarded buffered operations.
-    ``NO_OP`` means nothing was buffered.
-    """
-
     APPLIED = "applied"
     NO_OP = "no_op"
 
 
 class ValueState(Generic[T]):
-    """Typed handle over a single-value collection.
-
-    Valid only within the handler invocation that vended it. All methods are
-    async; the native layer owns validation.
-    """
-
-    async def get(self) -> Optional[T]:
-        """Read the current value, or ``None`` when absent/cleared."""
-        ...
+    async def get(self) -> Optional[T]: ...
     @overload
     async def set(self: "ValueState[JSONValue]", value: JSONInput) -> None: ...
     @overload
-    async def set(self, value: T) -> None:
-        """Buffer a write of ``value``.
-
-        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
-        Call :meth:`clear` to delete instead.
-        """
-        ...
-    async def clear(self) -> None:
-        """Buffer a delete of the value."""
-        ...
-    async def commit(self) -> StoreOutcome:
-        """Durably flush the buffered operations mid-handler.
-
-        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
-        """
-        ...
-    async def rollback(self) -> StoreOutcome:
-        """Discard buffered uncommitted operations back to the committed floor.
-
-        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
-        """
-        ...
+    async def set(self, value: T) -> None: ...
+    async def clear(self) -> None: ...
+    async def commit(self) -> StoreOutcome: ...
+    async def rollback(self) -> StoreOutcome: ...
 
 
 class MapState(Generic[V]):
-    """Typed handle over an ordered-map collection with string keys.
-
-    Valid only within the handler invocation that vended it. ``remove`` exists
-    because ``del`` cannot be async; map keys are always ``str``.
-    """
-
     @overload
-    async def get(self, key: str) -> Optional[V]:
-        """Read the value for ``key``, or ``None`` when absent."""
-        ...
+    async def get(self, key: str) -> Optional[V]: ...
     @overload
-    async def get(self, key: str, default: D) -> Union[V, D]:
-        """Read the value for ``key``; return ``default`` only when absent.
-
-        A present-but-falsy value (``0``, ``False``, ``""``, ``[]``) returns
-        that value, never ``default`` — the branch tests core absence, not
-        truthiness. Fully decodes and resolves the value (unlike
-        :meth:`contains` / :meth:`keys`).
-        """
-        ...
-    async def contains(self, key: str) -> bool:
-        """Report whether ``key`` has an entry, including buffered writes.
-
-        This check does not decode the value. A message map reports ``True``
-        even when Prosody can no longer fetch the Kafka message. A cache miss
-        still reads Cassandra. Python's ``in`` cannot ``await``, so this is
-        not ``__contains__``.
-        """
-        ...
-    async def get_many(self, keys: List[str]) -> List[Optional[V]]:
-        """Read several keys in one isolated batch, one result per key in order.
-
-        ``result[i]`` is the value for ``keys[i]`` (``None`` for a missing key).
-        The batched, cache-populating way to read a known set of keys — prefer
-        it over iterating :meth:`keys` and calling :meth:`get` per key.
-        """
-        ...
-    async def contains_many(self, keys: List[str]) -> List[bool]:
-        """Report presence for several keys in one batch, one result per key.
-
-        The batched form of :meth:`contains`: it never decodes a value.
-        """
-        ...
-    async def is_empty(self) -> bool:
-        """Whether the map holds no entries."""
-        ...
+    async def get(self, key: str, default: D) -> Union[V, D]: ...
+    async def contains(self, key: str) -> bool: ...
+    async def get_many(self, keys: List[str]) -> List[Optional[V]]: ...
+    async def contains_many(self, keys: List[str]) -> List[bool]: ...
+    async def is_empty(self) -> bool: ...
     @overload
     async def set(self: "MapState[JSONValue]", key: str, value: JSONInput) -> None: ...
     @overload
-    async def set(self, key: str, value: V) -> None:
-        """Insert or overwrite ``key``.
-
-        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
-        Call :meth:`remove` to delete instead.
-        """
-        ...
-    async def remove(self, key: str) -> None:
-        """Remove ``key`` (named ``remove`` because ``del`` cannot be async).
-
-        Returns ``None`` deliberately — no hidden "was present" read.
-        """
-        ...
-    async def clear(self) -> None:
-        """Remove every entry."""
-        ...
+    async def set(self, key: str, value: V) -> None: ...
+    async def remove(self, key: str) -> None: ...
+    async def clear(self) -> None: ...
     def items(
         self,
         direction: Direction = ...,
@@ -177,12 +80,7 @@ class MapState(Generic[V]):
         before: Optional[str] = ...,
         range: Optional[slice] = ...,
         limit: Optional[int] = ...,
-    ) -> _StateScan[Tuple[str, V]]:
-        """Async iterator over ``(key, value)`` entries in key order.
-
-        The query options match :meth:`keys`.
-        """
-        ...
+    ) -> _StateScan[Tuple[str, V]]: ...
     def keys(
         self,
         direction: Direction = ...,
@@ -194,26 +92,7 @@ class MapState(Generic[V]):
         before: Optional[str] = ...,
         range: Optional[slice] = ...,
         limit: Optional[int] = ...,
-    ) -> _StateScan[str]:
-        """Async iterator over the keys in key order.
-
-        The scan does not decode values, so a message map lists its keys
-        without Kafka fetches. Each pull still reads which keys exist. To also
-        read the values, iterate :meth:`items`. For a known list of keys, call
-        :meth:`get_many`.
-
-        ``prefix`` keeps keys that start with it. ``from_`` and ``after`` start
-        at or after a key. ``to`` and ``before`` stop at or before a key. These
-        edges are in iteration order, so a ``BACKWARD`` scan starts at the high
-        end. ``range`` takes a ``slice`` of keys, such as ``slice("a", "m")``.
-        It is an ascending half-open span that applies in either direction. A
-        ``None`` bound leaves that end open. ``limit`` caps the number of keys.
-        Options narrow the scan and never widen it. To page, pass the last key
-        of a page as ``after``. A wrong type raises ``TypeError``. Both
-        ``from_`` and ``after``, both ``to`` and ``before``, a ``range`` with a
-        step, or a ``limit`` below 1 raise ``ValueError``.
-        """
-        ...
+    ) -> _StateScan[str]: ...
     def values(
         self,
         direction: Direction = ...,
@@ -225,59 +104,19 @@ class MapState(Generic[V]):
         before: Optional[str] = ...,
         range: Optional[slice] = ...,
         limit: Optional[int] = ...,
-    ) -> _StateScan[V]:
-        """Async iterator over the values in key order.
-
-        The scan decodes each value, so it costs the same as :meth:`items`.
-        The query options match :meth:`keys`.
-        """
-        ...
-    def __aiter__(self) -> _StateScan[str]:
-        """Forward iteration over the **keys**, like ``dict``.
-
-        To read the values too, iterate :meth:`items`. Do not call :meth:`get`
-        for each key: that makes one read for each key.
-        """
-        ...
-    async def commit(self) -> StoreOutcome:
-        """Durably flush the buffered operations mid-handler.
-
-        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
-        """
-        ...
-    async def rollback(self) -> StoreOutcome:
-        """Discard buffered uncommitted operations back to the committed floor.
-
-        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
-        """
-        ...
+    ) -> _StateScan[V]: ...
+    def __aiter__(self) -> _StateScan[str]: ...
+    async def commit(self) -> StoreOutcome: ...
+    async def rollback(self) -> StoreOutcome: ...
 
 
 class SetState:
-    """Typed handle over a presence-only ordered set of string members.
-
-    Valid only within the handler invocation that vended it. ``contains``
-    exists because Python's ``in`` cannot ``await``.
-    """
-
-    async def add(self, member: str) -> None:
-        """Add ``member``."""
-        ...
-    async def discard(self, member: str) -> None:
-        """Remove ``member`` if present."""
-        ...
-    async def contains(self, member: str) -> bool:
-        """Whether ``member`` belongs to the set (read-your-writes)."""
-        ...
-    async def contains_many(self, members: List[str]) -> List[bool]:
-        """Test several members in one batch, one result per member in order."""
-        ...
-    async def is_empty(self) -> bool:
-        """Whether the set has no members."""
-        ...
-    async def clear(self) -> None:
-        """Remove every member."""
-        ...
+    async def add(self, member: str) -> None: ...
+    async def discard(self, member: str) -> None: ...
+    async def contains(self, member: str) -> bool: ...
+    async def contains_many(self, members: List[str]) -> List[bool]: ...
+    async def is_empty(self) -> bool: ...
+    async def clear(self) -> None: ...
     def members(
         self,
         direction: Direction = ...,
@@ -289,93 +128,29 @@ class SetState:
         before: Optional[str] = ...,
         range: Optional[slice] = ...,
         limit: Optional[int] = ...,
-    ) -> _StateScan[str]:
-        """Async iterator over the members in order.
-
-        The query options match :meth:`MapState.keys`.
-        """
-        ...
-    def __aiter__(self) -> _StateScan[str]:
-        """Forward iteration over the members."""
-        ...
-    async def commit(self) -> StoreOutcome:
-        """Durably flush the buffered operations mid-handler.
-
-        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
-        """
-        ...
-    async def rollback(self) -> StoreOutcome:
-        """Discard buffered uncommitted operations back to the committed floor.
-
-        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
-        """
-        ...
+    ) -> _StateScan[str]: ...
+    def __aiter__(self) -> _StateScan[str]: ...
+    async def commit(self) -> StoreOutcome: ...
+    async def rollback(self) -> StoreOutcome: ...
 
 
 class DequeState(Generic[T]):
-    """Typed handle over a double-ended queue.
-
-    Valid only within the handler invocation that vended it. ``size()`` and
-    ``is_empty()`` are methods because ``len`` cannot be async.
-    """
-
     @overload
     async def append(self: "DequeState[JSONValue]", item: JSONInput) -> None: ...
     @overload
-    async def append(self, item: T) -> None:
-        """Append ``item`` at the back.
-
-        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
-        Call :meth:`clear` to delete the deque.
-        """
-        ...
+    async def append(self, item: T) -> None: ...
     @overload
     async def appendleft(self: "DequeState[JSONValue]", item: JSONInput) -> None: ...
     @overload
-    async def appendleft(self, item: T) -> None:
-        """Prepend ``item`` at the front.
-
-        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
-        Call :meth:`clear` to delete the deque.
-        """
-        ...
-    async def pop(self) -> Optional[T]:
-        """Remove and return the back element, or ``None`` when empty."""
-        ...
-    async def popleft(self) -> Optional[T]:
-        """Remove and return the front element, or ``None`` when empty."""
-        ...
-    async def peek(self) -> Optional[T]:
-        """Read the back element without removing it, or ``None`` when empty.
-
-        This reads the back position only and does not read the length. With a
-        TTL, the back element can expire while elements before it stay live.
-        The peek then returns ``None``. It does not search for a live element.
-        """
-        ...
-    async def peekleft(self) -> Optional[T]:
-        """Read the front element without removing it, or ``None`` when empty.
-
-        This reads the front position only, with the same TTL behavior as
-        :meth:`peek`.
-        """
-        ...
-    async def get(self, index: int) -> Optional[T]:
-        """Read the element at front-relative ``index``, or ``None`` past the end.
-
-        Negative indices resolve from the back, following Python sequence
-        semantics. An index before the front returns ``None``.
-        """
-        ...
-    async def size(self) -> int:
-        """Number of live elements (named ``size`` because ``len`` cannot be async)."""
-        ...
-    async def is_empty(self) -> bool:
-        """Whether the deque holds no live elements."""
-        ...
-    async def clear(self) -> None:
-        """Remove every element."""
-        ...
+    async def appendleft(self, item: T) -> None: ...
+    async def pop(self) -> Optional[T]: ...
+    async def popleft(self) -> Optional[T]: ...
+    async def peek(self) -> Optional[T]: ...
+    async def peekleft(self) -> Optional[T]: ...
+    async def get(self, index: int) -> Optional[T]: ...
+    async def size(self) -> int: ...
+    async def is_empty(self) -> bool: ...
+    async def clear(self) -> None: ...
     def values(
         self,
         direction: Direction = ...,
@@ -386,31 +161,7 @@ class DequeState(Generic[T]):
         before: Optional[int] = ...,
         range: Union[range, slice, None] = ...,
         limit: Optional[int] = ...,
-    ) -> _StateScan[T]:
-        """Async iterator over the elements in index order.
-
-        Positions count from the front and cannot be negative. ``from_`` and
-        ``after`` start at or after a position. ``to`` and ``before`` stop at
-        or before a position. These edges are in iteration order. ``range``
-        takes a ``range`` or a ``slice`` of positions with step 1. It is an
-        ascending span that applies in either direction, and an empty span
-        yields nothing. ``limit`` caps the number of elements. Negative
-        positions raise ``ValueError``; read the last N elements with
-        ``values(Direction.BACKWARD, limit=N)``.
-        """
-        ...
-    def __aiter__(self) -> _StateScan[T]:
-        """Forward iteration over the elements."""
-        ...
-    async def commit(self) -> StoreOutcome:
-        """Durably flush the buffered operations mid-handler.
-
-        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
-        """
-        ...
-    async def rollback(self) -> StoreOutcome:
-        """Discard buffered uncommitted operations back to the committed floor.
-
-        Returns :attr:`StoreOutcome.NO_OP` when nothing was buffered.
-        """
-        ...
+    ) -> _StateScan[T]: ...
+    def __aiter__(self) -> _StateScan[T]: ...
+    async def commit(self) -> StoreOutcome: ...
+    async def rollback(self) -> StoreOutcome: ...

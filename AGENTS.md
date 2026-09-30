@@ -309,7 +309,11 @@ Constants → Statics → Types → Implementations → Functions → Errors (bo
 ## Types, Stubs, and Examples
 
 - `python/prosody/*.pyi` — hand-written type stubs; the public typed surface.
-  Every API change updates the stubs in the same commit.
+  Every API change updates the stubs in the same commit. Stubs carry types
+  only.
+- Public API docs live in the docstrings of the runtime `.py` modules, where
+  `help()` and IDEs read them. A natively implemented class with no `.py`
+  wrapper, such as `Context`, keeps its docs in its stub.
 - `tests/typecheck/` — self-falsifying negative fixtures. Expected errors use
   precise `type: ignore` codes; `warn_unused_ignores` fails the gate if a
   public signature accidentally permits one.

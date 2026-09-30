@@ -3,6 +3,12 @@
 A definition sets a collection's durable name, kind, and options. It serializes
 into the config dict the client registers, and :meth:`Context.state` binds the
 same object in a handler.
+
+The type parameter of every definition (``T``, ``V``, or ``P``) describes a
+JSON shape, such as a ``TypedDict``. Values cross the boundary as plain JSON.
+Prosody does not build or validate a model, so a ``dataclass`` or a Pydantic
+model is not a valid type argument. Map keys and set members are always
+``str``.
 """
 
 from dataclasses import dataclass
@@ -79,7 +85,7 @@ class _Definition:
 
 @dataclass(frozen=True)
 class ValueDefinition(_Definition, Generic[T]):
-    """A single-value JSON collection definition."""
+    """A single-value JSON collection definition. Vends :class:`ValueState`."""
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
@@ -91,7 +97,10 @@ class ValueDefinition(_Definition, Generic[T]):
 
 @dataclass(frozen=True)
 class MapDefinition(_Definition, Generic[V]):
-    """An ordered-map JSON collection definition (string keys)."""
+    """An ordered-map JSON collection definition. Vends :class:`MapState`.
+
+    ``keyset_limit`` bounds ordered-scan tracking.
+    """
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
@@ -104,7 +113,10 @@ class MapDefinition(_Definition, Generic[V]):
 
 @dataclass(frozen=True)
 class SetDefinition(_Definition):
-    """A presence-only ordered set of string members."""
+    """A presence-only ordered set of string members. Vends :class:`SetState`.
+
+    ``keyset_limit`` bounds ordered-scan tracking, as on a map.
+    """
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
@@ -118,7 +130,7 @@ class SetDefinition(_Definition):
 
 @dataclass(frozen=True)
 class DequeDefinition(_Definition, Generic[T]):
-    """A double-ended-queue JSON collection definition."""
+    """A double-ended-queue JSON collection definition. Vends :class:`DequeState`."""
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
@@ -131,7 +143,10 @@ class DequeDefinition(_Definition, Generic[T]):
 
 @dataclass(frozen=True)
 class MessageValueDefinition(_Definition, Generic[P]):
-    """A single-value collection storing whole Kafka messages."""
+    """A single-value collection of whole Kafka messages.
+
+    Vends :class:`ValueState` ``[Message[P]]``.
+    """
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
@@ -142,7 +157,10 @@ class MessageValueDefinition(_Definition, Generic[P]):
 
 @dataclass(frozen=True)
 class MessageMapDefinition(_Definition, Generic[P]):
-    """An ordered-map collection storing whole Kafka messages."""
+    """An ordered-map collection of whole Kafka messages.
+
+    Vends :class:`MapState` ``[Message[P]]``.
+    """
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
@@ -154,7 +172,10 @@ class MessageMapDefinition(_Definition, Generic[P]):
 
 @dataclass(frozen=True)
 class MessageDequeDefinition(_Definition, Generic[P]):
-    """A double-ended-queue collection storing whole Kafka messages."""
+    """A double-ended-queue collection of whole Kafka messages.
+
+    Vends :class:`DequeState` ``[Message[P]]``.
+    """
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
@@ -172,7 +193,10 @@ def value(
     published: Optional[bool] = None,
     read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
 ) -> ValueDefinition[T]:
-    """Define a single-value JSON collection."""
+    """Define a single-value JSON collection (vends :class:`ValueState` ``[T]``).
+
+    ``T`` describes a JSON shape only. Prosody does not validate the value.
+    """
     return ValueDefinition(
         name,
         ttl=ttl,
@@ -191,7 +215,10 @@ def map(  # this module-local name mirrors the collection kind; no builtin use h
     read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
     keyset_limit: Optional[int] = None,
 ) -> MapDefinition[V]:
-    """Define an ordered-map JSON collection (string keys)."""
+    """Define an ordered-map JSON collection (vends :class:`MapState` ``[V]``).
+
+    Map keys are always ``str``. ``keyset_limit`` bounds ordered-scan tracking.
+    """
     return MapDefinition(
         name,
         ttl=ttl,
@@ -211,7 +238,10 @@ def set(  # this module-local name mirrors the collection kind; no builtin use h
     read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
     keyset_limit: Optional[int] = None,
 ) -> SetDefinition:
-    """Define a presence-only ordered set of string members."""
+    """Define a presence-only ordered set of string members.
+
+    Vends :class:`SetState`. ``keyset_limit`` bounds ordered-scan tracking.
+    """
     return SetDefinition(
         name,
         ttl=ttl,
@@ -231,11 +261,11 @@ def deque(
     read_cache: Optional[Union[timedelta, float, Literal[False]]] = None,
     capacity: Optional[int] = None,
 ) -> DequeDefinition[T]:
-    """Define a double-ended-queue JSON collection.
+    """Define a double-ended-queue JSON collection (vends :class:`DequeState` ``[T]``).
 
-    ``capacity`` caps the deque at N slots, enforced lazily on push (see
-    :meth:`DequeState.append`). Runtime-only — never persisted and freely
-    changed across deploys.
+    ``capacity`` caps the deque at N slots. A push enforces it; see
+    :meth:`DequeState.append`. Prosody does not persist the capacity, so a
+    deploy can change it.
     """
     return DequeDefinition(
         name,
@@ -253,7 +283,11 @@ def message_value(
     ttl: Optional[Union[timedelta, int]] = None,
     read_uncommitted: Optional[bool] = None,
 ) -> MessageValueDefinition[P]:
-    """Define a single-value collection of whole Kafka messages."""
+    """Define a single-value collection of whole Kafka messages.
+
+    Vends :class:`ValueState` ``[Message[P]]``. Only a message prosody
+    delivered can be stored; see :class:`Message`.
+    """
     return MessageValueDefinition(name, ttl=ttl, read_uncommitted=read_uncommitted)
 
 
@@ -264,7 +298,11 @@ def message_map(
     read_uncommitted: Optional[bool] = None,
     keyset_limit: Optional[int] = None,
 ) -> MessageMapDefinition[P]:
-    """Define an ordered-map collection of whole Kafka messages."""
+    """Define an ordered-map collection of whole Kafka messages (string keys).
+
+    Vends :class:`MapState` ``[Message[P]]``. Only a message prosody delivered
+    can be stored; see :class:`Message`.
+    """
     return MessageMapDefinition(
         name,
         ttl=ttl,
@@ -282,9 +320,9 @@ def message_deque(
 ) -> MessageDequeDefinition[P]:
     """Define a double-ended-queue collection of whole Kafka messages.
 
-    ``capacity`` caps the deque at N slots, enforced lazily on push (see
-    :meth:`DequeState.append`). Runtime-only — never persisted and freely
-    changed across deploys.
+    Vends :class:`DequeState` ``[Message[P]]``. ``capacity`` works as on
+    :func:`deque`. Only a message prosody delivered can be stored; see
+    :class:`Message`.
     """
     return MessageDequeDefinition(
         name, ttl=ttl, read_uncommitted=read_uncommitted, capacity=capacity
