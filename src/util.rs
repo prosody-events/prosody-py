@@ -3,9 +3,10 @@
 //! This module provides helper functions to extract and convert data
 //! from Python objects into Rust-compatible types using the `PyO3` library.
 
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
 use pyo3::{Bound, PyAny, PyResult};
+use std::process;
 use std::time::Duration;
 
 /// Extracts a vector of strings from a Python object.
@@ -83,4 +84,21 @@ pub fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
 /// Returns a `PyErr` if the dict lookup fails.
 pub fn option<'py>(config: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
     Ok(config.get_item(key)?.filter(|value| !value.is_none()))
+}
+
+/// Rejects a call on a client that the current process did not create.
+///
+/// A forked child inherits the client's memory but not its threads, so the
+/// client cannot work there. `pid` is the process that created the client.
+///
+/// # Errors
+///
+/// Returns a `PyRuntimeError` that names `client` when the process differs.
+pub fn check_fork(pid: u32, client: &str) -> PyResult<()> {
+    if process::id() != pid {
+        return Err(PyRuntimeError::new_err(format!(
+            "{client} cannot be used after fork. Create a new client in the child process."
+        )));
+    }
+    Ok(())
 }

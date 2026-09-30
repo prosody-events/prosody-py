@@ -18,12 +18,13 @@ use crate::client::config::prepare_config;
 use crate::handler::PythonHandler;
 use crate::published::{PublishedDeque, PublishedMap, PublishedSet, PublishedValue};
 use crate::request::{request_outcomes, request_parameters};
+use crate::util::check_fork;
 
 mod config;
 mod model;
 
 pub use model::ProsodyClient;
-use model::{consumer_state_name, parse_read_cache, shutdown};
+use model::{consumer_state_name, parse_read_cache, published_env, shutdown};
 
 /// A client for interacting with Kafka using the Prosody library.
 ///
@@ -75,7 +76,7 @@ impl ProsodyClient {
         key: String,
         payload: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         // Extract trace headers and convert payload to JSON-serializable value
         let context = self.get_context.bind(py).call0()?;
         let data = PyDict::new(py);
@@ -106,7 +107,7 @@ impl ProsodyClient {
 
     /// Sends an excise record for a key.
     fn excise<'p>(&self, py: Python<'p>, topic: String, key: String) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let context = self.get_context.bind(py).call0()?;
         let data = PyDict::new(py);
         self.inject.call1(py, (&data, context))?;
@@ -138,7 +139,7 @@ impl ProsodyClient {
         subsystems: Vec<String>,
         timeout: &Bound<'_, PyAny>,
     ) -> PyResult<Py<PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let py = payload.py();
         let context = self.get_context.bind(py).call0()?;
         let data = PyDict::new(py);
@@ -181,7 +182,7 @@ impl ProsodyClient {
         subsystems: Vec<String>,
         timeout: &Bound<'_, PyAny>,
     ) -> PyResult<Py<PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let context = self.get_context.bind(py).call0()?;
         let data = PyDict::new(py);
         self.inject.call1(py, (&data, context))?;
@@ -217,7 +218,7 @@ impl ProsodyClient {
     /// build, with the full error message from the underlying
     /// `ModeConfigurationError`.
     fn consumer_state<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let state = client.consumer_state().await;
@@ -239,9 +240,9 @@ impl ProsodyClient {
         name: String,
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let cache = parse_read_cache(read_cache)?;
-        let env = self.published_env(py)?;
+        let env = published_env(self, py)?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
@@ -261,9 +262,9 @@ impl ProsodyClient {
         name: String,
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let cache = parse_read_cache(read_cache)?;
-        let env = self.published_env(py)?;
+        let env = published_env(self, py)?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
@@ -283,9 +284,9 @@ impl ProsodyClient {
         name: String,
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let cache = parse_read_cache(read_cache)?;
-        let env = self.published_env(py)?;
+        let env = published_env(self, py)?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
@@ -305,9 +306,9 @@ impl ProsodyClient {
         name: String,
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let cache = parse_read_cache(read_cache)?;
-        let env = self.published_env(py)?;
+        let env = published_env(self, py)?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
@@ -333,7 +334,7 @@ impl ProsodyClient {
         py: Python<'p>,
         handler: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let handler = PythonHandler::new(handler)?;
         let retained = handler.clone();
         let current = Arc::clone(&self.handler);
@@ -353,7 +354,7 @@ impl ProsodyClient {
     ///
     /// Returns 0 if the consumer is not in the Running state.
     fn assigned_partition_count<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let client = self.client.clone();
         future_into_py(
             py,
@@ -365,7 +366,7 @@ impl ProsodyClient {
     ///
     /// Returns `false` if the consumer is not in the Running state.
     fn is_stalled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let client = self.client.clone();
         future_into_py(py, async move { Ok(client.is_stalled().await) })
     }
@@ -388,7 +389,7 @@ impl ProsodyClient {
     /// Returns a `PyRuntimeError` if the consumer is not configured or not
     /// subscribed.
     fn unsubscribe<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let client = self.client.clone();
         let current = Arc::clone(&self.handler);
         future_into_py(py, async move {
@@ -408,7 +409,7 @@ impl ProsodyClient {
     ///
     /// Returns a `PyRuntimeError` if shutdown fails.
     fn shutdown<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let shutdown = self.shutdown.clone();
         let current = Arc::clone(&self.handler);
         future_into_py(py, async move {
@@ -428,7 +429,7 @@ impl ProsodyClient {
     fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
-        slf.check_fork()?;
+        check_fork(slf.pid, "ProsodyClient")?;
         Ok(format!(
             "{}(producer='running', bootstrap={:?})",
             class_name,
@@ -444,7 +445,7 @@ impl ProsodyClient {
     fn __str__(slf: &Bound<Self>) -> PyResult<String> {
         let class_name = slf.get_type().qualname()?;
         let slf = slf.borrow();
-        slf.check_fork()?;
+        check_fork(slf.pid, "ProsodyClient")?;
         Ok(format!(
             "{}: producer=running, bootstrap={}",
             class_name,
@@ -463,7 +464,10 @@ impl ProsodyClient {
     ///
     /// Returns `Err(PyTraverseError)` if an error occurs during the traversal,
     /// such as when the `PyVisit::call` method fails.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "PyO3 fixes the __traverse__ signature"
+    )]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // Never lock synchronization state inherited from another process.
         if process::id() == self.pid

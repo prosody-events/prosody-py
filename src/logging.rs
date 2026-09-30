@@ -13,6 +13,7 @@ use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict};
 use std::fmt::Debug;
 use std::fmt::Write as _;
+use std::io::{self, Write as _};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread;
 use tracing::field::{Field, Visit};
@@ -76,7 +77,7 @@ impl PythonLoggingLayer {
 
         thread::Builder::new()
             .name("python-log-bridge".to_owned())
-            .spawn(move || worker_loop(receiver, get_logger))
+            .spawn(move || worker_loop(&receiver, &get_logger))
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
         Ok(Self { sender })
@@ -91,14 +92,13 @@ const BATCH_SIZE: usize = 64;
 ///
 /// This runs on a dedicated thread that can safely block on GIL acquisition
 /// because it's not part of any async task chain.
-#[allow(clippy::needless_pass_by_value)] // Thread owns these until sender drops
-fn worker_loop(receiver: Receiver<LogEvent>, get_logger: Py<PyAny>) {
+fn worker_loop(receiver: &Receiver<LogEvent>, get_logger: &Py<PyAny>) {
     // Block waiting for the first event
     while let Ok(first_event) = receiver.recv() {
         // Acquire GIL once and process a batch of events
         Python::attach(|py| {
             // Process the first event
-            if let Err(err) = forward_to_python(py, &get_logger, &first_event) {
+            if let Err(err) = forward_to_python(py, get_logger, &first_event) {
                 // Can't log to Python (might cause recursion), drop silently.
                 let _ = err;
             }
@@ -107,7 +107,7 @@ fn worker_loop(receiver: Receiver<LogEvent>, get_logger: Py<PyAny>) {
             for _ in 1..BATCH_SIZE {
                 match receiver.try_recv() {
                     Ok(event) => {
-                        if let Err(err) = forward_to_python(py, &get_logger, &event) {
+                        if let Err(err) = forward_to_python(py, get_logger, &event) {
                             let _ = err;
                         }
                     }
@@ -285,13 +285,15 @@ where
 
         // Non-blocking send - drops message if channel is full.
         // This ensures we never block the async runtime.
-        #[allow(clippy::print_stderr)]
         if let Err(TrySendError::Full(dropped)) = self.sender.try_send(log_event) {
             // Channel full - Python logging can't keep up with log volume.
-            // Print to stderr so the message isn't lost entirely.
-            eprintln!(
+            // Write to stderr so the message isn't lost entirely. A failed
+            // stderr write has nowhere left to report.
+            let _ = writeln!(
+                io::stderr(),
                 "[prosody] log buffer full, dropping: {} - {}",
-                dropped.name, dropped.msg
+                dropped.name,
+                dropped.msg
             );
         }
         // TrySendError::Disconnected means worker thread died; silently drop

@@ -7,9 +7,10 @@
 //! - Managing graceful task cancellation during shutdown
 //! - Classifying Python errors for retry/failure handling
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::message::PythonRecord;
 use chrono::{DateTime, Utc};

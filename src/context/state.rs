@@ -4,12 +4,11 @@
 //! in the typed Python handle. It caches the wrapper on the `Context` for the
 //! rest of the event.
 
-use super::Context;
+use super::{Context, state_env};
 use crate::state::{
     NativeJsonDequeState, NativeJsonMapState, NativeJsonValueState, NativeMessageDequeState,
-    NativeMessageMapState, NativeMessageValueState, NativeSetState, state_error,
+    NativeMessageMapState, NativeMessageValueState, NativeSetState, raise, state_error,
 };
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyModule};
 use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 use std::sync::Arc;
@@ -26,15 +25,12 @@ pub(crate) enum StateDefinitionKind {
     MessageDeque,
 }
 
-/// Builds a `TransientStateError` for a malformed or hostile state definition —
-/// a caller mistake, so transient rather than a message-discarding permanent.
+/// Builds a `TransientStateError` for a malformed or hostile state definition.
+///
+/// A malformed definition is a caller mistake, so it is transient.
 fn transient_state_error(prosody: &Bound<PyModule>, message: &str) -> PyErr {
-    match prosody
-        .getattr("TransientStateError")
-        .and_then(|class| class.call1((message,)))
-    {
-        Ok(instance) => PyErr::from_value(instance),
-        // Constructing the exception itself failed — surface that error.
+    match prosody.getattr("TransientStateError") {
+        Ok(class) => raise(&class, message),
         Err(error) => error,
     }
 }
@@ -83,14 +79,8 @@ pub(super) fn bind(
         .and_then(|name| name.extract::<String>())
         .map_err(|_| transient_state_error(&prosody, "state: definition name must be a string"))?;
     let cache_key = (kind, name.clone());
-    {
-        let cache = context
-            .state_handles
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("state cache mutex poisoned"))?;
-        if let Some(existing) = cache.get(&cache_key) {
-            return Ok(existing.clone_ref(py));
-        }
+    if let Some(existing) = context.state_handles.lock().get(&cache_key) {
+        return Ok(existing.clone_ref(py));
     }
 
     let native: Py<PyAny> = match kind {
@@ -115,13 +105,10 @@ pub(super) fn bind(
         StateDefinitionKind::Deque | StateDefinitionKind::MessageDeque => "DequeState",
     };
     let wrapper = prosody.getattr(wrapper_name)?.call1((native,))?.unbind();
-    {
-        let mut cache = context
-            .state_handles
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("state cache mutex poisoned"))?;
-        cache.insert(cache_key, wrapper.clone_ref(py));
-    };
+    context
+        .state_handles
+        .lock()
+        .insert(cache_key, wrapper.clone_ref(py));
     Ok(wrapper)
 }
 
@@ -136,7 +123,7 @@ pub(super) fn bind(
 /// Returns a permanent error if the name is unregistered or its registered
 /// identity mismatches.
 fn value_state(context: &Context, py: Python, name: &str) -> PyResult<NativeJsonValueState> {
-    let env = context.state_env(py)?;
+    let env = state_env(context, py)?;
     let handle = context
         .inner
         .value_state(name)
@@ -154,7 +141,7 @@ fn value_state(context: &Context, py: Python, name: &str) -> PyResult<NativeJson
 /// Returns a permanent error if the name is unregistered or its registered
 /// identity mismatches.
 fn map_state(context: &Context, py: Python, name: &str) -> PyResult<NativeJsonMapState> {
-    let env = context.state_env(py)?;
+    let env = state_env(context, py)?;
     let handle = context
         .inner
         .map_state(name)
@@ -172,7 +159,7 @@ fn map_state(context: &Context, py: Python, name: &str) -> PyResult<NativeJsonMa
 /// Returns a permanent error if the name is unregistered or its registered
 /// identity mismatches.
 fn set_state(context: &Context, py: Python, name: &str) -> PyResult<NativeSetState> {
-    let env = context.state_env(py)?;
+    let env = state_env(context, py)?;
     let handle = context
         .inner
         .set_state(name)
@@ -190,7 +177,7 @@ fn set_state(context: &Context, py: Python, name: &str) -> PyResult<NativeSetSta
 /// Returns a permanent error if the name is unregistered or its registered
 /// identity mismatches.
 fn deque_state(context: &Context, py: Python, name: &str) -> PyResult<NativeJsonDequeState> {
-    let env = context.state_env(py)?;
+    let env = state_env(context, py)?;
     let handle = context
         .inner
         .deque_state(name)
@@ -215,7 +202,7 @@ fn message_value_state(
     py: Python,
     name: &str,
 ) -> PyResult<NativeMessageValueState> {
-    let env = context.state_env(py)?;
+    let env = state_env(context, py)?;
     let handle = context
         .inner
         .message_value_state(name)
@@ -236,7 +223,7 @@ fn message_value_state(
 /// Returns a permanent error if the name is unregistered or its registered
 /// identity mismatches.
 fn message_map_state(context: &Context, py: Python, name: &str) -> PyResult<NativeMessageMapState> {
-    let env = context.state_env(py)?;
+    let env = state_env(context, py)?;
     let handle = context
         .inner
         .message_map_state(name)
@@ -261,7 +248,7 @@ fn message_deque_state(
     py: Python,
     name: &str,
 ) -> PyResult<NativeMessageDequeState> {
-    let env = context.state_env(py)?;
+    let env = state_env(context, py)?;
     let handle = context
         .inner
         .message_deque_state(name)

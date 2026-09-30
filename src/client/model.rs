@@ -1,6 +1,5 @@
 use super::{
-    Arc, Bound, ErasedReadCache, Py, PyAny, PyAnyMethods, PyResult, PyRuntimeError, Python,
-    PythonHandler, process, pyclass,
+    Arc, Bound, ErasedReadCache, Py, PyAny, PyAnyMethods, PyResult, Python, PythonHandler, pyclass,
 };
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
@@ -65,28 +64,16 @@ pub(super) fn parse_read_cache(value: Option<&Bound<'_, PyAny>>) -> PyResult<Era
     Ok(ErasedReadCache::Ttl(ttl))
 }
 
-#[allow(clippy::multiple_inherent_impl)]
-impl ProsodyClient {
-    pub(super) fn published_env(&self, py: Python) -> PyResult<StateEnv> {
-        let message_class = py.import("prosody")?.getattr("Message")?.unbind();
-        StateEnv::resolve(
-            py,
-            &self.get_context,
-            &self.inject,
-            Arc::new(new_propagator()),
-            &message_class,
-        )
-    }
-
-    pub(super) fn check_fork(&self) -> PyResult<()> {
-        if process::id() != self.pid {
-            return Err(PyRuntimeError::new_err(
-                "ProsodyClient cannot be used after fork. Create a new client in the child \
-                 process.",
-            ));
-        }
-        Ok(())
-    }
+/// Builds the shared environment that a published reader holds.
+pub(super) fn published_env(client: &ProsodyClient, py: Python) -> PyResult<StateEnv> {
+    let message_class = py.import("prosody")?.getattr("Message")?.unbind();
+    StateEnv::resolve(
+        py,
+        &client.get_context,
+        &client.inject,
+        Arc::new(new_propagator()),
+        &message_class,
+    )
 }
 
 pub(super) fn consumer_state_name(state: &ErasedConsumerState<PythonHandler>) -> &'static str {

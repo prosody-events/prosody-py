@@ -5,7 +5,10 @@
 //! modules for client operations, message handling, and Kafka message
 //! representation.
 
-#![allow(clippy::multiple_crate_versions)]
+#![expect(
+    clippy::multiple_crate_versions,
+    reason = "the dependency graph pins some crates at two versions"
+)]
 #![warn(missing_docs)]
 #![recursion_limit = "256"]
 

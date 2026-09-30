@@ -138,8 +138,8 @@ impl StateEnv {
 
 /// Instantiates a Python exception `class` with `message` and turns it into a
 /// `PyErr`.
-fn raise(py: Python, class: &Py<PyAny>, message: &str) -> PyErr {
-    match class.bind(py).call1((message,)) {
+pub(crate) fn raise(class: &Bound<PyAny>, message: &str) -> PyErr {
+    match class.call1((message,)) {
         Ok(instance) => PyErr::from_value(instance),
         // Constructing the exception itself failed — surface that error.
         Err(error) => error,
@@ -153,7 +153,7 @@ pub(crate) fn state_error(py: Python, env: &StateEnv, error: &ErasedStateError) 
         ErasedCategory::Permanent => &env.0.permanent_error,
         ErasedCategory::Transient => &env.0.transient_error,
     };
-    raise(py, class, error.message())
+    raise(class.bind(py), error.message())
 }
 
 /// Builds a `TransientStateError` for a caller-caused condition the glue
@@ -164,14 +164,14 @@ pub(crate) fn state_error(py: Python, env: &StateEnv, error: &ErasedStateError) 
 /// the in-flight message and can silently lose data, so a code error retries
 /// and stays visible instead.
 fn transient_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
-    raise(py, &env.0.transient_error, message)
+    raise(env.0.transient_error.bind(py), message)
 }
 
 /// Builds a `NullValueError` for a JSON-`null` write (a transient caller
 /// mistake). `null` is not a storable value; `message` is the fully-formed
 /// rejection text (the caller appends the collection's deletion verb).
 fn null_value_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
-    raise(py, &env.0.null_value_error, message)
+    raise(env.0.null_value_error.bind(py), message)
 }
 
 /// Parses a scan-direction token into the core [`Direction`].

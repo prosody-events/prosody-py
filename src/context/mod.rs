@@ -8,6 +8,7 @@
 use crate::state::StateEnv;
 use chrono::{DateTime, Utc};
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
+use parking_lot::Mutex;
 use prosody::consumer::DemandType;
 use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::TimerType;
@@ -19,7 +20,7 @@ use pyo3_async_runtimes::tokio::future_into_py;
 use serde_json::Value;
 use state::StateDefinitionKind;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{Instrument, debug, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -38,43 +39,11 @@ pub struct Context {
     pub message_class: Py<PyAny>,
     /// Whether this attempt is a normal delivery or a retry after a failure.
     pub(crate) demand: DemandType,
-    /// Typed-wrapper cache keyed by descriptor type and collection name.
+    /// Typed-wrapper cache keyed by descriptor type and collection name. It
+    /// drains when Prosody drops the context at the end of the event.
     pub(crate) state_handles: Mutex<HashMap<(StateDefinitionKind, String), Py<PyAny>>>,
 }
 
-impl Context {
-    /// Builds the shared environment threaded into every vended state handle.
-    fn state_env(&self, py: Python) -> PyResult<StateEnv> {
-        StateEnv::resolve(
-            py,
-            &self.get_current,
-            &self.inject,
-            Arc::clone(&self.propagator),
-            &self.message_class,
-        )
-    }
-
-    /// Helper method to extract tracing context and set it as parent for the
-    /// given span
-    fn setup_tracing_context(&self, py: Python, span: &tracing::Span) -> PyResult<()> {
-        let context = self.get_current.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-
-        let headers: HashMap<String, String> = data.extract()?;
-        let otel_context = self.propagator.extract(&headers);
-        if let Err(err) = span.set_parent(otel_context) {
-            debug!("failed to set parent span: {err:#}");
-        }
-
-        Ok(())
-    }
-}
-
-#[allow(
-    clippy::multiple_inherent_impl,
-    reason = "Python methods are implemented in a separate module"
-)]
 #[pymethods]
 impl Context {
     /// Schedule a new timer at the given execution time for the current message
@@ -97,7 +66,7 @@ impl Context {
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
         let span = info_span!("schedule", %time);
-        self.setup_tracing_context(py, &span)?;
+        setup_tracing_context(self, py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -129,7 +98,7 @@ impl Context {
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
         let span = info_span!("clear_and_schedule", %time);
-        self.setup_tracing_context(py, &span)?;
+        setup_tracing_context(self, py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -158,7 +127,7 @@ impl Context {
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
         let span = info_span!("unschedule", %time);
-        self.setup_tracing_context(py, &span)?;
+        setup_tracing_context(self, py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -177,7 +146,7 @@ impl Context {
     /// Returns a `PyRuntimeError` if the operation fails.
     fn clear_scheduled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let span = info_span!("clear_scheduled");
-        self.setup_tracing_context(py, &span)?;
+        setup_tracing_context(self, py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -202,7 +171,7 @@ impl Context {
     /// Returns a `PyRuntimeError` if the operation fails.
     fn scheduled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let span = info_span!("scheduled");
-        self.setup_tracing_context(py, &span)?;
+        setup_tracing_context(self, py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -325,12 +294,16 @@ impl Context {
     /// # Errors
     ///
     /// Returns `Err(PyTraverseError)` if an error occurs during the traversal.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "PyO3 fixes the __traverse__ signature"
+    )]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(self.get_current.as_any())?;
         visit.call(self.inject.as_any())?;
         visit.call(self.message_class.as_any())?;
-        if let Ok(cache) = self.state_handles.lock() {
+        // Skip the cache if another thread holds its lock.
+        if let Some(cache) = self.state_handles.try_lock() {
             for handle in cache.values() {
                 visit.call(handle.as_any())?;
             }
@@ -341,8 +314,33 @@ impl Context {
     /// Drops cached state wrappers so the cyclic GC can reclaim any reference
     /// cycle through this Context.
     fn __clear__(&self) {
-        if let Ok(mut cache) = self.state_handles.lock() {
-            cache.clear();
-        }
+        self.state_handles.lock().clear();
     }
+}
+
+/// Builds the shared environment that a vended state handle holds.
+fn state_env(context: &Context, py: Python) -> PyResult<StateEnv> {
+    StateEnv::resolve(
+        py,
+        &context.get_current,
+        &context.inject,
+        Arc::clone(&context.propagator),
+        &context.message_class,
+    )
+}
+
+/// Reads the active Python OpenTelemetry context and sets it as the parent of
+/// `span`.
+fn setup_tracing_context(context: &Context, py: Python, span: &tracing::Span) -> PyResult<()> {
+    let current = context.get_current.bind(py).call0()?;
+    let data = PyDict::new(py);
+    context.inject.call1(py, (&data, current))?;
+
+    let headers: HashMap<String, String> = data.extract()?;
+    let otel_context = context.propagator.extract(&headers);
+    if let Err(err) = span.set_parent(otel_context) {
+        debug!("failed to set parent span: {err:#}");
+    }
+
+    Ok(())
 }
