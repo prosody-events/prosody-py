@@ -28,7 +28,6 @@ from prosody.errors import (
     StateError,
     PermanentStateError,
     TransientStateError,
-    NullValueError,
 )
 from prosody.handler import EventHandler
 from prosody.message import ExciseMessage, Message

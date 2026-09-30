@@ -81,15 +81,6 @@ class TransientStateError(StateError, TransientError):
     """
 
 
-class NullValueError(TransientStateError, ValueError):
-    """
-    Prosody no longer raises this error.
-
-    A JSON null write now raises :class:`PermanentStateError`. The class stays
-    so that existing imports keep working.
-    """
-
-
 def create_error_decorator(error_class, exception_types):
     def decorator(func):
         @wraps(func)

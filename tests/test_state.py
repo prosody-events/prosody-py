@@ -19,7 +19,6 @@ from prosody import (
     StateError,
     PermanentStateError,
     TransientStateError,
-    NullValueError,
     PermanentError,
     TransientError,
     PublishedDeque,
@@ -43,20 +42,12 @@ def test_transient_state_error():
     assert e.is_permanent is False
     assert isinstance(e, (StateError, TransientError))
 
-def test_null_value_error_mro():
-    e = NullValueError("x")
-    assert e.is_permanent is False
-    assert isinstance(e, ValueError)
-    assert isinstance(e, TransientStateError)
-    assert isinstance(e, StateError)
-
 def test_state_error_is_catchable_brand():
     # The documented `except StateError` form requires StateError to derive
     # from BaseException; a bare mixin raises TypeError at the except clause.
     for exc in (
         PermanentStateError("p"),
         TransientStateError("t"),
-        NullValueError("n"),
     ):
         try:
             raise exc
@@ -100,7 +91,6 @@ def test_exports_present():
         "StateError",
         "PermanentStateError",
         "TransientStateError",
-        "NullValueError",
         "flush_telemetry",
         "shutdown_telemetry",
     ):

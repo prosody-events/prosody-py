@@ -1283,7 +1283,6 @@ Errors:
 - `StateError`: Base class for all keyed-state errors. Catch it to handle both error categories.
 - `TransientStateError` (subclasses `TransientError`): Reports a keyed-state error that Prosody can retry.
 - `PermanentStateError` (subclasses `PermanentError`): Reports a keyed-state error that another attempt cannot resolve. A `None` (JSON `null`) write raises it; use `clear()` or `remove(key)` to delete.
-- `NullValueError`: Prosody no longer raises it. The class stays for existing imports.
 
 Handler error types and decorators:
 
