@@ -15,15 +15,7 @@ use prosody::PeerConfiguration;
 use prosody::PeerEndpoint;
 use prosody::cassandra::config::CassandraConfigurationBuilder;
 use prosody::consumer::ConsumerConfigurationBuilder;
-use prosody::consumer::KeyedStateConfiguration;
 use prosody::consumer::SpanRelation;
-use prosody::consumer::middleware::deduplication::DeduplicationConfigurationBuilder;
-use prosody::consumer::middleware::defer::DeferConfigurationBuilder;
-use prosody::consumer::middleware::monopolization::MonopolizationConfigurationBuilder;
-use prosody::consumer::middleware::retry::RetryConfigurationBuilder;
-use prosody::consumer::middleware::scheduler::SchedulerConfigurationBuilder;
-use prosody::consumer::middleware::timeout::TimeoutConfigurationBuilder;
-use prosody::consumer::middleware::topic::FailureTopicConfigurationBuilder;
 use prosody::high_level::ConsumerBuilders;
 use prosody::high_level::erased::new_erased;
 use prosody::high_level::mode::{Mode, ModeError};
@@ -91,36 +83,8 @@ impl PreparedClient {
 pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<PreparedClient> {
     let env = StateEnv::resolve(py, Arc::new(new_propagator()))?;
 
-    // If no config is provided, create a client with default configurations
-    let Some(config) = config else {
-        let consumer_builders = ConsumerBuilders {
-            consumer: ConsumerConfigurationBuilder::default(),
-            dedup: DeduplicationConfigurationBuilder::default(),
-            retry: RetryConfigurationBuilder::default(),
-            failure_topic: FailureTopicConfigurationBuilder::default(),
-            scheduler: SchedulerConfigurationBuilder::default(),
-            monopolization: MonopolizationConfigurationBuilder::default(),
-            defer: DeferConfigurationBuilder::default(),
-            timeout: TimeoutConfigurationBuilder::default(),
-            keyed_state: KeyedStateConfiguration::builder()
-                .build()
-                .map_err(|error| PyValueError::new_err(error.to_string()))?,
-            emitter: TelemetryEmitterConfiguration::builder()
-                .build()
-                .map_err(|e| PyValueError::new_err(e.to_string()))?,
-            peer: PeerConfiguration::builder()
-                .build()
-                .map_err(|error| PyValueError::new_err(error.to_string()))?,
-        };
-
-        return Ok(PreparedClient {
-            mode: Mode::default(),
-            producer: ProducerConfigurationBuilder::default(),
-            consumer: consumer_builders,
-            cassandra: CassandraConfigurationBuilder::default(),
-            env,
-        });
-    };
+    let config = config.cloned().unwrap_or_else(|| PyDict::new(py));
+    let config = &config;
 
     // Extract and set configuration options
     let mode = match option(config, "mode")? {
