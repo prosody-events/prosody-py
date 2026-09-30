@@ -4,7 +4,7 @@
 //! in the typed Python handle. It caches the wrapper on the `Context` for the
 //! rest of the event.
 
-use super::{Context, state_env};
+use super::Context;
 use crate::state::{
     NativeJsonDequeState, NativeJsonMapState, NativeJsonValueState, NativeMessageDequeState,
     NativeMessageMapState, NativeMessageValueState, NativeSetState, StateEnv, raise, state_error,
@@ -84,7 +84,7 @@ pub(super) fn bind(
         return Ok(existing.clone_ref(py));
     }
 
-    let env = state_env(context, py)?;
+    let env = context.env.clone();
     let inner = &context.inner;
     let native: Py<PyAny> = match kind {
         StateDefinitionKind::Value => {

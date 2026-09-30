@@ -42,32 +42,29 @@ pub use execution::WrappedPythonError;
 use execution::{cancel_task, execute, execute_timer, log_exception};
 
 use crate::context::Context;
+use crate::state::StateEnv;
 
 const HANDLER_METHODS: [&str; 3] = ["on_message", "on_excise", "on_timer"];
 
 /// Python objects and dependencies needed for message execution
+#[derive(Clone, Copy)]
 struct MessageExecutionContext<'a> {
-    message_class: &'a Py<PyAny>,
     record_class: &'a Py<PyAny>,
     event_class: &'a Py<PyAny>,
     method: &'a Py<PyAny>,
     locals: &'a TaskLocals,
-    propagator: Arc<TextMapCompositePropagator>,
-    otel_get_current: &'a Py<PyAny>,
-    otel_inject: &'a Py<PyAny>,
+    env: &'a StateEnv,
     demand: DemandType,
 }
 
 /// Python objects and dependencies needed for timer execution
+#[derive(Clone, Copy)]
 struct TimerExecutionContext<'a> {
     timer_class: &'a Py<PyAny>,
     event_class: &'a Py<PyAny>,
     timer_method: &'a Py<PyAny>,
-    message_class: &'a Py<PyAny>,
     locals: &'a TaskLocals,
-    propagator: Arc<TextMapCompositePropagator>,
-    otel_get_current: &'a Py<PyAny>,
-    otel_inject: &'a Py<PyAny>,
+    env: &'a StateEnv,
     demand: DemandType,
 }
 
@@ -107,8 +104,7 @@ pub struct PythonHandlerImpl {
     pub event_set_method: Py<PyAny>,
     locals: TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
-    otel_get_current: Py<PyAny>,
-    otel_inject: Py<PyAny>,
+    env: StateEnv,
 }
 
 impl PythonHandler {
@@ -166,17 +162,9 @@ impl PythonHandler {
         // Capture the running event loop
         let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
-        // Cache OpenTelemetry functions to avoid importing them on every
-        // message
-        let otel_get_current = py
-            .import("opentelemetry.context")?
-            .getattr("get_current")?
-            .unbind();
-
-        let otel_inject = py
-            .import("opentelemetry.propagate")?
-            .getattr("inject")?
-            .unbind();
+        // Resolve the Python environment once for every context
+        let propagator = Arc::new(new_propagator());
+        let env = StateEnv::resolve(py, Arc::clone(&propagator))?;
 
         Ok(Self(Arc::new(PythonHandlerImpl {
             handle_method: handle_method.unbind(),
@@ -188,9 +176,8 @@ impl PythonHandler {
             event_class: event_class.unbind(),
             event_set_method: event_set_method.unbind(),
             locals,
-            propagator: Arc::new(new_propagator()),
-            otel_get_current,
-            otel_inject,
+            propagator,
+            env,
         })))
     }
 
@@ -244,14 +231,11 @@ impl PythonHandler {
             .inject_context(&message.span().context(), &mut carrier);
         let cancel_future = context.on_cancel();
         let execution_context = MessageExecutionContext {
-            message_class: &self.0.message_class,
             record_class,
             event_class: &self.0.event_class,
             method,
             locals: &self.0.locals,
-            propagator: self.0.propagator.clone(),
-            otel_get_current: &self.0.otel_get_current,
-            otel_inject: &self.0.otel_inject,
+            env: &self.0.env,
             demand,
         };
         let (shutdown_event, complete_future) =
@@ -377,11 +361,8 @@ impl FallibleHandler for PythonHandler {
             timer_class: &self.0.timer_class,
             event_class: &self.0.event_class,
             timer_method: &self.0.timer_method,
-            message_class: &self.0.message_class,
             locals: &self.0.locals,
-            propagator: self.0.propagator.clone(),
-            otel_get_current: &self.0.otel_get_current,
-            otel_inject: &self.0.otel_inject,
+            env: &self.0.env,
             demand: demand_type,
         };
         let (shutdown_event, complete_future) =

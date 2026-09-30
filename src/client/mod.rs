@@ -1,6 +1,5 @@
 //! Python client for Kafka production and consumption.
 
-use opentelemetry::propagation::TextMapPropagator;
 use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyAnyMethods, PyDict};
@@ -8,11 +7,9 @@ use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::process;
 use std::sync::Arc;
-use tracing::{Instrument, debug, info_span};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing::{Instrument, info_span};
 
 use crate::client::config::prepare_config;
 use crate::handler::PythonHandler;
@@ -24,7 +21,7 @@ mod config;
 mod model;
 
 pub use model::ProsodyClient;
-use model::{consumer_state_name, parse_read_cache, published_env, shutdown};
+use model::{consumer_state_name, parse_read_cache, shutdown};
 
 /// A client for interacting with Kafka using the Prosody library.
 ///
@@ -77,20 +74,9 @@ impl ProsodyClient {
         payload: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
-        // Extract trace headers and convert payload to JSON-serializable value
-        let context = self.get_context.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-
-        let headers: HashMap<String, String> = data.extract()?;
         let payload = depythonize::<Value>(payload)?;
-
-        // Create and set the tracing context
-        let context = self.client.propagator().extract(&headers);
         let span = info_span!("python-send", %topic, %key);
-        if let Err(err) = span.set_parent(context) {
-            debug!("failed to set parent span: {err:#}");
-        }
+        self.env.set_parent(py, &span)?;
 
         // Send the message using the producer
         let client = self.client.clone();
@@ -108,15 +94,8 @@ impl ProsodyClient {
     /// Sends an excise record for a key.
     fn excise<'p>(&self, py: Python<'p>, topic: String, key: String) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
-        let context = self.get_context.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-        let headers: HashMap<String, String> = data.extract()?;
-        let context = self.client.propagator().extract(&headers);
         let span = info_span!("python-excise", %topic, %key);
-        if let Err(err) = span.set_parent(context) {
-            debug!("failed to set parent span: {err:#}");
-        }
+        self.env.set_parent(py, &span)?;
 
         let client = self.client.clone();
         future_into_py(py, async move {
@@ -141,15 +120,8 @@ impl ProsodyClient {
     ) -> PyResult<Py<PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
         let py = payload.py();
-        let context = self.get_context.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-        let trace_headers: HashMap<String, String> = data.extract()?;
-        let context = self.client.propagator().extract(&trace_headers);
         let span = info_span!("python-request", %topic, %key);
-        if let Err(error) = span.set_parent(context) {
-            debug!("failed to set parent span: {error:#}");
-        }
+        self.env.set_parent(py, &span)?;
         let payload = depythonize::<Value>(payload)?;
         let (subsystems, timeout) = request_parameters(subsystems, timeout)?;
         let client = self.client.clone();
@@ -183,15 +155,8 @@ impl ProsodyClient {
         timeout: &Bound<'_, PyAny>,
     ) -> PyResult<Py<PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
-        let context = self.get_context.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-        let trace_headers: HashMap<String, String> = data.extract()?;
-        let context = self.client.propagator().extract(&trace_headers);
         let span = info_span!("python-request-excise", %topic, %key);
-        if let Err(error) = span.set_parent(context) {
-            debug!("failed to set parent span: {error:#}");
-        }
+        self.env.set_parent(py, &span)?;
         let (subsystems, timeout) = request_parameters(subsystems, timeout)?;
         let client = self.client.clone();
         future_into_py(py, async move {
@@ -242,7 +207,7 @@ impl ProsodyClient {
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
         let cache = parse_read_cache(read_cache)?;
-        let env = published_env(self, py)?;
+        let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
@@ -264,7 +229,7 @@ impl ProsodyClient {
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
         let cache = parse_read_cache(read_cache)?;
-        let env = published_env(self, py)?;
+        let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
@@ -286,7 +251,7 @@ impl ProsodyClient {
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
         let cache = parse_read_cache(read_cache)?;
-        let env = published_env(self, py)?;
+        let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
@@ -308,7 +273,7 @@ impl ProsodyClient {
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
         let cache = parse_read_cache(read_cache)?;
-        let env = published_env(self, py)?;
+        let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
             let inner = client
@@ -448,9 +413,6 @@ impl ProsodyClient {
             visit.call(handler.event_class().as_any())?;
             visit.call(handler.event_set_method().as_any())?;
         }
-
-        visit.call(self.get_context.as_any())?;
-        visit.call(self.inject.as_any())?;
 
         Ok(())
     }

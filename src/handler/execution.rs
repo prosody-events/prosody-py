@@ -89,13 +89,9 @@ where
     P: Send + Sync + 'static,
 {
     Python::attach(move |py| {
-        // Create Python message objects using cached OpenTelemetry functions
         let message_context = Context {
             inner: context.boxed(),
-            get_current: execution_context.otel_get_current.clone_ref(py),
-            inject: execution_context.otel_inject.clone_ref(py),
-            propagator: execution_context.propagator,
-            message_class: execution_context.message_class.clone_ref(py),
+            env: execution_context.env.clone(),
             demand: execution_context.demand,
             state_handles: Mutex::new(HashMap::new()),
         };
@@ -149,13 +145,9 @@ where
     C: EventContext<Payload = serde_json::Value>,
 {
     Python::attach(move |py| {
-        // Create Python timer object using cached OpenTelemetry functions
         let context_obj = Context {
             inner: context.boxed(),
-            get_current: timer_context.otel_get_current.clone_ref(py),
-            inject: timer_context.otel_inject.clone_ref(py),
-            propagator: timer_context.propagator,
-            message_class: timer_context.message_class.clone_ref(py),
+            env: timer_context.env.clone(),
             demand: timer_context.demand,
             state_handles: Mutex::new(HashMap::new()),
         };

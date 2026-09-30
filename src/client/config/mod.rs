@@ -5,6 +5,7 @@
 //! `state` module reads the keyed-state settings.
 
 use crate::client::ProsodyClient;
+use crate::state::StateEnv;
 use crate::util::{decode_duration, decode_optional_duration, option, string_or_vec};
 use middleware::{
     build_dedup_config, build_defer_config, build_failure_topic_config,
@@ -28,10 +29,11 @@ use prosody::high_level::erased::new_erased;
 use prosody::high_level::mode::{Mode, ModeError};
 use prosody::loader::KafkaLoaderConfiguration;
 use prosody::producer::ProducerConfigurationBuilder;
+use prosody::propagator::new_propagator;
 use prosody::telemetry::emitter::TelemetryEmitterConfiguration;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use pyo3::{Bound, PyResult, Python};
 use state::build_keyed_state_config;
 use std::net::SocketAddr;
 use std::process;
@@ -62,8 +64,7 @@ pub struct PreparedClient {
     producer: ProducerConfigurationBuilder,
     consumer: ConsumerBuilders,
     cassandra: CassandraConfigurationBuilder,
-    get_context: Py<PyAny>,
-    inject: Py<PyAny>,
+    env: StateEnv,
 }
 
 impl PreparedClient {
@@ -80,8 +81,7 @@ impl PreparedClient {
         Ok(ProsodyClient {
             shutdown: super::shutdown(&client),
             client,
-            get_context: self.get_context,
-            inject: self.inject,
+            env: self.env,
             handler: Arc::new(parking_lot::Mutex::new(None)),
             pid: process::id(),
         })
@@ -89,16 +89,7 @@ impl PreparedClient {
 }
 
 pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<PreparedClient> {
-    // Get handles to OpenTelemetry functions
-    let get_context = py
-        .import("opentelemetry.context")?
-        .getattr("get_current")?
-        .into_py_any(py)?;
-
-    let inject = py
-        .import("opentelemetry.propagate")?
-        .getattr("inject")?
-        .into_py_any(py)?;
+    let env = StateEnv::resolve(py, Arc::new(new_propagator()))?;
 
     // If no config is provided, create a client with default configurations
     let Some(config) = config else {
@@ -127,8 +118,7 @@ pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Pr
             producer: ProducerConfigurationBuilder::default(),
             consumer: consumer_builders,
             cassandra: CassandraConfigurationBuilder::default(),
-            get_context,
-            inject,
+            env,
         });
     };
 
@@ -147,8 +137,7 @@ pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Pr
         producer: build_producer_config(config)?,
         consumer: build_consumer_builders(config)?,
         cassandra: build_cassandra_config(config)?,
-        get_context,
-        inject,
+        env,
     })
 }
 

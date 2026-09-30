@@ -1,11 +1,8 @@
-use super::{
-    Arc, Bound, ErasedReadCache, Py, PyAny, PyAnyMethods, PyResult, Python, PythonHandler, pyclass,
-};
+use super::{Arc, Bound, ErasedReadCache, PyAny, PyAnyMethods, PyResult, PythonHandler, pyclass};
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 use prosody::high_level::erased::{ErasedConsumerState, SharedHighLevelClient};
-use prosody::propagator::new_propagator;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::types::PyBool;
 use std::time::Duration;
@@ -19,8 +16,7 @@ type Shutdown = Shared<BoxFuture<'static, Result<(), Arc<str>>>>;
 pub struct ProsodyClient {
     pub(super) client: SharedHighLevelClient<PythonHandler>,
     pub(super) shutdown: Shutdown,
-    pub(super) get_context: Py<PyAny>,
-    pub(super) inject: Py<PyAny>,
+    pub(super) env: StateEnv,
     pub(super) handler: Arc<Mutex<Option<PythonHandler>>>,
     pub(super) pid: u32,
 }
@@ -62,18 +58,6 @@ pub(super) fn parse_read_cache(value: Option<&Bound<'_, PyAny>>) -> PyResult<Era
     let ttl = Duration::try_from_secs_f64(seconds)
         .map_err(|_| PyValueError::new_err("read_cache must be finite and non-negative"))?;
     Ok(ErasedReadCache::Ttl(ttl))
-}
-
-/// Builds the shared environment that a published reader holds.
-pub(super) fn published_env(client: &ProsodyClient, py: Python) -> PyResult<StateEnv> {
-    let message_class = py.import("prosody")?.getattr("Message")?.unbind();
-    StateEnv::resolve(
-        py,
-        &client.get_context,
-        &client.inject,
-        Arc::new(new_propagator()),
-        &message_class,
-    )
 }
 
 pub(super) fn consumer_state_name(state: &ErasedConsumerState<PythonHandler>) -> &'static str {

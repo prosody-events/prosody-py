@@ -7,22 +7,19 @@
 
 use crate::state::StateEnv;
 use chrono::{DateTime, Utc};
-use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use parking_lot::Mutex;
 use prosody::consumer::DemandType;
 use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::TimerType;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::gc::{PyTraverseError, PyVisit};
-use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
+use pyo3::types::{PyAnyMethods, PyTypeMethods};
 use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use serde_json::Value;
 use state::StateDefinitionKind;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tracing::{Instrument, debug, info_span};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing::{Instrument, info_span};
 
 mod state;
 
@@ -33,10 +30,8 @@ mod state;
 #[pyclass]
 pub struct Context {
     pub inner: BoxEventContext<Value>,
-    pub get_current: Py<PyAny>,
-    pub inject: Py<PyAny>,
-    pub propagator: Arc<TextMapCompositePropagator>,
-    pub message_class: Py<PyAny>,
+    /// The Python environment that traced calls and state handles share.
+    pub(crate) env: StateEnv,
     /// Whether this attempt is a normal delivery or a retry after a failure.
     pub(crate) demand: DemandType,
     /// Typed-wrapper cache keyed by descriptor type and collection name. It
@@ -66,7 +61,7 @@ impl Context {
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
         let span = info_span!("schedule", %time);
-        setup_tracing_context(self, py, &span)?;
+        self.env.set_parent(py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -98,7 +93,7 @@ impl Context {
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
         let span = info_span!("clear_and_schedule", %time);
-        setup_tracing_context(self, py, &span)?;
+        self.env.set_parent(py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -127,7 +122,7 @@ impl Context {
             .map_err(|e| PyRuntimeError::new_err(format!("Invalid time: {e}")))?;
 
         let span = info_span!("unschedule", %time);
-        setup_tracing_context(self, py, &span)?;
+        self.env.set_parent(py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -146,7 +141,7 @@ impl Context {
     /// Returns a `PyRuntimeError` if the operation fails.
     fn clear_scheduled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let span = info_span!("clear_scheduled");
-        setup_tracing_context(self, py, &span)?;
+        self.env.set_parent(py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -171,7 +166,7 @@ impl Context {
     /// Returns a `PyRuntimeError` if the operation fails.
     fn scheduled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         let span = info_span!("scheduled");
-        setup_tracing_context(self, py, &span)?;
+        self.env.set_parent(py, &span)?;
 
         let context = self.inner.clone();
         future_into_py(py, async move {
@@ -299,10 +294,8 @@ impl Context {
         reason = "PyO3 fixes the __traverse__ signature"
     )]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        visit.call(self.get_current.as_any())?;
-        visit.call(self.inject.as_any())?;
-        visit.call(self.message_class.as_any())?;
-        // Skip the cache if another thread holds its lock.
+        // `StateEnv` documents why the environment is not visited. Skip the
+        // cache if another thread holds its lock.
         if let Some(cache) = self.state_handles.try_lock() {
             for handle in cache.values() {
                 visit.call(handle.as_any())?;
@@ -316,31 +309,4 @@ impl Context {
     fn __clear__(&self) {
         self.state_handles.lock().clear();
     }
-}
-
-/// Builds the shared environment that a vended state handle holds.
-fn state_env(context: &Context, py: Python) -> PyResult<StateEnv> {
-    StateEnv::resolve(
-        py,
-        &context.get_current,
-        &context.inject,
-        Arc::clone(&context.propagator),
-        &context.message_class,
-    )
-}
-
-/// Reads the active Python OpenTelemetry context and sets it as the parent of
-/// `span`.
-fn setup_tracing_context(context: &Context, py: Python, span: &tracing::Span) -> PyResult<()> {
-    let current = context.get_current.bind(py).call0()?;
-    let data = PyDict::new(py);
-    context.inject.call1(py, (&data, current))?;
-
-    let headers: HashMap<String, String> = data.extract()?;
-    let otel_context = context.propagator.extract(&headers);
-    if let Err(err) = span.set_parent(otel_context) {
-        debug!("failed to set parent span: {err:#}");
-    }
-
-    Ok(())
 }

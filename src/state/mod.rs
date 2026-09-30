@@ -47,6 +47,8 @@ use std::future::Future;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{Span, debug};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 mod deque;
 mod map;
@@ -69,18 +71,20 @@ const SCAN_READY_CHUNK_SIZE: NonZeroUsize = match NonZeroUsize::new(256) {
     None => NonZeroUsize::MIN,
 };
 
-/// Cheaply-cloned per-handle environment: the OpenTelemetry carrier accessors,
-/// the propagator, the cached Python `Message` class, and the two Python
-/// state-error classes. A handle and every cursor it opens share one `Arc`.
+/// Cheaply-cloned Python environment: the OpenTelemetry carrier accessors,
+/// the propagator, the Python `Message` class, and the two Python state-error
+/// classes. A client or handler resolves it once. Its contexts, state handles,
+/// readers, and cursors share one `Arc`.
 ///
-/// The handles do not visit these objects for GC traversal. They are
-/// module-level objects that cannot form a cycle through a handle, and many
-/// handles share one reference to each, so a visit from each handle would
-/// break the `tp_traverse` contract.
-#[derive(Clone)]
+/// No holder visits these objects for GC traversal. They are module-level
+/// objects that cannot form a cycle through a holder, and many holders share
+/// one reference to each, so a visit from each holder would break the
+/// `tp_traverse` contract.
+#[derive(Clone, Debug)]
 pub(crate) struct StateEnv(Arc<StateEnvInner>);
 
 /// The shared, immutable contents of a [`StateEnv`].
+#[derive(Debug)]
 struct StateEnvInner {
     /// `opentelemetry.context.get_current`.
     get_current: Py<PyAny>,
@@ -97,29 +101,22 @@ struct StateEnvInner {
 }
 
 impl StateEnv {
-    /// Resolves the environment at vend time, looking up the two state-error
-    /// classes from the `prosody` package.
-    ///
-    /// The classes are defined in the Python layer; resolving them here (rather
-    /// than at handler init) keeps a client that never vends state working even
-    /// before that layer exists.
+    /// Resolves the OpenTelemetry functions and the `prosody` classes.
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if the `prosody` import or a class lookup fails.
+    /// Returns a `PyErr` if an import or a class lookup fails.
     pub(crate) fn resolve(
         py: Python,
-        get_current: &Py<PyAny>,
-        inject: &Py<PyAny>,
         propagator: Arc<TextMapCompositePropagator>,
-        message_class: &Py<PyAny>,
     ) -> PyResult<Self> {
+        let otel = |module: &str, name: &str| py.import(module)?.getattr(name).map(Bound::unbind);
         let prosody = py.import("prosody")?;
         Ok(Self(Arc::new(StateEnvInner {
-            get_current: get_current.clone_ref(py),
-            inject: inject.clone_ref(py),
+            get_current: otel("opentelemetry.context", "get_current")?,
+            inject: otel("opentelemetry.propagate", "inject")?,
             propagator,
-            message_class: message_class.clone_ref(py),
+            message_class: prosody.getattr("Message")?.unbind(),
             permanent_error: prosody.getattr("PermanentStateError")?.unbind(),
             transient_error: prosody.getattr("TransientStateError")?.unbind(),
         })))
@@ -134,6 +131,18 @@ impl StateEnv {
         inner.inject.call1(py, (&data, context))?;
         let headers: HashMap<String, String> = data.extract()?;
         Ok(inner.propagator.extract(&headers))
+    }
+
+    /// Sets the active Python OpenTelemetry context as the parent of `span`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the carrier cannot be read.
+    pub(crate) fn set_parent(&self, py: Python, span: &Span) -> PyResult<()> {
+        if let Err(error) = span.set_parent(self.op_context(py)?) {
+            debug!("failed to set parent span: {error:#}");
+        }
+        Ok(())
     }
 }
 
