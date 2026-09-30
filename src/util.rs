@@ -74,6 +74,18 @@ pub fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
     ))
 }
 
+/// Decodes a duration where Python `None` means "no duration".
+///
+/// # Errors
+///
+/// Propagates errors from `decode_duration`.
+pub fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> {
+    if value.is_none() {
+        return Ok(None);
+    }
+    decode_duration(value).map(Some)
+}
+
 /// Reads the option `key` from a keyword-argument dict.
 ///
 /// A missing key and an explicit `None` both read as "not set", so the core
