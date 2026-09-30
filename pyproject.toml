@@ -77,8 +77,3 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 ignore_missing_imports = true
 module = "sentry_sdk.*"
-
-[tool.pytest.ini_options]
-asyncio_default_fixture_loop_scope = "function"
-asyncio_mode = "auto"
-testpaths = ["tests"]
