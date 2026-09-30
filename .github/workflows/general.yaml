@@ -97,7 +97,6 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-          PYO3_PYTHON="$PWD/venv/bin/python" cargo test --lib
           maturin develop --extras dev
           pytest -v
         env:

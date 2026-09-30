@@ -79,7 +79,7 @@ class _ProsodyClientApi:
             bootstrap_servers: Optional[StringOrList] = None,
             mock: Optional[bool] = None,
             source_system: Optional[str] = None,
-            send_timeout: Optional[Duration] = ...,
+            send_timeout: Optional[Duration] = None,
             group_id: Optional[str] = None,
             idempotence_cache_size: Optional[int] = None,
             idempotence_version: Optional[str] = None,
@@ -154,15 +154,14 @@ class _ProsodyClientApi:
         Create a Prosody client without blocking the Python event loop.
 
         Pass ``None`` to leave an option unset. The option then falls back to
-        its environment variable and its default. There are two exceptions:
-        ``probe_port=None`` turns the probe server off, and
-        ``send_timeout=None`` turns the send timeout off.
+        its environment variable and its default. ``probe_port=None`` is the
+        one exception: it turns the probe server off.
 
         Args:
             bootstrap_servers: Kafka servers for initial connection.
             mock: Use mock client for testing if True.
             source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
-            send_timeout: Timeout for message send operations. Omit it to use ``PROSODY_SEND_TIMEOUT`` or the default of 1 second. Pass ``None`` to turn the timeout off, so a send retries until it succeeds.
+            send_timeout: Timeout for message send operations.
             group_id: Consumer group name.
             idempotence_cache_size: Capacity of the producer idempotence cache and of the consumer deduplication cache. Must be at least 1. Default: 8192.
             idempotence_version: Version string for cache-busting deduplication hashes. Changing this invalidates all previously recorded entries. Default: "1".

@@ -189,8 +189,6 @@ For the complete configuration reference, see [CONFIGURATION.md](CONFIGURATION.m
 
 Constructor options take precedence. Unset options use environment variables, then library defaults.
 
-Pass `None` to leave an option unset. Two options read `None` as a value: `probe_port=None` turns the probe server off, and `send_timeout=None` turns the send timeout off, so a send retries until it succeeds. Omit `send_timeout` to use `PROSODY_SEND_TIMEOUT` or the default of 1 second.
-
 Client construction is asynchronous. Replace `ProsodyClient(...)` with `await ProsodyClient.create(...)`.
 
 ## Liveness and Readiness Probes

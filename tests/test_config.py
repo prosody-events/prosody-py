@@ -27,8 +27,6 @@ def _stub_options(method: str) -> list[str]:
 
 async def test_none_leaves_every_create_option_unset(client_factory):
     options = dict.fromkeys(_stub_options("create"))
-    # These two read None as a value: no probe server and no send timeout.
-    del options["send_timeout"]
     assert len(options) > 50, "the stub parse found too few options"
     options.update(
         bootstrap_servers="localhost:9092",
@@ -180,4 +178,3 @@ async def test_span_configuration(random_topic_and_group, client_factory):
         mock=True,
     )
     assert isinstance(client, ProsodyClient)
-

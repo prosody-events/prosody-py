@@ -1,6 +1,6 @@
 # Configuration
 
-Configure via constructor options or environment variables. Options fall back to environment variables when unset. Pass `None` to leave an option unset. There are two exceptions: `probe_port=None` turns the probe server off, and `send_timeout=None` turns the send timeout off.
+Configure via constructor options or environment variables. Options fall back to environment variables when unset. Pass `None` to leave an option unset. The one exception is `probe_port=None`, which turns the probe server off.
 
 The Python client reports values it cannot convert to Prosody types. Prosody validates configuration semantics when the client is built.
 
@@ -42,7 +42,7 @@ The Python client reports values it cannot convert to Prosody types. Prosody val
 
 | Option / Environment Variable           | Description                     | Default |
 |-----------------------------------------|---------------------------------|---------|
-| `send_timeout` / `PROSODY_SEND_TIMEOUT` | Give up sending after this long. Pass `None`, or set the environment value `none`, to turn the timeout off so a send retries until it succeeds. Omit the option to use the environment value or the default | 1s      |
+| `send_timeout` / `PROSODY_SEND_TIMEOUT` | Give up sending after this long | 1s      |
 
 ## Requests
 

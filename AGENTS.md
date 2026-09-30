@@ -82,9 +82,6 @@ maturin develop --extras dev
 
 # Run tests and save output to a file for reference
 pytest -v 2>&1 | tee /tmp/pytest-output.txt
-
-# Run the Rust unit tests against the same interpreter
-PYO3_PYTHON=.venv/bin/python cargo test --lib
 ```
 
 The `maturin develop` step compiles the Rust code and installs the package in

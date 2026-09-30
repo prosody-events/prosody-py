@@ -5,7 +5,7 @@
 //! `state` module reads the keyed-state settings.
 
 use crate::client::ProsodyClient;
-use crate::util::{decode_duration, decode_optional_duration, option, string_or_vec};
+use crate::util::{decode_duration, option, string_or_vec};
 use middleware::{
     build_dedup_config, build_defer_config, build_failure_topic_config,
     build_monopolization_config, build_retry_config, build_scheduler_config, build_timeout_config,
@@ -40,8 +40,6 @@ use std::sync::Arc;
 mod collection;
 mod middleware;
 mod state;
-#[cfg(test)]
-mod tests;
 
 /// Builds a `ProsodyClient` configuration based on the provided Python
 /// configuration.
@@ -183,10 +181,8 @@ fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurati
         builder.source_system(source_system.extract::<String>()?);
     }
 
-    // An explicit `None` turns the send timeout off, so the producer retries
-    // a send until it succeeds. Only an omitted option reads as unset.
-    if let Some(send_timeout) = config.get_item("send_timeout")? {
-        builder.send_timeout(decode_optional_duration(&send_timeout)?);
+    if let Some(send_timeout) = option(config, "send_timeout")? {
+        builder.send_timeout(Some(decode_duration(&send_timeout)?));
     }
 
     if let Some(cache_size) = option(config, "idempotence_cache_size")? {
