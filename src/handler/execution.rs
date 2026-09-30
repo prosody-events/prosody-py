@@ -237,11 +237,11 @@ pub enum WrappedPythonError {
 }
 
 impl ClassifyError for WrappedPythonError {
-    /// Determines error retry behavior based on Python error attributes
+    /// Classifies a handler failure for the retry middleware.
     ///
-    /// Returns:
-    /// - `ErrorCategory::Permanent` for errors with `is_permanent=True`
-    /// - `ErrorCategory::Transient` otherwise
+    /// A Python error with `is_permanent=True` is permanent. Every other error
+    /// is transient. A result with no JSON form is a caller mistake, so it is
+    /// transient: the message retries and the error stays visible.
     fn classify_error(&self) -> ErrorCategory {
         match self {
             WrappedPythonError::Python(error) => {
@@ -250,7 +250,7 @@ impl ClassifyError for WrappedPythonError {
                     _ => ErrorCategory::Transient,
                 })
             }
-            WrappedPythonError::ResultConversion(_) => ErrorCategory::Permanent,
+            WrappedPythonError::ResultConversion(_) => ErrorCategory::Transient,
         }
     }
 }

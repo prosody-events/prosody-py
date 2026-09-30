@@ -622,53 +622,44 @@ async def test_same_key_message_order(client, random_topic_and_group):
 
 
 class TransientErrorHandler(EventHandler):
+    """Fails the first delivery with a transient error, then signals the retry.
+
+    ``fail`` selects the transient failure: raise a ``@transient`` error, or
+    return a result that has no JSON form (a caller mistake).
+    """
+
     async def on_excise(self, context: Context, message: ExciseMessage) -> None:
         return None
 
-    def __init__(self):
-        logger.debug("TransientErrorHandler.__init__() called")
+    def __init__(self, fail: str = "raise"):
+        self.fail = fail
         self.received_message = False
         self.retry_event = tsasync.Event()
-        logger.debug("TransientErrorHandler.__init__() completed")
 
     @transient(ValueError)
-    async def on_message(self, context: Context, message: Message) -> None:
-        logger.debug(f"TransientErrorHandler.on_message() called, received_message={self.received_message}")
+    async def on_message(self, context: Context, message: Message) -> object:
         if self.received_message:
-            logger.debug("TransientErrorHandler: Setting retry_event")
             self.retry_event.set()
-        else:
-            self.received_message = True
-            logger.debug("TransientErrorHandler: Raising ValueError")
-            raise ValueError("Transient error occurred")
+            return None
+        self.received_message = True
+        if self.fail == "unencodable":
+            return object()
+        raise ValueError("Transient error occurred")
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
-        logger.debug("TransientErrorHandler.on_timer() called")
         pass
 
 
 @pytest.mark.asyncio
-async def test_transient_error_decorator(client, random_topic_and_group):
-    logger.debug("=" * 40)
-    logger.debug("TEST test_transient_error_decorator: STARTING")
-
+@pytest.mark.parametrize("fail", ["raise", "unencodable"])
+async def test_transient_failure_retries(client, random_topic_and_group, fail):
     topic, _ = random_topic_and_group
-    logger.debug("TEST: Creating TransientErrorHandler...")
-    handler = TransientErrorHandler()
-
-    logger.debug("TEST: Subscribing...")
+    handler = TransientErrorHandler(fail)
     await asyncio.wait_for(client.subscribe(handler), timeout=DEFAULT_TIMEOUT)
-    logger.debug("TEST: Subscribed")
 
-    test_key = "test-key"
-    test_payload = {"content": "Trigger transient error"}
-    logger.debug(f"TEST: Sending message key={test_key}")
-    await asyncio.wait_for(client.send(topic, test_key, test_payload), timeout=DEFAULT_TIMEOUT)
-    logger.debug("TEST: Message sent")
-
-    logger.debug("TEST: Waiting for retry...")
+    payload = {"content": "Trigger transient error"}
+    await asyncio.wait_for(client.send(topic, "test-key", payload), timeout=DEFAULT_TIMEOUT)
     await asyncio.wait_for(handler.retry_event.wait(), timeout=DEFAULT_TIMEOUT)
-    logger.debug("TEST test_transient_error_decorator: PASSED")
 
 
 class PermanentErrorHandler(EventHandler):
