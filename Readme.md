@@ -301,8 +301,6 @@ Each response error has one message.
 
 Pipeline mode is the default mode. Ensures ordered processing, retrying failed operations indefinitely:
 
-Pipeline mode ignores `send_timeout` and retries a send until it succeeds. Low-latency and best-effort modes use `send_timeout`, with a default of 1 second.
-
 ```python
 # Initialize client in pipeline mode
 client = await ProsodyClient.create(
