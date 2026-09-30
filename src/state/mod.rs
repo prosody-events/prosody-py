@@ -35,8 +35,11 @@ use prosody::consumer::event_context::{
 use prosody::consumer::message::ConsumerMessage;
 use prosody::state::{Direction, StoreOutcome};
 use pyo3::exceptions::PyStopAsyncIteration;
-use pyo3::types::{PyAnyMethods, PyDict, PyString, PyTuple};
-use pyo3::{Bound, IntoPyObject, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass, pymethods};
+use pyo3::types::{PyAnyMethods, PyDict};
+use pyo3::{
+    Bound, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass,
+    pymethods,
+};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::{depythonize, pythonize};
 use serde_json::Value;
@@ -237,39 +240,6 @@ fn outcome_token(outcome: StoreOutcome) -> &'static str {
     }
 }
 
-/// Recovers the consumer message a delivered `Message` carries.
-///
-/// The dataclass fields are not enough to rebuild one, and rebuilding is
-/// forbidden — see [`MessageCore`] for why. Every `Message` prosody hands to a
-/// handler carries its core message, whether it arrived from the topic or was
-/// read back out of a collection. One built in Python does not.
-///
-/// # Errors
-///
-/// Returns a transient error when the message carries no core message. Storing
-/// something other than a delivered message is a caller mistake, and caller
-/// mistakes reject transient so the event stays visible instead of being
-/// discarded.
-fn consumer_message(
-    py: Python,
-    env: &StateEnv,
-    message: &Bound<PyAny>,
-) -> PyResult<ConsumerMessage<Value>> {
-    message
-        .getattr("_core")
-        .ok()
-        .and_then(|core| core.cast_into::<MessageCore>().ok())
-        .map(|core| core.get().message())
-        .ok_or_else(|| {
-            transient_error(
-                py,
-                env,
-                "only a message prosody delivered can be stored; one built in Python carries no \
-                 Kafka position to store",
-            )
-        })
-}
-
 /// Builds the Python `Message` for a message read out of a collection.
 ///
 /// The message carries its [`MessageCore`], so it can be stored into another
@@ -293,27 +263,46 @@ fn json_write_item(py: Python, env: &StateEnv, item: &Bound<PyAny>) -> PyResult<
             "a Kafka-message payload cannot be stored in a JSON collection",
         ));
     }
-    let value = depythonize::<Value>(item).map_err(|error| {
+    depythonize::<Value>(item).map_err(|error| {
         transient_error(
             py,
             env,
             &format!("value is not representable as JSON: {error}"),
         )
-    })?;
-    Ok(value)
+    })
 }
 
-/// Prepares a Kafka-message write.
+/// Prepares a Kafka-message write from the consumer message that a delivered
+/// `Message` carries.
+///
+/// The dataclass fields are not enough to rebuild one, and rebuilding is
+/// forbidden — see [`MessageCore`] for why. Every `Message` prosody hands to a
+/// handler carries its core message, whether it arrived from the topic or was
+/// read back out of a collection. One built in Python does not.
+///
+/// # Errors
+///
+/// Returns a transient error when `item` carries no core message. Storing
+/// something other than a delivered message is a caller mistake, and caller
+/// mistakes reject transient so the event stays visible instead of being
+/// discarded.
 fn message_write_item(
     py: Python,
     env: &StateEnv,
     item: &Bound<PyAny>,
 ) -> PyResult<ConsumerMessage<Value>> {
-    if item.is_instance(env.0.message_class.bind(py))? {
-        consumer_message(py, env, item)
-    } else {
-        Err(transient_error(py, env, "expected a Kafka message"))
-    }
+    item.getattr("_core")
+        .ok()
+        .and_then(|core| core.cast_into::<MessageCore>().ok())
+        .map(|core| core.get().message())
+        .ok_or_else(|| {
+            transient_error(
+                py,
+                env,
+                "expected a Kafka message that prosody delivered; one built in Python carries no \
+                 Kafka position to store",
+            )
+        })
 }
 
 struct ScanInner<T> {
@@ -328,15 +317,10 @@ pub(crate) fn json_object(py: Python, _env: &StateEnv, value: &Value) -> PyResul
 
 fn json_map_entry(
     py: Python,
-    _env: &StateEnv,
+    env: &StateEnv,
     (key, value): &(String, Value),
 ) -> PyResult<Py<PyAny>> {
-    let value = pythonize(py, value)?;
-    Ok(
-        PyTuple::new(py, [PyString::new(py, key).into_any(), value])?
-            .into_any()
-            .unbind(),
-    )
+    (key, json_object(py, env, value)?).into_py_any(py)
 }
 
 fn message_map_entry(
@@ -344,12 +328,7 @@ fn message_map_entry(
     env: &StateEnv,
     (key, message): &(String, ConsumerMessage<Value>),
 ) -> PyResult<Py<PyAny>> {
-    let value = build_message(py, env, message)?.into_bound(py);
-    Ok(
-        PyTuple::new(py, [PyString::new(py, key).into_any(), value])?
-            .into_any()
-            .unbind(),
-    )
+    (key, build_message(py, env, message)?).into_py_any(py)
 }
 
 macro_rules! native_scan {
@@ -387,29 +366,26 @@ macro_rules! native_scan {
                 let env = self.env.clone();
                 future_into_py(py, async move {
                     let mut guard = inner.lock().await;
-                    if let Some(item) = guard.retained.front() {
-                        let object = Python::attach(|py| ($restore)(py, &env, item))?;
-                        guard.retained.pop_front();
-                        return Ok(object);
-                    }
-                    let pulled = guard
-                        .cursor
-                        .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
-                        .with_context(ctx)
-                        .await;
-                    match pulled {
-                        Err(error) => Python::attach(|py| Err(state_error(py, &env, &error))),
-                        Ok(None) => Err(PyStopAsyncIteration::new_err(())),
-                        Ok(Some(items)) => {
-                            guard.retained.extend(items);
-                            let Some(item) = guard.retained.front() else {
-                                return Err(PyStopAsyncIteration::new_err(()));
-                            };
-                            let object = Python::attach(|py| ($restore)(py, &env, item))?;
-                            guard.retained.pop_front();
-                            Ok(object)
+                    if guard.retained.is_empty() {
+                        let pulled = guard
+                            .cursor
+                            .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
+                            .with_context(ctx)
+                            .await;
+                        match pulled {
+                            Err(error) => {
+                                return Python::attach(|py| Err(state_error(py, &env, &error)));
+                            }
+                            Ok(None) => return Err(PyStopAsyncIteration::new_err(())),
+                            Ok(Some(items)) => guard.retained.extend(items),
                         }
                     }
+                    let Some(item) = guard.retained.front() else {
+                        return Err(PyStopAsyncIteration::new_err(()));
+                    };
+                    let object = Python::attach(|py| ($restore)(py, &env, item))?;
+                    guard.retained.pop_front();
+                    Ok(object)
                 })
             }
 
@@ -442,7 +418,5 @@ native_scan!(
 native_scan!(
     NativeMapKeyScan,
     String,
-    |py, _env: &StateEnv, key: &String| {
-        Ok::<Py<PyAny>, PyErr>(PyString::new(py, key).into_any().unbind())
-    }
+    |py, _env: &StateEnv, key: &String| key.into_py_any(py)
 );
