@@ -7,7 +7,7 @@ same object in a handler.
 
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, ClassVar, Generic, Optional, Union
+from typing import ClassVar, Generic, Optional, Union
 
 from typing_extensions import Literal, TypedDict, TypeVar
 
@@ -45,27 +45,40 @@ class _StateConfig(TypedDict):
     capacity: Optional[int]
 
 
-def _config(definition: Any) -> _StateConfig:
-    """Build the registration config dict the owning client consumes.
+class _Definition:
+    """The registration options every definition shares.
 
-    Excludes ``read_cache``: the owner-side registration path never reads it.
-    A published reader receives it as an explicit argument instead (see
-    :meth:`ProsodyClient.state`).
+    Each definition declares its own fields and overrides only the class
+    defaults that differ.
     """
-    return {
-        "name": definition.name,
-        "kind": definition.kind,
-        "payload": definition.payload,
-        "ttl_seconds": _ttl_seconds(definition.ttl),
-        "read_uncommitted": definition.read_uncommitted,
-        "published": definition.published,
-        "keyset_limit": definition.keyset_limit,
-        "capacity": definition.capacity,
-    }
+
+    published: Optional[bool] = None
+    read_cache: ReadCache = None
+    keyset_limit: Optional[int] = None
+    capacity: Optional[int] = None
+    payload: Optional[str] = "json"
+
+    def to_config(self) -> _StateConfig:
+        """Return the config dict passed to the client and to ``state()``.
+
+        Excludes ``read_cache``: the owner-side registration path never reads
+        it. A published reader receives it as an explicit argument instead
+        (see :meth:`ProsodyClient.state`).
+        """
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "payload": self.payload,
+            "ttl_seconds": _ttl_seconds(self.ttl),
+            "read_uncommitted": self.read_uncommitted,
+            "published": self.published,
+            "keyset_limit": self.keyset_limit,
+            "capacity": self.capacity,
+        }
 
 
 @dataclass(frozen=True)
-class ValueDefinition(Generic[T]):
+class ValueDefinition(_Definition, Generic[T]):
     """A single-value JSON collection definition."""
 
     name: str
@@ -73,18 +86,11 @@ class ValueDefinition(Generic[T]):
     read_uncommitted: Optional[bool] = None
     published: Optional[bool] = None
     read_cache: ReadCache = None
-    keyset_limit: ClassVar[Optional[int]] = None
-    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "value"
-    payload: ClassVar[str] = "json"
-
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        return _config(self)
 
 
 @dataclass(frozen=True)
-class MapDefinition(Generic[V]):
+class MapDefinition(_Definition, Generic[V]):
     """An ordered-map JSON collection definition (string keys)."""
 
     name: str
@@ -93,17 +99,11 @@ class MapDefinition(Generic[V]):
     published: Optional[bool] = None
     read_cache: ReadCache = None
     keyset_limit: Optional[int] = None
-    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "map"
-    payload: ClassVar[str] = "json"
-
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        return _config(self)
 
 
 @dataclass(frozen=True)
-class SetDefinition:
+class SetDefinition(_Definition):
     """A presence-only ordered set of string members."""
 
     name: str
@@ -112,17 +112,12 @@ class SetDefinition:
     published: Optional[bool] = None
     read_cache: ReadCache = None
     keyset_limit: Optional[int] = None
-    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "set"
     payload: ClassVar[Optional[str]] = None
 
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        return _config(self)
-
 
 @dataclass(frozen=True)
-class DequeDefinition(Generic[T]):
+class DequeDefinition(_Definition, Generic[T]):
     """A double-ended-queue JSON collection definition."""
 
     name: str
@@ -131,70 +126,42 @@ class DequeDefinition(Generic[T]):
     published: Optional[bool] = None
     read_cache: ReadCache = None
     capacity: Optional[int] = None
-    keyset_limit: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "deque"
-    payload: ClassVar[str] = "json"
-
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        return _config(self)
 
 
 @dataclass(frozen=True)
-class MessageValueDefinition(Generic[P]):
+class MessageValueDefinition(_Definition, Generic[P]):
     """A single-value collection storing whole Kafka messages."""
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
-    published: ClassVar[Optional[bool]] = None
-    read_cache: ClassVar[ReadCache] = None
-    keyset_limit: ClassVar[Optional[int]] = None
-    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "value"
     payload: ClassVar[str] = "message"
 
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        return _config(self)
-
 
 @dataclass(frozen=True)
-class MessageMapDefinition(Generic[P]):
+class MessageMapDefinition(_Definition, Generic[P]):
     """An ordered-map collection storing whole Kafka messages."""
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     keyset_limit: Optional[int] = None
-    published: ClassVar[Optional[bool]] = None
-    read_cache: ClassVar[ReadCache] = None
-    capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "map"
     payload: ClassVar[str] = "message"
 
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        return _config(self)
-
 
 @dataclass(frozen=True)
-class MessageDequeDefinition(Generic[P]):
+class MessageDequeDefinition(_Definition, Generic[P]):
     """A double-ended-queue collection storing whole Kafka messages."""
 
     name: str
     ttl: Optional[Union[timedelta, int]] = None
     read_uncommitted: Optional[bool] = None
     capacity: Optional[int] = None
-    published: ClassVar[Optional[bool]] = None
-    read_cache: ClassVar[ReadCache] = None
-    keyset_limit: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "deque"
     payload: ClassVar[str] = "message"
-
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        return _config(self)
 
 
 def value(
