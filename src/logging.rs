@@ -98,18 +98,14 @@ fn worker_loop(receiver: &Receiver<LogEvent>, get_logger: &Py<PyAny>) {
         // Acquire GIL once and process a batch of events
         Python::attach(|py| {
             // Process the first event
-            if let Err(err) = forward_to_python(py, get_logger, &first_event) {
-                // Can't log to Python (might cause recursion), drop silently.
-                let _ = err;
-            }
+            // Can't log to Python (might cause recursion), drop silently.
+            let _ = forward_to_python(py, get_logger, &first_event);
 
             // Try to drain more events while we have the GIL (up to BATCH_SIZE)
             for _ in 1..BATCH_SIZE {
                 match receiver.try_recv() {
                     Ok(event) => {
-                        if let Err(err) = forward_to_python(py, get_logger, &event) {
-                            let _ = err;
-                        }
+                        let _ = forward_to_python(py, get_logger, &event);
                     }
                     Err(_) => break, // No more events waiting
                 }
