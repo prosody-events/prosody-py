@@ -2,7 +2,7 @@
 
 import asyncio
 
-from prosody import value, PermanentStateError, TransientStateError, NullValueError
+from prosody import value, PermanentStateError, TransientStateError
 from prosody.query import _KeyQuery
 import pytest
 import tsasync
@@ -182,62 +182,33 @@ async def test_deque_index_type_and_negative_index(state_client):
 # owns and tests that rule.
 
 
-async def test_null_write_rejects_transient_store_untouched(state_client):
+async def test_null_write_surfaces_core_permanent_error(state_client):
+    """Core rejects a JSON null write. The client maps it to PermanentStateError."""
     client, topic, _ = state_client
-    v = nonce()
 
     async def cb(ctx, msg, results):
-        c = ctx.state(STATE_DEFS["cart"])
-        d = ctx.state(STATE_DEFS["backlog"])
-        try:
-            await _wait(c.set({"v": v}))
-            await _wait(c.commit())
-
+        writes = {
+            "value": lambda: ctx.state(STATE_DEFS["cart"]).set(None),
+            "map": lambda: ctx.state(STATE_DEFS["totals"]).set("k", None),
+            "deque": lambda: ctx.state(STATE_DEFS["backlog"]).append(None),
+        }
+        outcome = {}
+        for kind, write in writes.items():
             try:
-                await _wait(c.set(None))
-                value_outcome = {"threw": False}
-            except Exception as e:
-                value_outcome = {
-                    "threw": True,
-                    "null": isinstance(e, NullValueError),
-                    "transient": isinstance(e, TransientStateError),
-                    "value_error": isinstance(e, ValueError),
-                    "msg": str(e),
-                }
-
-            try:
-                await _wait(d.append(None))
-                deque_outcome = {"threw": False}
-            except Exception as e:
-                deque_outcome = {
-                    "threw": True,
-                    "transient": isinstance(e, TransientStateError),
-                }
-
-            await results.send(
-                {
-                    "value": value_outcome,
-                    "deque": deque_outcome,
-                    "after": (await _wait(c.get()))["v"],
-                }
-            )
-        except Exception as e:  # pragma: no cover
-            await results.send({"error": str(e)})
+                await _wait(write())
+                outcome[kind] = "accepted"
+            except PermanentStateError:
+                outcome[kind] = "permanent"
+            except Exception as error:  # pragma: no cover - reported, not raised
+                outcome[kind] = f"{type(error).__name__}: {error}"
+        await results.send(outcome)
 
     handler = StateHandler(cb)
     await _wait(client.subscribe(handler))
     await _wait(client.send(topic, nonce(), {"go": True}))
     obs = await _wait(handler.results.receive())
 
-    assert obs.get("error") is None
-    assert obs["value"]["threw"] is True
-    assert obs["value"]["null"] is True
-    assert obs["value"]["transient"] is True
-    assert obs["value"]["value_error"] is True
-    assert "clear" in obs["value"]["msg"]  # names the deletion verb
-    assert obs["deque"]["threw"] is True
-    assert obs["deque"]["transient"] is True
-    assert obs["after"] == v  # store untouched
+    assert obs == {"value": "permanent", "map": "permanent", "deque": "permanent"}
 
 @pytest.mark.parametrize("bad", [object(), lambda: 1], ids=["object", "lambda"])
 async def test_unrepresentable_write_rejects_transient(state_client, bad):

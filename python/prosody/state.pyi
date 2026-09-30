@@ -4,7 +4,7 @@ These stubs override :mod:`prosody.state` for type-checkers, restoring the
 generic types that the runtime erases to ``Any``. The runtime module is a thin
 transport over the native handles vended by :meth:`Context.state`; the native
 (Rust) layer owns every semantic (carrier injection, chunk draining,
-error-category classification, null/shape/kind guards, and scan flattening).
+error-category classification, shape and kind guards, and scan flattening).
 
 The type parameter of every handle (``T`` / ``V``) is a structural JSON
 annotation; see :mod:`prosody.definition`. Map keys and set members are always
@@ -79,8 +79,8 @@ class ValueState(Generic[T]):
     async def set(self, value: T) -> None:
         """Buffer a write of ``value``.
 
-        Writing ``None`` (JSON ``null``) is rejected with :class:`NullValueError`
-        (transient) — call :meth:`clear` to delete instead.
+        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
+        Call :meth:`clear` to delete instead.
         """
         ...
     async def clear(self) -> None:
@@ -153,8 +153,8 @@ class MapState(Generic[V]):
     async def set(self, key: str, value: V) -> None:
         """Insert or overwrite ``key``.
 
-        Writing ``None`` (JSON ``null``) is rejected with :class:`NullValueError`
-        (transient) — call :meth:`remove` to delete instead.
+        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
+        Call :meth:`remove` to delete instead.
         """
         ...
     async def remove(self, key: str) -> None:
@@ -325,8 +325,8 @@ class DequeState(Generic[T]):
     async def append(self, item: T) -> None:
         """Append ``item`` at the back.
 
-        Writing ``None`` (JSON ``null``) is rejected with :class:`NullValueError`
-        (transient).
+        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
+        Call :meth:`clear` to delete the deque.
         """
         ...
     @overload
@@ -335,8 +335,8 @@ class DequeState(Generic[T]):
     async def appendleft(self, item: T) -> None:
         """Prepend ``item`` at the front.
 
-        Writing ``None`` (JSON ``null``) is rejected with :class:`NullValueError`
-        (transient).
+        Writing ``None`` (JSON ``null``) raises :class:`PermanentStateError`.
+        Call :meth:`clear` to delete the deque.
         """
         ...
     async def pop(self) -> Optional[T]:

@@ -189,7 +189,7 @@ deque_state!(
     NativeJsonDequeState,
     Value,
     NativeJsonDequeScan,
-    |py, env, item| json_write_item(py, env, item, " in a deque"),
+    json_write_item,
     |py, _env: &StateEnv, item| Ok(pythonize(py, item)?.unbind())
 );
 deque_state!(

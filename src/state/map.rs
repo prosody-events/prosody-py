@@ -171,7 +171,7 @@ map_state!(
     NativeJsonMapState,
     Value,
     NativeJsonMapScan,
-    |py, env, item| json_write_item(py, env, item, "; use remove(key) to remove the entry"),
+    json_write_item,
     |py, _env: &StateEnv, item| Ok(pythonize(py, item)?.unbind())
 );
 map_state!(

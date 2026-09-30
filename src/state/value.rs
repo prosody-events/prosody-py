@@ -87,7 +87,7 @@ macro_rules! value_state {
 value_state!(
     NativeJsonValueState,
     Value,
-    |py, env, item| json_write_item(py, env, item, "; use clear() to remove the value"),
+    json_write_item,
     |py, _env: &StateEnv, item| Ok(pythonize(py, item)?.unbind())
 );
 value_state!(

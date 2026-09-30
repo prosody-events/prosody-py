@@ -3,7 +3,7 @@
 A thin transport over the native handles vended by :meth:`Context.state`. The
 native layer (Rust) already owns every semantic: carrier injection, chunk
 draining, error-category classification (raising ``PermanentStateError`` /
-``TransientStateError`` / ``NullValueError`` directly), write validation, and
+``TransientStateError`` directly), write validation, and
 scan flattening. These wrappers therefore only:
 
 * restore the caller's **types** through generics,
@@ -78,8 +78,7 @@ class ValueState(Generic[T]):
 
     Valid only within the handler invocation that vended it. All methods are
     async; the native layer owns validation, so writing ``None`` (or an
-    unrepresentable value) raises ``NullValueError`` from the native layer, not
-    from here.
+    unrepresentable value) raises from the native layer, not from here.
     """
 
     def __init__(self, native: Any) -> None:
@@ -90,7 +89,7 @@ class ValueState(Generic[T]):
         return await self._native.get()
 
     async def set(self, value: T) -> None:
-        """Buffer a write of ``value`` (``None`` raises ``NullValueError``)."""
+        """Buffer a write of ``value`` (``None`` raises ``PermanentStateError``)."""
         await self._native.set(value)
 
     async def clear(self) -> None:
@@ -157,7 +156,7 @@ class MapState(Generic[V]):
         return await self._native.is_empty()
 
     async def set(self, key: str, value: V) -> None:
-        """Insert or overwrite ``key`` (``None`` raises ``NullValueError``)."""
+        """Insert or overwrite ``key`` (``None`` raises ``PermanentStateError``)."""
         await self._native.set(key, value)
 
     async def remove(self, key: str) -> None:
@@ -332,7 +331,7 @@ class DequeState(Generic[T]):
         self._native = native
 
     async def append(self, item: T) -> None:
-        """Append ``item`` at the back (``None`` raises ``NullValueError``).
+        """Append ``item`` at the back (``None`` raises ``PermanentStateError``).
 
         On a capacity-bounded deque (``capacity=`` on the definition), a push is
         the only operation that enforces the bound: it evicts from the opposite
@@ -344,7 +343,7 @@ class DequeState(Generic[T]):
         await self._native.push_back(item)
 
     async def appendleft(self, item: T) -> None:
-        """Prepend ``item`` at the front (``None`` raises ``NullValueError``).
+        """Prepend ``item`` at the front (``None`` raises ``PermanentStateError``).
 
         The front-push counterpart of :meth:`append`; on a bounded deque it
         evicts from the back toward capacity before prepending.

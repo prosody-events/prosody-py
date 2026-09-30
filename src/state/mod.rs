@@ -19,9 +19,10 @@
 //! [`category`](ErasedStateError::category), never by parsing the message. No
 //! fencing or cursor safety lives here — those are core-owned and this layer
 //! only transports and restores types. Caller-mistake conditions the glue
-//! detects (an unrepresentable value, a `null` write, a wrong item shape, an
-//! invalid enum token, an out-of-range index) reject TRANSIENT — a caller code
-//! error retries and stays visible rather than discarding the message.
+//! detects (an unrepresentable value, a wrong item shape, an invalid enum
+//! token) reject TRANSIENT — a caller code error retries and stays visible
+//! rather than discarding the message. Core rejects a JSON null write as
+//! permanent.
 
 use crate::message::{MessageCore, PythonRecord};
 use opentelemetry::Context as OtelContext;
@@ -66,7 +67,7 @@ const SCAN_READY_CHUNK_SIZE: NonZeroUsize = match NonZeroUsize::new(256) {
 };
 
 /// Cheaply-cloned per-handle environment: the OpenTelemetry carrier accessors,
-/// the propagator, the cached Python `Message` class, and the three Python
+/// the propagator, the cached Python `Message` class, and the two Python
 /// state-error classes. A handle and every cursor it opens share one `Arc`.
 ///
 /// The handles do not visit these objects for GC traversal. They are
@@ -90,12 +91,10 @@ struct StateEnvInner {
     permanent_error: Py<PyAny>,
     /// The Python `TransientStateError` class.
     transient_error: Py<PyAny>,
-    /// The Python `NullValueError` class.
-    null_value_error: Py<PyAny>,
 }
 
 impl StateEnv {
-    /// Resolves the environment at vend time, looking up the three state-error
+    /// Resolves the environment at vend time, looking up the two state-error
     /// classes from the `prosody` package.
     ///
     /// The classes are defined in the Python layer; resolving them here (rather
@@ -120,7 +119,6 @@ impl StateEnv {
             message_class: message_class.clone_ref(py),
             permanent_error: prosody.getattr("PermanentStateError")?.unbind(),
             transient_error: prosody.getattr("TransientStateError")?.unbind(),
-            null_value_error: prosody.getattr("NullValueError")?.unbind(),
         })))
     }
 
@@ -165,13 +163,6 @@ pub(crate) fn state_error(py: Python, env: &StateEnv, error: &ErasedStateError) 
 /// and stays visible instead.
 fn transient_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
     raise(env.0.transient_error.bind(py), message)
-}
-
-/// Builds a `NullValueError` for a JSON-`null` write (a transient caller
-/// mistake). `null` is not a storable value; `message` is the fully-formed
-/// rejection text (the caller appends the collection's deletion verb).
-fn null_value_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
-    raise(env.0.null_value_error.bind(py), message)
 }
 
 /// Parses a scan-direction token into the core [`Direction`].
@@ -247,12 +238,9 @@ fn build_message(
 }
 
 /// Prepares a JSON write.
-fn json_write_item(
-    py: Python,
-    env: &StateEnv,
-    item: &Bound<PyAny>,
-    deletion_advice: &str,
-) -> PyResult<Value> {
+///
+/// A JSON null passes through. Core rejects a null write as permanent.
+fn json_write_item(py: Python, env: &StateEnv, item: &Bound<PyAny>) -> PyResult<Value> {
     if item.is_instance(env.0.message_class.bind(py))? {
         return Err(transient_error(
             py,
@@ -267,13 +255,6 @@ fn json_write_item(
             &format!("value is not representable as JSON: {error}"),
         )
     })?;
-    if value.is_null() {
-        return Err(null_value_error(
-            py,
-            env,
-            &format!("JSON null is not a storable value{deletion_advice}"),
-        ));
-    }
     Ok(value)
 }
 
