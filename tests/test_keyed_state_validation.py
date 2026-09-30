@@ -51,10 +51,13 @@ async def test_invalid_state_read_cache_size_is_rejected(state_read_cache_size):
         await make_client(state_read_cache_size=state_read_cache_size)
 
 
-@pytest.mark.parametrize("state_read_cache", [True, -1])
-async def test_invalid_state_read_cache_is_rejected(state_read_cache):
+@pytest.mark.parametrize("read_cache", [True, -1, "soon"])
+async def test_invalid_read_cache_is_rejected(read_cache, client_factory):
     with pytest.raises(ValueError, match="state_read_cache"):
-        await make_client(state_read_cache=state_read_cache)
+        await make_client(state_read_cache=read_cache)
+    client = await client_factory(**BASE)
+    with pytest.raises(ValueError, match="read_cache"):
+        await client.state("owner", value("v", read_cache=read_cache))
 
 
 class RawDef:

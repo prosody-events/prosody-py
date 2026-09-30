@@ -1,8 +1,8 @@
 //! Python client for Kafka production and consumption.
 
-use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache};
+use prosody::high_level::erased::ErasedConsumerState;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{PyAnyMethods, PyDict};
+use pyo3::types::PyDict;
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
@@ -15,13 +15,13 @@ use crate::client::config::prepare_config;
 use crate::handler::PythonHandler;
 use crate::published::{PublishedDeque, PublishedMap, PublishedSet, PublishedValue};
 use crate::request::{request_outcomes, request_parameters};
-use crate::util::check_fork;
+use crate::util::{check_fork, parse_read_cache};
 
 mod config;
 mod model;
 
 pub use model::ProsodyClient;
-use model::{consumer_state_name, parse_read_cache, shutdown};
+use model::{consumer_state_name, shutdown};
 
 /// A client for interacting with Kafka using the Prosody library.
 ///
@@ -206,7 +206,7 @@ impl ProsodyClient {
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
-        let cache = parse_read_cache(read_cache)?;
+        let cache = parse_read_cache("read_cache", read_cache)?;
         let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
@@ -228,7 +228,7 @@ impl ProsodyClient {
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
-        let cache = parse_read_cache(read_cache)?;
+        let cache = parse_read_cache("read_cache", read_cache)?;
         let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
@@ -250,7 +250,7 @@ impl ProsodyClient {
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
-        let cache = parse_read_cache(read_cache)?;
+        let cache = parse_read_cache("read_cache", read_cache)?;
         let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
@@ -272,7 +272,7 @@ impl ProsodyClient {
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
         check_fork(self.pid, "ProsodyClient")?;
-        let cache = parse_read_cache(read_cache)?;
+        let cache = parse_read_cache("read_cache", read_cache)?;
         let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {

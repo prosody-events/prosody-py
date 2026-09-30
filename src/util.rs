@@ -3,8 +3,9 @@
 //! This module provides helper functions to extract and convert data
 //! from Python objects into Rust-compatible types using the `PyO3` library.
 
+use prosody::high_level::erased::ErasedReadCache;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
+use pyo3::types::{PyAnyMethods, PyBool, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
 use pyo3::{Bound, PyAny, PyResult};
 use std::process;
 use std::time::Duration;
@@ -93,6 +94,30 @@ pub fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duratio
     } else {
         Some(decode_duration(value)?)
     })
+}
+
+/// Parses a read-cache option. `None` inherits the default, `False` bypasses
+/// the cache, and a duration sets the cache window.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` that names `field` for `True` or for a value that
+/// is not a duration.
+pub fn parse_read_cache(field: &str, value: Option<&Bound<PyAny>>) -> PyResult<ErasedReadCache> {
+    let Some(value) = value else {
+        return Ok(ErasedReadCache::Inherit);
+    };
+    if value.is_instance_of::<PyBool>() {
+        if value.is_truthy()? {
+            return Err(PyValueError::new_err(format!(
+                "{field}: True is ambiguous; use a duration or False"
+            )));
+        }
+        return Ok(ErasedReadCache::Disabled);
+    }
+    decode_duration(value)
+        .map(ErasedReadCache::Ttl)
+        .map_err(|error| PyValueError::new_err(format!("{field}: {}", error.value(value.py()))))
 }
 
 /// Reads the option `key` from a keyword-argument dict.

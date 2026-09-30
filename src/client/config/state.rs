@@ -2,15 +2,15 @@
 //! collections.
 
 use super::collection::register_state_collection;
-use crate::util::{decode_duration, option};
+use crate::util::{option, parse_read_cache};
 use prosody::ByteSize;
 use prosody::consumer::KeyedStateConfiguration;
+use prosody::high_level::erased::ErasedReadCache;
 use prosody::subsystem::SubsystemName;
 use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyAnyMethods, PyBool, PyDict};
+use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{Bound, PyResult};
 use std::path::PathBuf;
-use std::time::Duration;
 
 /// Builds the `KeyedStateConfiguration` from the provided Python configuration.
 ///
@@ -49,12 +49,13 @@ pub(super) fn build_keyed_state_config(
         builder.read_cache_size(Some(size));
     }
 
-    match read_cache_ttl(config)? {
-        ReadCacheTtl::Inherit => {}
-        ReadCacheTtl::Disabled => {
+    let cache = option(config, "state_read_cache")?;
+    match parse_read_cache("state_read_cache", cache.as_ref())? {
+        ErasedReadCache::Inherit => {}
+        ErasedReadCache::Disabled => {
             builder.read_cache_ttl(None);
         }
-        ReadCacheTtl::Ttl(ttl) => {
+        ErasedReadCache::Ttl(ttl) => {
             builder.read_cache_ttl(Some(ttl));
         }
     }
@@ -77,30 +78,6 @@ pub(super) fn build_keyed_state_config(
     }
 
     Ok(keyed)
-}
-
-enum ReadCacheTtl {
-    Inherit,
-    Disabled,
-    Ttl(Duration),
-}
-
-fn read_cache_ttl(config: &Bound<PyDict>) -> PyResult<ReadCacheTtl> {
-    let Some(cache) = option(config, "state_read_cache")? else {
-        return Ok(ReadCacheTtl::Inherit);
-    };
-    if cache.is_instance_of::<PyBool>() {
-        if cache.is_truthy()? {
-            return Err(PyValueError::new_err(
-                "state_read_cache: True is ambiguous; use a duration or False",
-            ));
-        }
-        return Ok(ReadCacheTtl::Disabled);
-    }
-    let duration = decode_duration(&cache).map_err(|error| {
-        PyValueError::new_err(format!("state_read_cache: {}", error.value(cache.py())))
-    })?;
-    Ok(ReadCacheTtl::Ttl(duration))
 }
 
 /// Reads an optional byte size, such as `"64 MiB"`, from the client config.
