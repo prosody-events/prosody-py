@@ -35,22 +35,7 @@ mod collection;
 mod middleware;
 mod state;
 
-/// Builds a `ProsodyClient` configuration based on the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `py` - The Python interpreter context.
-/// * `config` - An optional Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the configured `ProsodyClient`.
-///
-/// # Errors
-///
-/// Returns a `PyValueError` if the configuration is invalid or parsing fails.
-/// Returns a `PyRuntimeError` if client initialization fails.
+/// The parsed client options, ready to connect.
 pub struct PreparedClient {
     mode: Mode,
     producer: ProducerConfigurationBuilder,
@@ -80,6 +65,11 @@ impl PreparedClient {
     }
 }
 
+/// Parses the client keyword options into a [`PreparedClient`].
+///
+/// # Errors
+///
+/// Returns a `PyValueError` if an option is invalid.
 pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<PreparedClient> {
     let env = StateEnv::resolve(py, Arc::new(new_propagator()))?;
 
@@ -105,20 +95,7 @@ pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Pr
     })
 }
 
-/// Builds a `ProducerConfigurationBuilder` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `ProducerConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `ProducerConfigurationBuilder` from the client options.
 fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurationBuilder> {
     let mut builder = ProducerConfigurationBuilder::default();
 
@@ -145,20 +122,7 @@ fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurati
     Ok(builder)
 }
 
-/// Builds a `ConsumerConfigurationBuilder` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `ConsumerConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `ConsumerConfigurationBuilder` from the client options.
 fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurationBuilder> {
     let mut builder = ConsumerConfigurationBuilder::default();
 
@@ -265,20 +229,7 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
     Ok(builder)
 }
 
-/// Builds a `CassandraConfigurationBuilder` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `CassandraConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `CassandraConfigurationBuilder` from the client options.
 fn build_cassandra_config(config: &Bound<PyDict>) -> PyResult<CassandraConfigurationBuilder> {
     let mut builder = CassandraConfigurationBuilder::default();
 
@@ -320,20 +271,7 @@ fn build_cassandra_config(config: &Bound<PyDict>) -> PyResult<CassandraConfigura
     Ok(builder)
 }
 
-/// Builds a `TelemetryEmitterConfiguration` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `TelemetryEmitterConfiguration`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `TelemetryEmitterConfiguration` from the client options.
 fn build_telemetry_emitter_config(
     config: &Bound<PyDict>,
 ) -> PyResult<TelemetryEmitterConfiguration> {
@@ -352,19 +290,7 @@ fn build_telemetry_emitter_config(
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-/// Builds `ConsumerBuilders` from the provided Python configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `ConsumerBuilders`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `ConsumerBuilders` from the client options.
 fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders> {
     Ok(ConsumerBuilders {
         consumer: build_consumer_config(config)?,

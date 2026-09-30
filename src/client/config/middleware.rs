@@ -14,20 +14,7 @@ use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{Bound, PyResult};
 use std::num::NonZeroUsize;
 
-/// Builds a `DeduplicationConfigurationBuilder` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `DeduplicationConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `DeduplicationConfigurationBuilder` from the client options.
 pub(super) fn build_dedup_config(
     config: &Bound<PyDict>,
 ) -> PyResult<DeduplicationConfigurationBuilder> {
@@ -51,19 +38,7 @@ pub(super) fn build_dedup_config(
     Ok(builder)
 }
 
-/// Builds a `RetryConfigurationBuilder` from the provided Python configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `RetryConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `RetryConfigurationBuilder` from the client options.
 pub(super) fn build_retry_config(config: &Bound<PyDict>) -> PyResult<RetryConfigurationBuilder> {
     let mut builder = RetryConfigurationBuilder::default();
 
@@ -82,20 +57,7 @@ pub(super) fn build_retry_config(config: &Bound<PyDict>) -> PyResult<RetryConfig
     Ok(builder)
 }
 
-/// Builds a `FailureTopicConfigurationBuilder` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `FailureTopicConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `FailureTopicConfigurationBuilder` from the client options.
 pub(super) fn build_failure_topic_config(
     config: &Bound<PyDict>,
 ) -> PyResult<FailureTopicConfigurationBuilder> {
@@ -108,20 +70,7 @@ pub(super) fn build_failure_topic_config(
     Ok(builder)
 }
 
-/// Builds a `SchedulerConfigurationBuilder` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `SchedulerConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `SchedulerConfigurationBuilder` from the client options.
 pub(super) fn build_scheduler_config(
     config: &Bound<PyDict>,
 ) -> PyResult<SchedulerConfigurationBuilder> {
@@ -150,21 +99,7 @@ pub(super) fn build_scheduler_config(
     Ok(builder)
 }
 
-/// Builds a `MonopolizationConfigurationBuilder` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed
-/// `MonopolizationConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `MonopolizationConfigurationBuilder` from the client options.
 pub(super) fn build_monopolization_config(
     config: &Bound<PyDict>,
 ) -> PyResult<MonopolizationConfigurationBuilder> {
@@ -189,19 +124,7 @@ pub(super) fn build_monopolization_config(
     Ok(builder)
 }
 
-/// Builds a `DeferConfigurationBuilder` from the provided Python configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `DeferConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `DeferConfigurationBuilder` from the client options.
 pub(super) fn build_defer_config(config: &Bound<PyDict>) -> PyResult<DeferConfigurationBuilder> {
     let mut builder = DeferConfigurationBuilder::default();
 
@@ -233,20 +156,7 @@ pub(super) fn build_defer_config(config: &Bound<PyDict>) -> PyResult<DeferConfig
     Ok(builder)
 }
 
-/// Builds a `TimeoutConfigurationBuilder` from the provided Python
-/// configuration.
-///
-/// # Arguments
-///
-/// * `config` - A Python dictionary containing configuration options.
-///
-/// # Returns
-///
-/// A `PyResult` containing the constructed `TimeoutConfigurationBuilder`.
-///
-/// # Errors
-///
-/// Returns a `PyErr` if extraction of configuration values fails.
+/// Builds the `TimeoutConfigurationBuilder` from the client options.
 pub(super) fn build_timeout_config(
     config: &Bound<PyDict>,
 ) -> PyResult<TimeoutConfigurationBuilder> {
