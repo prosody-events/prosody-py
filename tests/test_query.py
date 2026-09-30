@@ -6,6 +6,8 @@ against recording stubs. ``test_keyed_state_query.py`` checks that the native la
 applies the same values against a live store.
 """
 
+from dataclasses import replace
+
 import pytest
 
 from prosody import (
@@ -76,36 +78,37 @@ def _position_scans(native):
 
 
 KEY_CASES = [
-    ({}, _KeyQuery(backward=True)),
-    ({"prefix": "ord-"}, _KeyQuery(backward=True, prefix="ord-")),
-    ({"from_": "b"}, _KeyQuery(backward=True, start=("b", True))),
-    ({"after": "b"}, _KeyQuery(backward=True, start=("b", False))),
-    ({"to": "y"}, _KeyQuery(backward=True, end=("y", True))),
-    ({"before": "y"}, _KeyQuery(backward=True, end=("y", False))),
-    ({"limit": 3}, _KeyQuery(backward=True, limit=3)),
-    ({"range": slice("a", "m")}, _KeyQuery(backward=True, range=("a", "m"))),
-    ({"range": slice("a", None)}, _KeyQuery(backward=True, range=("a", None))),
-    ({"range": slice(None, "m")}, _KeyQuery(backward=True, range=(None, "m"))),
-    ({"range": slice(None, None)}, _KeyQuery(backward=True, range=(None, None))),
-    ({"range": slice("m", "a")}, _KeyQuery(backward=True, range=("m", "a"))),
+    ({}, _KeyQuery()),
+    ({"prefix": "ord-"}, _KeyQuery(prefix="ord-")),
+    ({"from_": "b"}, _KeyQuery(start=("b", True))),
+    ({"after": "b"}, _KeyQuery(start=("b", False))),
+    ({"to": "y"}, _KeyQuery(end=("y", True))),
+    ({"before": "y"}, _KeyQuery(end=("y", False))),
+    ({"limit": 3}, _KeyQuery(limit=3)),
+    ({"range": slice("a", "m")}, _KeyQuery(range=("a", "m"))),
+    ({"range": slice("a", None)}, _KeyQuery(range=("a", None))),
+    ({"range": slice(None, "m")}, _KeyQuery(range=(None, "m"))),
+    ({"range": slice(None, None)}, _KeyQuery(range=(None, None))),
+    ({"range": slice("m", "a")}, _KeyQuery(range=("m", "a"))),
     (
         {"prefix": "p", "after": "p1", "before": "p9", "limit": 2},
-        _KeyQuery(True, "p", ("p1", False), ("p9", False), limit=2),
+        _KeyQuery(False, "p", ("p1", False), ("p9", False), limit=2),
     ),
     (
         {"from_": "b", "range": slice("a", "m"), "limit": 2},
-        _KeyQuery(backward=True, start=("b", True), range=("a", "m"), limit=2),
+        _KeyQuery(start=("b", True), range=("a", "m"), limit=2),
     ),
 ]
 
 
 @pytest.mark.parametrize(("options", "expected"), KEY_CASES)
-def test_key_options_translate_on_every_scan(options, expected):
+@pytest.mark.parametrize("direction", Direction)
+def test_key_options_translate_on_every_scan(options, expected, direction):
     native = _Recorder()
     for scan in _key_scans(native):
-        scan(Direction.BACKWARD, **options)
-    assert native.queries == [expected] * len(native.queries)
-    assert len(native.queries) == 8
+        scan(direction, **options)
+    backward = direction is Direction.BACKWARD
+    assert native.queries == [replace(expected, backward=backward)] * 8
 
 
 @pytest.mark.parametrize(
@@ -158,11 +161,13 @@ POSITION_CASES = [
 
 
 @pytest.mark.parametrize(("options", "expected"), POSITION_CASES)
-def test_position_options_translate_on_every_scan(options, expected):
+@pytest.mark.parametrize("direction", Direction)
+def test_position_options_translate_on_every_scan(options, expected, direction):
     native = _Recorder()
     for scan in _position_scans(native):
-        scan(Direction.FORWARD, **options)
-    assert native.queries == [expected, expected]
+        scan(direction, **options)
+    backward = direction is Direction.BACKWARD
+    assert native.queries == [replace(expected, backward=backward)] * 2
 
 
 @pytest.mark.parametrize(

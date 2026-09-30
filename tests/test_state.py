@@ -28,10 +28,6 @@ from prosody.query import _KeyQuery, _PositionQuery
 import pytest
 
 
-def test_direction_tokens():
-    assert Direction.FORWARD.value == "forward"
-    assert Direction.BACKWARD.value == "backward"
-
 def test_permanent_state_error():
     e = PermanentStateError("x")
     assert e.is_permanent is True
@@ -220,40 +216,6 @@ async def test_map_scan_transforms():
     assert [k async for k in m] == ["a", "b"]  # __aiter__ = keys (dict-like)
 
 @pytest.mark.asyncio
-async def test_map_items_direction_token():
-    n = _StubNative([("a", 1)])
-    async for _ in MapState(n).items(Direction.BACKWARD):
-        pass
-    assert n.calls[0] == ("scan", _KeyQuery(backward=True))
-
-@pytest.mark.asyncio
-async def test_map_keys_direction_token():
-    # keys() drives the cheap native `keys` cursor (not the pair `scan`) and
-    # threads the direction through.
-    n = _StubNative([("a", 1)])
-    async for _ in MapState(n).keys():
-        pass
-    assert n.calls[0] == ("keys", _KeyQuery())
-
-    n_back = _StubNative([("a", 1)])
-    async for _ in MapState(n_back).keys(Direction.BACKWARD):
-        pass
-    assert n_back.calls[0] == ("keys", _KeyQuery(backward=True))
-
-@pytest.mark.asyncio
-async def test_map_values_project_the_pair_scan():
-    # values() is a pair-scan projection that takes the same query options.
-    n = _StubNative([("a", 1)])
-    async for _ in MapState(n).values():
-        pass
-    async for _ in MapState(n).values(Direction.BACKWARD, limit=1):
-        pass
-    assert n.calls == [
-        ("scan", _KeyQuery()),
-        ("scan", _KeyQuery(backward=True, limit=1)),
-    ]
-
-@pytest.mark.asyncio
 async def test_map_contains_delegates():
     n = _StubNative()
     await MapState(n).contains("k")
@@ -295,13 +257,6 @@ async def test_deque_values_and_aiter():
     n = _StubNative([1, 2, 3])
     assert [x async for x in DequeState(n).values()] == [1, 2, 3]
     assert [x async for x in DequeState(_StubNative([9]))] == [9]  # __aiter__
-
-@pytest.mark.asyncio
-async def test_deque_values_direction_token():
-    n = _StubNative([1])
-    async for _ in DequeState(n).values(Direction.BACKWARD):
-        pass
-    assert n.calls[0] == ("scan", _PositionQuery(backward=True))
 
 @pytest.mark.asyncio
 async def test_aclosing_closes_scan():
