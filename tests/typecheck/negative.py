@@ -19,6 +19,7 @@ from prosody import (
     message_deque,
     set,
 )
+from prosody import ProsodyHandler  # type: ignore[attr-defined]
 
 
 class Event(TypedDict):

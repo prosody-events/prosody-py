@@ -73,7 +73,7 @@ struct TimerExecutionContext<'a> {
 /// Base Python class name for message handlers
 const HANDLER_CLASS_NAME: &str = "EventHandler";
 
-/// Python wrapper class name for tracing/cancellation
+/// Internal `prosody.handler` class that adds tracing and cancellation.
 const HANDLER_WRAPPER_CLASS_NAME: &str = "ProsodyHandler";
 
 /// Python class name for Kafka messages
@@ -129,7 +129,9 @@ impl PythonHandler {
         let py = handler.py();
         let prosody_module = py.import("prosody")?;
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
-        let tracing_handler_class = prosody_module.getattr(HANDLER_WRAPPER_CLASS_NAME)?;
+        let tracing_handler_class = py
+            .import("prosody.handler")?
+            .getattr(HANDLER_WRAPPER_CLASS_NAME)?;
         let message_class = prosody_module.getattr(MESSAGE_CLASS_NAME)?;
         let excise_class = prosody_module.getattr(EXCISE_CLASS_NAME)?;
         let timer_class = prosody_module.getattr(TIMER_CLASS_NAME)?;
