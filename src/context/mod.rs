@@ -2,12 +2,10 @@
 //! format.
 //!
 //! This module provides the `Context` struct to hold message context
-//! information for Kafka messages.
+//! information for Kafka messages. The `state` module binds keyed-state
+//! collections for the context.
 
-use crate::state::{
-    NativeJsonDequeState, NativeJsonMapState, NativeJsonValueState, NativeMessageDequeState,
-    NativeMessageMapState, NativeMessageValueState, NativeSetState, StateEnv, state_error,
-};
+use crate::state::StateEnv;
 use chrono::{DateTime, Utc};
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use prosody::consumer::DemandType;
@@ -15,25 +13,17 @@ use prosody::consumer::event_context::BoxEventContext;
 use prosody::timers::TimerType;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::gc::{PyTraverseError, PyVisit};
-use pyo3::types::{PyAnyMethods, PyDict, PyModule, PyTypeMethods};
-use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python, pyclass, pymethods};
+use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
+use pyo3::{Bound, Py, PyAny, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use serde_json::Value;
+use state::StateDefinitionKind;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tracing::{Instrument, debug, info_span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub(crate) enum StateDefinitionKind {
-    Value,
-    Map,
-    Set,
-    Deque,
-    MessageValue,
-    MessageMap,
-    MessageDeque,
-}
+mod state;
 
 /// Encapsulates context information for a Kafka message.
 ///
@@ -50,43 +40,6 @@ pub struct Context {
     pub(crate) demand: DemandType,
     /// Typed-wrapper cache keyed by descriptor type and collection name.
     pub(crate) state_handles: Mutex<HashMap<(StateDefinitionKind, String), Py<PyAny>>>,
-}
-
-/// Builds a `TransientStateError` for a malformed or hostile state definition —
-/// a caller mistake, so transient rather than a message-discarding permanent.
-fn transient_state_error(prosody: &Bound<PyModule>, message: &str) -> PyErr {
-    match prosody
-        .getattr("TransientStateError")
-        .and_then(|class| class.call1((message,)))
-    {
-        Ok(instance) => PyErr::from_value(instance),
-        // Constructing the exception itself failed — surface that error.
-        Err(error) => error,
-    }
-}
-
-fn state_definition_kind(
-    prosody: &Bound<PyModule>,
-    definition: &Bound<PyAny>,
-) -> PyResult<StateDefinitionKind> {
-    const CLASSES: [(&str, StateDefinitionKind); 7] = [
-        ("ValueDefinition", StateDefinitionKind::Value),
-        ("MapDefinition", StateDefinitionKind::Map),
-        ("SetDefinition", StateDefinitionKind::Set),
-        ("DequeDefinition", StateDefinitionKind::Deque),
-        ("MessageValueDefinition", StateDefinitionKind::MessageValue),
-        ("MessageMapDefinition", StateDefinitionKind::MessageMap),
-        ("MessageDequeDefinition", StateDefinitionKind::MessageDeque),
-    ];
-    for (name, kind) in CLASSES {
-        if definition.is_instance(&prosody.getattr(name)?)? {
-            return Ok(kind);
-        }
-    }
-    Err(transient_state_error(
-        prosody,
-        "state: definition must come from a Prosody state definition constructor",
-    ))
 }
 
 impl Context {
@@ -346,147 +299,8 @@ impl Context {
         Ok(format!("{class_name}: {status}"))
     }
 
-    /// Vends the low-level handle for the named JSON value collection.
-    ///
-    /// Vending verifies the collection's registration (core-side); no span is
-    /// opened here — vended handles outlive the call, and every operation opens
-    /// its own span.
-    ///
-    /// # Errors
-    ///
-    /// Returns a permanent error if the name is unregistered or its registered
-    /// identity mismatches.
-    fn value_state(&self, py: Python, name: &str) -> PyResult<NativeJsonValueState> {
-        let env = self.state_env(py)?;
-        let handle = self
-            .inner
-            .value_state(name)
-            .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeJsonValueState {
-            state: Arc::new(handle),
-            env,
-        })
-    }
-
-    /// Vends the low-level handle for the named JSON map collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns a permanent error if the name is unregistered or its registered
-    /// identity mismatches.
-    fn map_state(&self, py: Python, name: &str) -> PyResult<NativeJsonMapState> {
-        let env = self.state_env(py)?;
-        let handle = self
-            .inner
-            .map_state(name)
-            .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeJsonMapState {
-            state: Arc::new(handle),
-            env,
-        })
-    }
-
-    /// Vends the low-level handle for the named set collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns a permanent error if the name is unregistered or its registered
-    /// identity mismatches.
-    fn set_state(&self, py: Python, name: &str) -> PyResult<NativeSetState> {
-        let env = self.state_env(py)?;
-        let handle = self
-            .inner
-            .set_state(name)
-            .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeSetState {
-            state: Arc::new(handle),
-            env,
-        })
-    }
-
-    /// Vends the low-level handle for the named JSON deque collection.
-    ///
-    /// # Errors
-    ///
-    /// Returns a permanent error if the name is unregistered or its registered
-    /// identity mismatches.
-    fn deque_state(&self, py: Python, name: &str) -> PyResult<NativeJsonDequeState> {
-        let env = self.state_env(py)?;
-        let handle = self
-            .inner
-            .deque_state(name)
-            .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeJsonDequeState {
-            state: Arc::new(handle),
-            env,
-        })
-    }
-
-    /// Vends the low-level handle for the named Kafka-message value collection.
-    ///
-    /// Items are the full `Message` the handler received, loader-resolved on
-    /// read.
-    ///
-    /// # Errors
-    ///
-    /// Returns a permanent error if the name is unregistered or its registered
-    /// identity mismatches.
-    fn message_value_state(&self, py: Python, name: &str) -> PyResult<NativeMessageValueState> {
-        let env = self.state_env(py)?;
-        let handle = self
-            .inner
-            .message_value_state(name)
-            .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeMessageValueState {
-            state: Arc::new(handle),
-            env,
-        })
-    }
-
-    /// Vends the low-level handle for the named Kafka-message map collection.
-    ///
-    /// Items are the full `Message` the handler received, loader-resolved on
-    /// read.
-    ///
-    /// # Errors
-    ///
-    /// Returns a permanent error if the name is unregistered or its registered
-    /// identity mismatches.
-    fn message_map_state(&self, py: Python, name: &str) -> PyResult<NativeMessageMapState> {
-        let env = self.state_env(py)?;
-        let handle = self
-            .inner
-            .message_map_state(name)
-            .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeMessageMapState {
-            state: Arc::new(handle),
-            env,
-        })
-    }
-
-    /// Vends the low-level handle for the named Kafka-message deque collection.
-    ///
-    /// Items are the full `Message` the handler received, loader-resolved on
-    /// read.
-    ///
-    /// # Errors
-    ///
-    /// Returns a permanent error if the name is unregistered or its registered
-    /// identity mismatches.
-    fn message_deque_state(&self, py: Python, name: &str) -> PyResult<NativeMessageDequeState> {
-        let env = self.state_env(py)?;
-        let handle = self
-            .inner
-            .message_deque_state(name)
-            .map_err(|e| state_error(py, &env, &e))?;
-        Ok(NativeMessageDequeState {
-            state: Arc::new(handle),
-            env,
-        })
-    }
-
     /// Binds a registered keyed-state collection for this event and returns the
-    /// typed Python wrapper (`ValueState`/`MapState`/`DequeState`).
+    /// typed Python wrapper (`ValueState`/`MapState`/`SetState`/`DequeState`).
     ///
     /// Uses the descriptor's concrete type to select the matching internal
     /// vend and Python wrapper. Repeated calls cache the wrapper by descriptor
@@ -498,56 +312,7 @@ impl Context {
     /// (a caller mistake). The permanent unregistered/identity-mismatch
     /// error is raised by the internal vend.
     fn state(&self, py: Python, definition: &Bound<PyAny>) -> PyResult<Py<PyAny>> {
-        let prosody = py.import("prosody")?;
-
-        let kind = state_definition_kind(&prosody, definition)?;
-        let name = definition
-            .getattr("name")
-            .and_then(|name| name.extract::<String>())
-            .map_err(|_| {
-                transient_state_error(&prosody, "state: definition name must be a string")
-            })?;
-        let cache_key = (kind, name.clone());
-        {
-            let cache = self
-                .state_handles
-                .lock()
-                .map_err(|_| PyRuntimeError::new_err("state cache mutex poisoned"))?;
-            if let Some(existing) = cache.get(&cache_key) {
-                return Ok(existing.clone_ref(py));
-            }
-        }
-
-        let native: Py<PyAny> = match kind {
-            StateDefinitionKind::Value => Py::new(py, self.value_state(py, &name)?)?.into_any(),
-            StateDefinitionKind::Map => Py::new(py, self.map_state(py, &name)?)?.into_any(),
-            StateDefinitionKind::Set => Py::new(py, self.set_state(py, &name)?)?.into_any(),
-            StateDefinitionKind::Deque => Py::new(py, self.deque_state(py, &name)?)?.into_any(),
-            StateDefinitionKind::MessageValue => {
-                Py::new(py, self.message_value_state(py, &name)?)?.into_any()
-            }
-            StateDefinitionKind::MessageMap => {
-                Py::new(py, self.message_map_state(py, &name)?)?.into_any()
-            }
-            StateDefinitionKind::MessageDeque => {
-                Py::new(py, self.message_deque_state(py, &name)?)?.into_any()
-            }
-        };
-        let wrapper_name = match kind {
-            StateDefinitionKind::Value | StateDefinitionKind::MessageValue => "ValueState",
-            StateDefinitionKind::Map | StateDefinitionKind::MessageMap => "MapState",
-            StateDefinitionKind::Set => "SetState",
-            StateDefinitionKind::Deque | StateDefinitionKind::MessageDeque => "DequeState",
-        };
-        let wrapper = prosody.getattr(wrapper_name)?.call1((native,))?.unbind();
-        {
-            let mut cache = self
-                .state_handles
-                .lock()
-                .map_err(|_| PyRuntimeError::new_err("state cache mutex poisoned"))?;
-            cache.insert(cache_key, wrapper.clone_ref(py));
-        };
-        Ok(wrapper)
+        state::bind(self, py, definition)
     }
 
     /// Traverses Python objects contained in this Context for garbage
