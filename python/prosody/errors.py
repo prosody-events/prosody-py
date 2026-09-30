@@ -72,8 +72,8 @@ class PermanentStateError(StateError, PermanentError):
 class TransientStateError(StateError, TransientError):
     """
     Transient keyed-state failure: a store timeout, or a caller mistake at the
-    state boundary (a value with no JSON form, a wrong item shape, an invalid
-    direction token, a malformed definition).
+    state boundary (a value with no JSON form, a wrong item shape, a malformed
+    definition).
 
     Caller mistakes are transient so the message retries and stays visible
     rather than being silently discarded. Classifies transient through the
