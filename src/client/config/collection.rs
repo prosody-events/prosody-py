@@ -1,6 +1,7 @@
 //! Parses one `state_collections` entry and registers it as a Prosody
 //! descriptor.
 
+use crate::util::option;
 use prosody::JsonCodec;
 use prosody::consumer::KeyedStateConfiguration;
 use prosody::consumer::kafka_state::{message_deque_state, message_map_state, message_state};
@@ -11,7 +12,7 @@ use prosody::state::descriptor::{
 use prosody::state::order_codec::Utf8KeyCodec;
 use prosody::timers::duration::CompactDuration;
 use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
+use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{Bound, PyResult};
 use std::num::NonZeroUsize;
 
@@ -151,9 +152,9 @@ fn with_capacity<T>(
 /// Returns a `PyValueError` if the field is missing/None, or a `PyErr` if the
 /// value is not a string.
 fn required_str(cfg: &Bound<PyDict>, index: usize, field: &str) -> PyResult<String> {
-    match cfg.get_item(field)? {
-        Some(value) if !value.is_none() => value.extract::<String>(),
-        _ => Err(PyValueError::new_err(format!(
+    match option(cfg, field)? {
+        Some(value) => value.extract::<String>(),
+        None => Err(PyValueError::new_err(format!(
             "state_collections[{index}].{field}: missing"
         ))),
     }
@@ -162,10 +163,9 @@ fn required_str(cfg: &Bound<PyDict>, index: usize, field: &str) -> PyResult<Stri
 /// Reads an optional `f64` field from a collection's config dict (None when
 /// absent or `None`).
 fn optional_f64(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<f64>> {
-    match cfg.get_item(field)? {
-        Some(value) if !value.is_none() => Ok(Some(value.extract::<f64>()?)),
-        _ => Ok(None),
-    }
+    option(cfg, field)?
+        .map(|value| value.extract::<f64>())
+        .transpose()
 }
 
 /// Parses the deque-only `capacity` field into a `NonZeroUsize` push bound.
@@ -236,10 +236,9 @@ fn parse_keyset_limit(
 
 /// Reads an optional `bool` field from a collection's config dict.
 fn optional_bool(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<bool>> {
-    match cfg.get_item(field)? {
-        Some(value) if !value.is_none() => Ok(Some(value.extract::<bool>()?)),
-        _ => Ok(None),
-    }
+    option(cfg, field)?
+        .map(|value| value.extract::<bool>())
+        .transpose()
 }
 
 /// Validates one collection's config dict and registers its descriptor.

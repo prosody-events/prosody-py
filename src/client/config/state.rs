@@ -2,12 +2,12 @@
 //! collections.
 
 use super::collection::register_state_collection;
-use crate::util::decode_duration;
+use crate::util::{decode_duration, option};
 use prosody::ByteSize;
 use prosody::consumer::KeyedStateConfiguration;
 use prosody::subsystem::SubsystemName;
 use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyAnyMethods, PyBool, PyDict, PyDictMethods};
+use pyo3::types::{PyAnyMethods, PyBool, PyDict};
 use pyo3::{Bound, PyResult};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -26,16 +26,12 @@ pub(super) fn build_keyed_state_config(
 ) -> PyResult<KeyedStateConfiguration> {
     let mut builder = KeyedStateConfiguration::builder();
 
-    if let Some(dir) = config.get_item("state_cache_dir")?
-        && !dir.is_none()
-    {
+    if let Some(dir) = option(config, "state_cache_dir")? {
         let dir: String = dir.extract()?;
         builder.cache_dir(PathBuf::from(dir));
     }
 
-    if let Some(subsystem) = config.get_item("subsystem")?
-        && !subsystem.is_none()
-    {
+    if let Some(subsystem) = option(config, "subsystem")? {
         let subsystem: String = subsystem.extract()?;
         builder.subsystem(Some(
             SubsystemName::try_new(subsystem)
@@ -67,9 +63,7 @@ pub(super) fn build_keyed_state_config(
         .build()
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
 
-    if let Some(collections) = config.get_item("state_collections")?
-        && !collections.is_none()
-    {
+    if let Some(collections) = option(config, "state_collections")? {
         for (index, entry) in collections.try_iter()?.enumerate() {
             let entry = entry?;
             let cfg = entry.call_method0("to_config")?;
@@ -92,12 +86,9 @@ enum ReadCacheTtl {
 }
 
 fn read_cache_ttl(config: &Bound<PyDict>) -> PyResult<ReadCacheTtl> {
-    let Some(cache) = config.get_item("state_read_cache")? else {
+    let Some(cache) = option(config, "state_read_cache")? else {
         return Ok(ReadCacheTtl::Inherit);
     };
-    if cache.is_none() {
-        return Ok(ReadCacheTtl::Inherit);
-    }
     if cache.is_instance_of::<PyBool>() {
         if cache.is_truthy()? {
             return Err(PyValueError::new_err(
@@ -121,12 +112,9 @@ fn read_cache_ttl(config: &Bound<PyDict>) -> PyResult<ReadCacheTtl> {
 ///
 /// Returns a `PyValueError` naming `field` if the value is not a size string.
 fn optional_byte_size(config: &Bound<PyDict>, field: &str) -> PyResult<Option<ByteSize>> {
-    let Some(size) = config.get_item(field)? else {
+    let Some(size) = option(config, field)? else {
         return Ok(None);
     };
-    if size.is_none() {
-        return Ok(None);
-    }
     let size: String = size
         .extract()
         .map_err(|_| PyValueError::new_err(format!("{field}: must be a size string")))?;

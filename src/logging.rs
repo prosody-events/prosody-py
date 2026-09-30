@@ -141,12 +141,13 @@ fn forward_to_python(py: Python, get_logger: &Py<PyAny>, event: &LogEvent) -> Py
     }
 
     // Create a proper LogRecord using makeRecord with all Rust source metadata
-    // makeRecord signature: makeRecord(name, level, fn, lno, msg, args, exc_info,
-    // func=None, extra=None, sinfo=None)
+    // makeRecord signature: makeRecord(name, level, fn, lno, msg, args,
+    // exc_info, func=None, extra=None, sinfo=None)
     //
-    // For pathname and lineno, we pass the actual values if available, otherwise
-    // we pass empty string / 0 as Python's logging module requires these positional
-    // args but will display them correctly when using standard formatters.
+    // For pathname and lineno, we pass the actual values if available,
+    // otherwise we pass empty string / 0 as Python's logging module
+    // requires these positional args but will display them correctly when
+    // using standard formatters.
     let pathname = event.pathname.as_deref().unwrap_or("");
     let lineno = event.lineno.unwrap_or(0);
 

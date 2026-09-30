@@ -5,7 +5,7 @@
 //! `state` module reads the keyed-state settings.
 
 use crate::client::ProsodyClient;
-use crate::util::{decode_duration, decode_optional_duration, string_or_vec};
+use crate::util::{decode_duration, option, string_or_vec};
 use middleware::{
     build_dedup_config, build_defer_config, build_failure_topic_config,
     build_monopolization_config, build_retry_config, build_scheduler_config, build_timeout_config,
@@ -133,7 +133,7 @@ pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Pr
     };
 
     // Extract and set configuration options
-    let mode = match config.get_item("mode")? {
+    let mode = match option(config, "mode")? {
         Some(mode_str) => mode_str
             .extract::<String>()?
             .parse()
@@ -169,20 +169,20 @@ pub fn prepare_config(py: Python, config: Option<&Bound<PyDict>>) -> PyResult<Pr
 fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurationBuilder> {
     let mut builder = ProducerConfigurationBuilder::default();
 
-    if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
+    if let Some(bootstrap) = option(config, "bootstrap_servers")? {
         builder.bootstrap_servers(string_or_vec(&bootstrap)?);
     }
 
-    if let Some(mock) = config.get_item("mock")? {
+    if let Some(mock) = option(config, "mock")? {
         builder.mock(mock.extract::<bool>()?);
     }
 
-    if let Some(source_system) = config.get_item("source_system")? {
+    if let Some(source_system) = option(config, "source_system")? {
         builder.source_system(source_system.extract::<String>()?);
     }
 
-    if let Some(send_timeout) = config.get_item("send_timeout")? {
-        builder.send_timeout(decode_optional_duration(&send_timeout)?);
+    if let Some(send_timeout) = option(config, "send_timeout")? {
+        builder.send_timeout(Some(decode_duration(&send_timeout)?));
     }
 
     Ok(builder)
@@ -205,57 +205,57 @@ fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurati
 fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurationBuilder> {
     let mut builder = ConsumerConfigurationBuilder::default();
 
-    if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
+    if let Some(bootstrap) = option(config, "bootstrap_servers")? {
         builder.bootstrap_servers(string_or_vec(&bootstrap)?);
     }
 
-    if let Some(mock) = config.get_item("mock")? {
+    if let Some(mock) = option(config, "mock")? {
         builder.mock(mock.extract::<bool>()?);
     }
 
-    if let Some(group_id) = config.get_item("group_id")? {
+    if let Some(group_id) = option(config, "group_id")? {
         builder.group_id(group_id.extract::<String>()?);
     }
 
-    if let Some(subscribed_topics) = config.get_item("subscribed_topics")? {
+    if let Some(subscribed_topics) = option(config, "subscribed_topics")? {
         builder.subscribed_topics(string_or_vec(&subscribed_topics)?);
     }
 
-    if let Some(allowed_event_types) = config.get_item("allowed_events")? {
+    if let Some(allowed_event_types) = option(config, "allowed_events")? {
         builder.allowed_events(string_or_vec(&allowed_event_types)?);
     }
 
-    if let Some(max_uncommitted) = config.get_item("max_uncommitted")? {
+    if let Some(max_uncommitted) = option(config, "max_uncommitted")? {
         builder.max_uncommitted(max_uncommitted.extract::<usize>()?);
     }
 
-    if let Some(value) = config.get_item("stall_threshold")? {
+    if let Some(value) = option(config, "stall_threshold")? {
         builder.stall_threshold(decode_duration(&value)?);
     }
 
-    if let Some(value) = config.get_item("shutdown_timeout")? {
+    if let Some(value) = option(config, "shutdown_timeout")? {
         builder.shutdown_timeout(decode_duration(&value)?);
     }
 
-    if let Some(poll_interval) = config.get_item("poll_interval")? {
+    if let Some(poll_interval) = option(config, "poll_interval")? {
         builder.poll_interval(decode_duration(&poll_interval)?);
     }
 
-    if let Some(commit_interval) = config.get_item("commit_interval")? {
+    if let Some(commit_interval) = option(config, "commit_interval")? {
         builder.commit_interval(decode_duration(&commit_interval)?);
     }
 
+    // An explicit `None` turns the probe server off, so only this option
+    // reads `None` as a value.
     if let Some(probe_port) = config.get_item("probe_port")? {
         builder.probe_port(probe_port.extract::<Option<u16>>()?);
     }
 
-    if let Some(slab_size) = config.get_item("slab_size")? {
+    if let Some(slab_size) = option(config, "slab_size")? {
         builder.slab_size(decode_duration(&slab_size)?);
     }
 
-    if let Some(message_spans) = config.get_item("message_spans")?
-        && !message_spans.is_none()
-    {
+    if let Some(message_spans) = option(config, "message_spans")? {
         let s: String = message_spans.extract()?;
         let relation = s
             .parse::<SpanRelation>()
@@ -263,9 +263,7 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.message_spans(relation);
     }
 
-    if let Some(timer_spans) = config.get_item("timer_spans")?
-        && !timer_spans.is_none()
-    {
+    if let Some(timer_spans) = option(config, "timer_spans")? {
         let s: String = timer_spans.extract()?;
         let relation = s
             .parse::<SpanRelation>()
@@ -276,9 +274,9 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
     // Kafka message loader tuning (deferred-retry reload and keyed-state
     // message resolution). Only build a loader configuration if at least one
     // knob is provided, otherwise the consumer keeps its own defaults.
-    let loader_cache_size = config.get_item("loader_cache_size")?;
-    let loader_seek_timeout = config.get_item("loader_seek_timeout")?;
-    let loader_discard_threshold = config.get_item("loader_discard_threshold")?;
+    let loader_cache_size = option(config, "loader_cache_size")?;
+    let loader_seek_timeout = option(config, "loader_seek_timeout")?;
+    let loader_discard_threshold = option(config, "loader_discard_threshold")?;
     if loader_cache_size.is_some()
         || loader_seek_timeout.is_some()
         || loader_discard_threshold.is_some()
@@ -324,37 +322,37 @@ fn build_cassandra_config(config: &Bound<PyDict>) -> PyResult<CassandraConfigura
     let mut builder = CassandraConfigurationBuilder::default();
 
     // Cassandra nodes (optional, uses environment variable if not provided)
-    if let Some(nodes) = config.get_item("cassandra_nodes")? {
+    if let Some(nodes) = option(config, "cassandra_nodes")? {
         builder.nodes(string_or_vec(&nodes)?);
     }
 
     // Cassandra keyspace (optional, defaults to "prosody")
-    if let Some(keyspace) = config.get_item("cassandra_keyspace")? {
+    if let Some(keyspace) = option(config, "cassandra_keyspace")? {
         builder.keyspace(keyspace.extract::<String>()?);
     }
 
     // Cassandra datacenter (optional)
-    if let Some(datacenter) = config.get_item("cassandra_datacenter")? {
+    if let Some(datacenter) = option(config, "cassandra_datacenter")? {
         builder.datacenter(Some(datacenter.extract::<String>()?));
     }
 
     // Cassandra rack (optional)
-    if let Some(rack) = config.get_item("cassandra_rack")? {
+    if let Some(rack) = option(config, "cassandra_rack")? {
         builder.rack(Some(rack.extract::<String>()?));
     }
 
     // Cassandra user (optional)
-    if let Some(user) = config.get_item("cassandra_user")? {
+    if let Some(user) = option(config, "cassandra_user")? {
         builder.user(Some(user.extract::<String>()?));
     }
 
     // Cassandra password (optional)
-    if let Some(password) = config.get_item("cassandra_password")? {
+    if let Some(password) = option(config, "cassandra_password")? {
         builder.password(Some(password.extract::<String>()?));
     }
 
     // Cassandra retention (optional, defaults to 30 days)
-    if let Some(retention) = config.get_item("cassandra_retention")? {
+    if let Some(retention) = option(config, "cassandra_retention")? {
         builder.retention(decode_duration(&retention)?);
     }
 
@@ -380,11 +378,11 @@ fn build_telemetry_emitter_config(
 ) -> PyResult<TelemetryEmitterConfiguration> {
     let mut builder = TelemetryEmitterConfiguration::builder();
 
-    if let Some(topic) = config.get_item("telemetry_topic")? {
+    if let Some(topic) = option(config, "telemetry_topic")? {
         builder.topic(topic.extract::<String>()?);
     }
 
-    if let Some(enabled) = config.get_item("telemetry_enabled")? {
+    if let Some(enabled) = option(config, "telemetry_enabled")? {
         builder.enabled(enabled.extract::<bool>()?);
     }
 
@@ -424,7 +422,7 @@ fn build_consumer_builders(config: &Bound<PyDict>) -> PyResult<ConsumerBuilders>
 
 fn build_peer_config(config: &Bound<PyDict>) -> PyResult<PeerConfiguration> {
     let mut builder = PeerConfiguration::builder();
-    if let Some(value) = config.get_item("peer_bind_address")? {
+    if let Some(value) = option(config, "peer_bind_address")? {
         builder.bind_address(
             value
                 .extract::<String>()?
@@ -432,20 +430,20 @@ fn build_peer_config(config: &Bound<PyDict>) -> PyResult<PeerConfiguration> {
                 .map_err(|error| PyValueError::new_err(format!("peer_bind_address: {error}")))?,
         );
     }
-    if let Some(value) = config.get_item("peer_advertised_connect")? {
+    if let Some(value) = option(config, "peer_advertised_connect")? {
         builder.advertised_connect(
             PeerEndpoint::try_from(value.extract::<String>()?).map_err(|error| {
                 PyValueError::new_err(format!("peer_advertised_connect: {error}"))
             })?,
         );
     }
-    if let Some(value) = config.get_item("peer_network_name")? {
+    if let Some(value) = option(config, "peer_network_name")? {
         builder.network_name(value.extract::<String>()?);
     }
-    if let Some(value) = config.get_item("peer_cache_capacity")? {
+    if let Some(value) = option(config, "peer_cache_capacity")? {
         builder.peer_cache_capacity(value.extract::<usize>()?);
     }
-    if let Some(value) = config.get_item("peer_registration_ttl")? {
+    if let Some(value) = option(config, "peer_registration_ttl")? {
         builder.registration_ttl(decode_duration(&value)?);
     }
     builder

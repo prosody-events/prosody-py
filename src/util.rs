@@ -4,7 +4,7 @@
 //! from Python objects into Rust-compatible types using the `PyO3` library.
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess};
+use pyo3::types::{PyAnyMethods, PyDelta, PyDeltaAccess, PyDict, PyDictMethods};
 use pyo3::{Bound, PyAny, PyResult};
 use std::time::Duration;
 
@@ -73,23 +73,14 @@ pub fn decode_duration(value: &Bound<PyAny>) -> PyResult<Duration> {
     ))
 }
 
-/// Decodes an optional Python object into an optional Rust `Duration`.
+/// Reads the option `key` from a keyword-argument dict.
 ///
-/// # Arguments
-///
-/// * `value` - An optional Python object representing a duration.
-///
-/// # Returns
-///
-/// A `PyResult` containing an `Option<Duration>`.
+/// A missing key and an explicit `None` both read as "not set", so the core
+/// default and its environment variable apply.
 ///
 /// # Errors
 ///
-/// Propagates errors from `decode_duration`.
-pub fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duration>> {
-    Ok(if value.is_none() {
-        None
-    } else {
-        Some(decode_duration(value)?)
-    })
+/// Returns a `PyErr` if the dict lookup fails.
+pub fn option<'py>(config: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
+    Ok(config.get_item(key)?.filter(|value| !value.is_none()))
 }

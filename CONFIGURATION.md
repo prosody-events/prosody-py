@@ -1,6 +1,6 @@
 # Configuration
 
-Configure via constructor options or environment variables. Options fall back to environment variables when unset.
+Configure via constructor options or environment variables. Options fall back to environment variables when unset. Pass `None` to leave an option unset. The one exception is `probe_port=None`, which turns the probe server off.
 
 The Python client reports values it cannot convert to Prosody types. Prosody validates configuration semantics when the client is built.
 

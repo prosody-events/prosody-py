@@ -163,7 +163,8 @@ impl PythonHandler {
         // Capture the running event loop
         let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
-        // Cache OpenTelemetry functions to avoid importing them on every message
+        // Cache OpenTelemetry functions to avoid importing them on every
+        // message
         let otel_get_current = py
             .import("opentelemetry.context")?
             .getattr("get_current")?
@@ -357,7 +358,8 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        // Only process application timers; internal timers are handled by middleware
+        // Only process application timers; internal timers are handled by
+        // middleware
         if trigger.timer_type != TimerType::Application {
             return Ok(Value::Null);
         }

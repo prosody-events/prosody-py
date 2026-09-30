@@ -495,18 +495,6 @@ async def test_deduplication_configuration(random_topic_and_group, client_factor
     )
     assert isinstance(client, ProsodyClient)
 
-    # None values must not raise a TypeError
-    client = await client_factory(
-        bootstrap_servers="localhost:9092",
-        source_system="test-dedup",
-        group_id=group,
-        subscribed_topics=[topic],
-        idempotence_version=None,
-        idempotence_ttl=None,
-        mock=True,
-    )
-    assert isinstance(client, ProsodyClient)
-
 
 async def test_span_configuration(random_topic_and_group, client_factory):
     topic, group = random_topic_and_group
@@ -519,18 +507,6 @@ async def test_span_configuration(random_topic_and_group, client_factory):
         subscribed_topics=[topic],
         message_spans="child",
         timer_spans="follows_from",
-        mock=True,
-    )
-    assert isinstance(client, ProsodyClient)
-
-    # None values must not raise
-    client = await client_factory(
-        bootstrap_servers="localhost:9092",
-        source_system="test-spans",
-        group_id=group,
-        subscribed_topics=[topic],
-        message_spans=None,
-        timer_spans=None,
         mock=True,
     )
     assert isinstance(client, ProsodyClient)

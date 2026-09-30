@@ -161,6 +161,10 @@ class _ProsodyClientApi:
         """
         Create a Prosody client without blocking the Python event loop.
 
+        Pass ``None`` to leave an option unset. The option then falls back to
+        its environment variable and its default. ``probe_port=None`` is the
+        one exception: it turns the probe server off.
+
         Args:
             bootstrap_servers: Kafka servers for initial connection.
             mock: Use mock client for testing if True.
