@@ -161,7 +161,7 @@ class _ProsodyClientApi:
             bootstrap_servers: Kafka servers for initial connection.
             mock: Use mock client for testing if True.
             source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
-            send_timeout: Timeout for message send operations.
+            send_timeout: Timeout for message send operations. Pipeline mode ignores this option and retries a send until it succeeds. Low-latency and best-effort modes use it. Defaults to 1 second.
             group_id: Consumer group name.
             idempotence_cache_size: Capacity of the producer idempotence cache and of the consumer deduplication cache. Must be at least 1. Default: 8192.
             idempotence_version: Version string for cache-busting deduplication hashes. Changing this invalidates all previously recorded entries. Default: "1".

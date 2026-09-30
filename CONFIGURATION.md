@@ -42,7 +42,7 @@ The Python client reports values it cannot convert to Prosody types. Prosody val
 
 | Option / Environment Variable           | Description                     | Default |
 |-----------------------------------------|---------------------------------|---------|
-| `send_timeout` / `PROSODY_SEND_TIMEOUT` | Give up sending after this long | 1s      |
+| `send_timeout` / `PROSODY_SEND_TIMEOUT` | Give up sending after this long. Pipeline mode ignores this option and retries a send until it succeeds. Low-latency and best-effort modes use it | 1s      |
 
 ## Requests
 
