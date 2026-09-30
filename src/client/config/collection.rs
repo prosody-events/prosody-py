@@ -28,14 +28,12 @@ enum CollectionKind {
     Deque,
 }
 
-/// The item payload of a keyed-state collection.
+/// The item payload of a value, map, or deque collection. A set has none.
 enum CollectionPayload {
     /// JSON values.
     Json,
     /// The full Kafka message the handler received.
     Message,
-    /// No payload: a set stores only its members.
-    Presence,
 }
 
 /// Parses a collection-kind token.
@@ -57,20 +55,20 @@ fn parse_kind(index: usize, kind: &str) -> PyResult<CollectionKind> {
     }
 }
 
-/// Parses a collection-payload token.
+/// Parses the optional collection-payload token.
 ///
 /// # Errors
 ///
-/// Returns a `PyValueError` if the token is not `"json"`, `"message"`, or
-/// `"presence"`.
-fn parse_payload(index: usize, payload: &str) -> PyResult<CollectionPayload> {
-    match payload {
-        "json" => Ok(CollectionPayload::Json),
-        "message" => Ok(CollectionPayload::Message),
-        "presence" => Ok(CollectionPayload::Presence),
+/// Returns a `PyValueError` if the token is not `"json"` or `"message"`.
+fn parse_payload(cfg: &Bound<PyDict>, index: usize) -> PyResult<Option<CollectionPayload>> {
+    let Some(payload) = option(cfg, "payload")? else {
+        return Ok(None);
+    };
+    match payload.extract::<String>()?.as_str() {
+        "json" => Ok(Some(CollectionPayload::Json)),
+        "message" => Ok(Some(CollectionPayload::Message)),
         other => Err(PyValueError::new_err(format!(
-            "state_collections[{index}].payload: expected \"json\", \"message\", or \"presence\", \
-             got {other:?}"
+            "state_collections[{index}].payload: expected \"json\" or \"message\", got {other:?}"
         ))),
     }
 }
@@ -244,8 +242,9 @@ fn optional_bool(cfg: &Bound<PyDict>, field: &str) -> PyResult<Option<bool>> {
 /// Validates one collection's config dict and registers its descriptor.
 ///
 /// The config dict is produced by the definition's `to_config()` method with
-/// keys `name`, `kind`, `payload`, `ttl_seconds`, `read_uncommitted`,
-/// `keyset_limit` (map and set only), and `capacity` (deque-only). This
+/// keys `name`, `kind`, `payload` (absent for a set), `ttl_seconds`,
+/// `read_uncommitted`, `keyset_limit` (map and set only), and `capacity`
+/// (deque-only). This
 /// function checks only whether host values map into the corresponding Prosody
 /// types.
 ///
@@ -260,7 +259,7 @@ pub(super) fn register_state_collection(
 ) -> PyResult<()> {
     let name = required_str(cfg, index, "name")?;
     let kind = parse_kind(index, &required_str(cfg, index, "kind")?)?;
-    let payload = parse_payload(index, &required_str(cfg, index, "payload")?)?;
+    let payload = parse_payload(cfg, index)?;
 
     let ttl_seconds = match optional_f64(cfg, "ttl_seconds")? {
         Some(value) => Some(whole_number_field(
@@ -279,7 +278,7 @@ pub(super) fn register_state_collection(
     let published = optional_bool(cfg, "published")?;
     let name = name.as_str();
     match (kind, payload) {
-        (CollectionKind::Value, CollectionPayload::Json) => {
+        (CollectionKind::Value, Some(CollectionPayload::Json)) => {
             let _ = keyed.register(with_def(
                 value_state::<JsonCodec>(name),
                 ttl_seconds,
@@ -287,7 +286,7 @@ pub(super) fn register_state_collection(
                 published,
             ));
         }
-        (CollectionKind::Map, CollectionPayload::Json) => {
+        (CollectionKind::Map, Some(CollectionPayload::Json)) => {
             let descriptor = with_def(
                 map_state::<Utf8KeyCodec, JsonCodec>(name),
                 ttl_seconds,
@@ -296,7 +295,7 @@ pub(super) fn register_state_collection(
             );
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
         }
-        (CollectionKind::Set, CollectionPayload::Presence) => {
+        (CollectionKind::Set, None) => {
             let descriptor = with_def(
                 set_state::<Utf8KeyCodec>(name),
                 ttl_seconds,
@@ -308,13 +307,17 @@ pub(super) fn register_state_collection(
                 None => descriptor,
             });
         }
-        (CollectionKind::Set, _) | (_, CollectionPayload::Presence) => {
+        (CollectionKind::Set, Some(_)) => {
             return Err(PyValueError::new_err(format!(
-                "state_collections[{index}].payload: a set collection has the \"presence\" \
-                 payload, and only a set has it"
+                "state_collections[{index}].payload: a set collection takes no payload"
             )));
         }
-        (CollectionKind::Deque, CollectionPayload::Json) => {
+        (_, None) => {
+            return Err(PyValueError::new_err(format!(
+                "state_collections[{index}].payload: missing"
+            )));
+        }
+        (CollectionKind::Deque, Some(CollectionPayload::Json)) => {
             let descriptor = with_def(
                 deque_state::<JsonCodec>(name),
                 ttl_seconds,
@@ -323,7 +326,7 @@ pub(super) fn register_state_collection(
             );
             let _ = keyed.register(with_capacity(descriptor, capacity));
         }
-        (CollectionKind::Value, CollectionPayload::Message) => {
+        (CollectionKind::Value, Some(CollectionPayload::Message)) => {
             let _ = keyed.register(with_def(
                 message_state::<KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
@@ -331,7 +334,7 @@ pub(super) fn register_state_collection(
                 published,
             ));
         }
-        (CollectionKind::Map, CollectionPayload::Message) => {
+        (CollectionKind::Map, Some(CollectionPayload::Message)) => {
             let descriptor = with_def(
                 message_map_state::<Utf8KeyCodec, KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,
@@ -340,7 +343,7 @@ pub(super) fn register_state_collection(
             );
             let _ = keyed.register(with_keyset(descriptor, keyset_limit));
         }
-        (CollectionKind::Deque, CollectionPayload::Message) => {
+        (CollectionKind::Deque, Some(CollectionPayload::Message)) => {
             let descriptor = with_def(
                 message_deque_state::<KafkaLoader<JsonCodec>>(name),
                 ttl_seconds,

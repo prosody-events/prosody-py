@@ -34,7 +34,7 @@ ReadCache = Optional[Union[timedelta, float, Literal[False]]]
 class _StateConfig(TypedDict):
     name: str
     kind: str
-    payload: str
+    payload: Optional[str]
     ttl_seconds: Optional[Union[float, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
@@ -45,7 +45,7 @@ class _StateConfig(TypedDict):
 class _Definition(Protocol):
     name: str
     kind: str
-    payload: str
+    payload: Optional[str]
     ttl: Optional[Union[timedelta, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
@@ -122,7 +122,7 @@ class SetDefinition:
     keyset_limit: Optional[int] = None
     capacity: ClassVar[Optional[int]] = None
     kind: ClassVar[str] = "set"
-    payload: ClassVar[str] = "presence"
+    payload: ClassVar[Optional[str]] = None
 
     def to_config(self) -> _StateConfig:
         """Return the config dict passed to the client and to ``state()``."""

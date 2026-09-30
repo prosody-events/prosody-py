@@ -156,7 +156,7 @@ Published collections require `subsystem`. Keep it configured for one deployment
 |--------------------|-------------------------------------------------------------------------------------|------------|
 | `name`             | Collection name; non-empty and unique within the client                             | (required) |
 | `kind`             | `"value"`, `"map"`, `"set"`, or `"deque"`                                            | (required) |
-| `payload`          | `"json"` (JSON values), `"message"` (the full Kafka message the handler received), or `"presence"` (a set, which stores only members) | (required) |
+| `payload`          | `"json"` (JSON values) or `"message"` (the full Kafka message the handler received). A set stores only its members and takes no payload | (required, except for a set) |
 | `ttl`              | Per-write TTL, whole seconds >= 1; `timedelta` or int seconds | (none)     |
 | `read_uncommitted` | Opt out of transactional staging (read-uncommitted)                                 | false      |
 | `published`        | Allow other clients to read this JSON or set collection without subscribing         | false      |

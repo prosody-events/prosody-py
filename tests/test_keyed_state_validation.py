@@ -171,17 +171,23 @@ async def test_rejects_unknown_kind():
         await make_client(state_collections=[raw(kind="bogus")])
 
 
-async def test_rejects_unknown_payload():
+@pytest.mark.parametrize(("kind", "payload"), [("value", "bogus"), ("set", "presence")])
+async def test_rejects_unknown_payload(kind, payload):
     with pytest.raises(ValueError, match=r"payload: expected"):
-        await make_client(state_collections=[raw(payload="bogus")])
+        await make_client(state_collections=[raw(kind=kind, payload=payload)])
 
 
 @pytest.mark.parametrize(
-    ("kind", "payload"),
-    [("set", "json"), ("set", "message"), ("value", "presence"), ("map", "presence")],
+    ("kind", "payload", "error"),
+    [
+        ("set", "json", "a set collection takes no payload"),
+        ("set", "message", "a set collection takes no payload"),
+        ("value", None, "missing"),
+        ("map", None, "missing"),
+    ],
 )
-async def test_rejects_payload_that_does_not_fit_the_kind(kind, payload):
-    with pytest.raises(ValueError, match=r"payload: a set collection has the"):
+async def test_rejects_payload_that_does_not_fit_the_kind(kind, payload, error):
+    with pytest.raises(ValueError, match=rf"payload: {error}"):
         await make_client(state_collections=[raw(kind=kind, payload=payload)])
 
 

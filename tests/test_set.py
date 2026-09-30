@@ -43,7 +43,7 @@ def test_set_definition_to_config():
     ).to_config() == {
         "name": "tags",
         "kind": "set",
-        "payload": "presence",
+        "payload": None,
         "ttl_seconds": 60,
         "read_uncommitted": True,
         "published": True,

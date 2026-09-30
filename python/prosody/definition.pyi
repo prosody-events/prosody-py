@@ -25,7 +25,7 @@ ReadCache = Optional[Union[timedelta, float, Literal[False]]]
 class _StateConfig(TypedDict):
     name: str
     kind: str
-    payload: str
+    payload: Optional[str]
     ttl_seconds: Optional[int]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
@@ -94,7 +94,7 @@ class MapDefinition(Generic[D_co]):
 class SetDefinition:
     """A presence-only ordered set of string members.
 
-    ``kind = "set"``, ``payload = "presence"``. Vends :class:`SetState`.
+    ``kind = "set"`` with no payload. Vends :class:`SetState`.
     ``keyset_limit`` bounds ordered-scan tracking, as on a map.
     """
 
@@ -105,7 +105,7 @@ class SetDefinition:
     read_cache: ReadCache
     keyset_limit: Optional[int]
     kind: str
-    payload: str
+    payload: None
 
     def __init__(
         self,
