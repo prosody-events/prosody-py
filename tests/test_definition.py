@@ -15,6 +15,10 @@ from prosody import (
     message_map,
     message_deque,
     ProsodyClient,
+    PublishedDeque,
+    PublishedMap,
+    PublishedSet,
+    PublishedValue,
 )
 import pytest
 
@@ -57,15 +61,15 @@ def test_publication_and_read_cache_share_the_descriptor():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("definition", "method"),
+    ("definition", "reader"),
     (
-        (value("value", read_cache=False), "_published_value"),
-        (map("map", read_cache=2.0), "_published_map"),
-        (set_definition("set", read_cache=1.0), "_published_set"),
-        (deque("deque"), "_published_deque"),
+        (value("value", read_cache=False), PublishedValue),
+        (map("map", read_cache=2.0), PublishedMap),
+        (set_definition("set", read_cache=1.0), PublishedSet),
+        (deque("deque"), PublishedDeque),
     ),
 )
-async def test_client_state_dispatches_by_definition_type(definition, method):
+async def test_client_state_dispatches_by_definition_type(definition, reader):
     class StubClient:
         def __getattr__(self, name):
             async def open_state(*args, **kwargs):
@@ -74,9 +78,10 @@ async def test_client_state_dispatches_by_definition_type(definition, method):
             return open_state
 
     result = await ProsodyClient.state(StubClient(), "checkout", definition)
+    assert type(result) is reader
     assert result._native == (
-        method,
-        ("checkout", definition.name),
+        "_published",
+        ("checkout", definition.kind, definition.name),
         {"read_cache": definition.read_cache},
     )
 

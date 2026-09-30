@@ -288,18 +288,19 @@ class _ProsodyClientApi:
         """
         ...
 
-    async def _published_value(
-        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
-    ) -> _NativePublishedValue[JSONValue]: ...
-    async def _published_map(
-        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
-    ) -> _NativePublishedMap[JSONValue]: ...
-    async def _published_set(
-        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
-    ) -> _NativePublishedSet: ...
-    async def _published_deque(
-        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
-    ) -> _NativePublishedDeque[JSONValue]: ...
+    async def _published(
+        self,
+        subsystem: str,
+        kind: Literal["value", "map", "set", "deque"],
+        name: str,
+        *,
+        read_cache: Optional[Union[Duration, Literal[False]]] = None,
+    ) -> Union[
+        _NativePublishedValue[JSONValue],
+        _NativePublishedMap[JSONValue],
+        _NativePublishedSet,
+        _NativePublishedDeque[JSONValue],
+    ]: ...
 
     async def subscribe(self, handler: EventHandler[P, R]) -> None:
         """

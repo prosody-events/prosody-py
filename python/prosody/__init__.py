@@ -88,33 +88,23 @@ class ProsodyClient:
 
     async def state(self, subsystem, definition):
         """Open a read-only view of a published JSON or set collection."""
-        if isinstance(definition, ValueDefinition):
-            return PublishedValue(
-                await self._published_value(
-                    subsystem, definition.name, read_cache=definition.read_cache
-                )
+        reader = _READERS.get(type(definition))
+        if reader is None:
+            raise TypeError(
+                "definition must be a JSON ValueDefinition, MapDefinition, "
+                "SetDefinition, or DequeDefinition"
             )
-        if isinstance(definition, MapDefinition):
-            return PublishedMap(
-                await self._published_map(
-                    subsystem, definition.name, read_cache=definition.read_cache
-                )
-            )
-        if isinstance(definition, SetDefinition):
-            return PublishedSet(
-                await self._published_set(
-                    subsystem, definition.name, read_cache=definition.read_cache
-                )
-            )
-        if isinstance(definition, DequeDefinition):
-            return PublishedDeque(
-                await self._published_deque(
-                    subsystem, definition.name, read_cache=definition.read_cache
-                )
-            )
-        raise TypeError(
-            "definition must be a JSON ValueDefinition, MapDefinition, "
-            "SetDefinition, or DequeDefinition"
+        native = await self._published(
+            subsystem, definition.kind, definition.name, read_cache=definition.read_cache
         )
+        return reader(native)
+
+
+_READERS = {
+    ValueDefinition: PublishedValue,
+    MapDefinition: PublishedMap,
+    SetDefinition: PublishedSet,
+    DequeDefinition: PublishedDeque,
+}
 
 logging.getLogger('prosody.consumer.poll').setLevel(logging.ERROR)

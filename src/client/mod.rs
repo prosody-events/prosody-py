@@ -1,12 +1,13 @@
 //! Python client for Kafka production and consumption.
 
 use prosody::high_level::erased::ErasedConsumerState;
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::PyDict;
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
 use serde_json::Value;
+use std::fmt::Display;
 use std::process;
 use std::sync::Arc;
 use tracing::{Instrument, info_span};
@@ -22,6 +23,11 @@ mod model;
 
 pub use model::ProsodyClient;
 use model::{consumer_state_name, shutdown};
+
+/// Raises a failure to open a published reader as a `RuntimeError`.
+fn opened<T, E: Display>(reader: Result<T, E>) -> PyResult<T> {
+    reader.map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
 
 /// A client for interacting with Kafka using the Prosody library.
 ///
@@ -196,12 +202,14 @@ impl ProsodyClient {
         })
     }
 
-    /// Opens a read-only published value collection.
-    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
-    fn _published_value<'p>(
+    /// Opens a read-only published collection of `kind`: `"value"`, `"map"`,
+    /// `"set"`, or `"deque"`.
+    #[pyo3(signature = (subsystem, kind, name, *, read_cache = None))]
+    fn _published<'p>(
         &self,
         py: Python<'p>,
         subsystem: String,
+        kind: String,
         name: String,
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
@@ -210,77 +218,27 @@ impl ProsodyClient {
         let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
-            let inner = client
-                .value_state(subsystem, name, cache)
-                .await
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedValue { inner, env })?.into_any()))
-        })
-    }
-
-    /// Opens a read-only published map collection.
-    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
-    fn _published_map<'p>(
-        &self,
-        py: Python<'p>,
-        subsystem: String,
-        name: String,
-        read_cache: Option<&Bound<'p, PyAny>>,
-    ) -> PyResult<Bound<'p, PyAny>> {
-        check_fork(self.pid, "ProsodyClient")?;
-        let cache = parse_read_cache("read_cache", read_cache)?;
-        let env = self.env.clone();
-        let client = self.client.clone();
-        future_into_py(py, async move {
-            let inner = client
-                .map_state(subsystem, name, cache)
-                .await
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedMap { inner, env })?.into_any()))
-        })
-    }
-
-    /// Opens a read-only published set collection.
-    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
-    fn _published_set<'p>(
-        &self,
-        py: Python<'p>,
-        subsystem: String,
-        name: String,
-        read_cache: Option<&Bound<'p, PyAny>>,
-    ) -> PyResult<Bound<'p, PyAny>> {
-        check_fork(self.pid, "ProsodyClient")?;
-        let cache = parse_read_cache("read_cache", read_cache)?;
-        let env = self.env.clone();
-        let client = self.client.clone();
-        future_into_py(py, async move {
-            let inner = client
-                .set_state(subsystem, name, cache)
-                .await
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedSet { inner, env })?.into_any()))
-        })
-    }
-
-    /// Opens a read-only published deque collection.
-    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
-    fn _published_deque<'p>(
-        &self,
-        py: Python<'p>,
-        subsystem: String,
-        name: String,
-        read_cache: Option<&Bound<'p, PyAny>>,
-    ) -> PyResult<Bound<'p, PyAny>> {
-        check_fork(self.pid, "ProsodyClient")?;
-        let cache = parse_read_cache("read_cache", read_cache)?;
-        let env = self.env.clone();
-        let client = self.client.clone();
-        future_into_py(py, async move {
-            let inner = client
-                .deque_state(subsystem, name, cache)
-                .await
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner, env })?.into_any()))
+            match kind.as_str() {
+                "value" => {
+                    let inner = opened(client.value_state(subsystem, name, cache).await)?;
+                    Python::attach(|py| Ok(Py::new(py, PublishedValue { inner, env })?.into_any()))
+                }
+                "map" => {
+                    let inner = opened(client.map_state(subsystem, name, cache).await)?;
+                    Python::attach(|py| Ok(Py::new(py, PublishedMap { inner, env })?.into_any()))
+                }
+                "set" => {
+                    let inner = opened(client.set_state(subsystem, name, cache).await)?;
+                    Python::attach(|py| Ok(Py::new(py, PublishedSet { inner, env })?.into_any()))
+                }
+                "deque" => {
+                    let inner = opened(client.deque_state(subsystem, name, cache).await)?;
+                    Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner, env })?.into_any()))
+                }
+                other => Err(PyValueError::new_err(format!(
+                    "kind: expected \"value\", \"map\", \"set\", or \"deque\", got {other:?}"
+                ))),
+            }
         })
     }
 
