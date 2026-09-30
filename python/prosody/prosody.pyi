@@ -172,7 +172,7 @@ class _ProsodyClientApi:
             source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
             send_timeout: Timeout for message send operations.
             group_id: Consumer group name.
-            idempotence_cache_size: Global shared cache capacity across all partitions for message deduplication. Must be at least 1. Default: 8192.
+            idempotence_cache_size: Capacity of the producer idempotence cache and of the consumer deduplication cache. Must be at least 1. Default: 8192.
             idempotence_version: Version string for cache-busting deduplication hashes. Changing this invalidates all previously recorded entries. Default: "1".
             idempotence_ttl: TTL for deduplication records in Cassandra. Default: 7 days.
             subscribed_topics: Topics to subscribe to.

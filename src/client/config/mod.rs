@@ -185,6 +185,10 @@ fn build_producer_config(config: &Bound<PyDict>) -> PyResult<ProducerConfigurati
         builder.send_timeout(Some(decode_duration(&send_timeout)?));
     }
 
+    if let Some(cache_size) = option(config, "idempotence_cache_size")? {
+        builder.idempotence_cache_size(cache_size.extract::<usize>()?);
+    }
+
     Ok(builder)
 }
 

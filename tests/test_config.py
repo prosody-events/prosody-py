@@ -87,3 +87,31 @@ async def test_statistics_interval_reaches_the_consumer(client_factory):
     with pytest.raises(RuntimeError, match="statistics_interval"):
         await rejected.subscribe(_Recorder("none"))
 
+
+async def test_idempotence_cache_size_sizes_the_producer_cache(client_factory):
+    admin = AdminClient(bootstrap_servers="localhost:9094")
+    topic = f"test-topic-{uuid.uuid4().hex}"
+    await asyncio.wait_for(admin.create_topic(topic, partition_count=1), DEFAULT_TIMEOUT)
+    try:
+        client = await client_factory(
+            bootstrap_servers="localhost:9094",
+            group_id=f"test-group-{uuid.uuid4().hex}",
+            subscribed_topics=topic,
+            source_system="test-idempotence",
+            probe_port=None,
+            cassandra_nodes="localhost:9042",
+            idempotence_cache_size=1,
+        )
+        recorder = _Recorder("last")
+        await client.subscribe(recorder)
+
+        # A one-entry producer cache forgets "first" after the fillers, so
+        # the producer sends the repeat, and "last" lands one offset later.
+        ids = ["first", *(f"filler-{index}" for index in range(8)), "first", "last"]
+        for event_id in ids:
+            await asyncio.wait_for(client.send(topic, "key", {"id": event_id}), DEFAULT_TIMEOUT)
+        await asyncio.wait_for(recorder.done.wait(), DEFAULT_TIMEOUT)
+
+        assert recorder.messages[-1].offset == len(ids) - 1
+    finally:
+        await asyncio.wait_for(admin.delete_topic(topic), DEFAULT_TIMEOUT)
