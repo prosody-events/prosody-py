@@ -13,7 +13,10 @@ from prosody.errors import (
 )
 from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
 from prosody.message import ExciseMessage as ExciseMessage, Message as Message
-from typing import TypeVar, overload
+from types import TracebackType
+from typing import Optional, TypeVar, overload
+
+from typing_extensions import Self
 
 from prosody.prosody import (
     AdminClient as AdminClient,
@@ -63,7 +66,21 @@ T = TypeVar("T")
 V = TypeVar("V")
 
 class ProsodyClient(_ProsodyClientApi):
+    """A Kafka client. Create one with ``await ProsodyClient.create(...)``.
+
+    Use it as an async context manager to shut it down when the block exits.
+    """
+
     def __init__(self) -> None: ...
+    async def __aenter__(self) -> Self: ...
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
+        """Call :meth:`shutdown`."""
+        ...
 
     @overload
     async def state(

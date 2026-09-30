@@ -80,6 +80,13 @@ class ProsodyClient:
     def __getattr__(self, name):
         return getattr(object.__getattribute__(self, "_native"), name)
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        """Shut down all client services when the ``async with`` block exits."""
+        await self.shutdown()
+
     async def state(self, subsystem, definition):
         """Open a read-only view of a published JSON or set collection."""
         if isinstance(definition, ValueDefinition):

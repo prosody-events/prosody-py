@@ -883,6 +883,16 @@ Call `shutdown()` when the application terminates. It stops all client services 
 await client.shutdown()
 ```
 
+Use the client as an async context manager. The `async with` block calls `shutdown()` when it exits, also when an exception stops it:
+
+```python
+async with await ProsodyClient.create(subscribed_topics="my-topic") as client:
+    await client.subscribe(MyHandler())
+    await run_until_stopped()
+```
+
+Repeated and concurrent `shutdown()` calls await the same operation, so an explicit `shutdown()` inside the block is safe.
+
 Handle application shutdown with an asyncio event:
 
 ```python
@@ -901,19 +911,16 @@ async def main():
             sig, lambda s=sig: asyncio.create_task(shutdown(shutdown_event, s))
         )
 
-    client = await ProsodyClient.create(
+    async with await ProsodyClient.create(
         bootstrap_servers="localhost:9092",
         group_id="my-consumer-group",
         subscribed_topics="my-topic"
-    )
+    ) as client:
+        # Subscribe with the application handler.
+        await client.subscribe(MyHandler())
 
-    # Subscribe with the application handler.
-    client.subscribe(MyHandler())
-
-    # Wait for a shutdown signal.
-    await shutdown_event.wait()
-
-    await client.shutdown()
+        # Wait for a shutdown signal. The block then shuts the client down.
+        await shutdown_event.wait()
 
 
 async def shutdown(event: asyncio.Event, signal: signal.Signals):
@@ -1097,6 +1104,7 @@ Await client operations unless an entry returns a property or an async iterator.
 - `subscribe(handler: EventHandler[P, R]) -> None`: Start event processing with the specified handler.
 - `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
 - `shutdown() -> None`: Stop all client services. Concurrent and repeated calls await the same operation.
+- `async with await ProsodyClient.create(**config) as client`: Call `shutdown()` when the block exits.
 
 ### AdminClient
 

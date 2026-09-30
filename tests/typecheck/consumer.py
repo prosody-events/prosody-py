@@ -129,8 +129,10 @@ async def read_published_set(client: ProsodyClient) -> None:
         assert_type(member, str)
 
 
-async def subscribe_specialized(client: ProsodyClient) -> None:
-    await client.subscribe(Handler())
+async def subscribe_specialized() -> None:
+    async with await ProsodyClient.create(subscribed_topics="orders") as client:
+        assert_type(client, ProsodyClient)
+        await client.subscribe(Handler())
 
 
 async def request_typed(client: ProsodyClient) -> None:

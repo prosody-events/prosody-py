@@ -235,6 +235,23 @@ async def test_shutdown_is_idempotent(client):
     await asyncio.gather(client.shutdown(), client.shutdown())
 
 
+async def test_async_with_shuts_the_client_down(random_topic_and_group):
+    topic, group = random_topic_and_group
+    with pytest.raises(LookupError):
+        async with await ProsodyClient.create(
+            bootstrap_servers="localhost:9094",
+            source_system="test-scope",
+            group_id=group,
+            subscribed_topics=topic,
+            probe_port=None,
+            cassandra_nodes="localhost:9042",
+        ) as client:
+            assert await client.consumer_state() == "configured"
+            raise LookupError("the block exits with an error")
+
+    assert await client.consumer_state() == "shut_down"
+
+
 async def test_client_source_system(client):
     logger.debug("=" * 40)
     logger.debug("TEST test_client_source_system: STARTING")
