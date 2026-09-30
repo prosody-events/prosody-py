@@ -21,30 +21,7 @@ from prosody import (
 )
 from prosody.query import _KeyQuery, _PositionQuery
 
-
-class _Recorder:
-    """A native stub that records every query it receives."""
-
-    def __init__(self):
-        self.queries = []
-
-    def _record(self, *args):
-        self.queries.append(args[-1])
-        return _Empty()
-
-    scan = _record
-    keys = _record
-
-
-class _Empty:
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        raise StopAsyncIteration
-
-    async def aclose(self):
-        pass
+from support import NativeRecorder
 
 
 def _key_scans(native):
@@ -104,7 +81,7 @@ KEY_CASES = [
 @pytest.mark.parametrize(("options", "expected"), KEY_CASES)
 @pytest.mark.parametrize("direction", Direction)
 def test_key_options_translate_on_every_scan(options, expected, direction):
-    native = _Recorder()
+    native = NativeRecorder()
     for scan in _key_scans(native):
         scan(direction, **options)
     backward = direction is Direction.BACKWARD
@@ -131,7 +108,7 @@ def test_key_options_translate_on_every_scan(options, expected, direction):
     ],
 )
 def test_key_options_reject_values_without_a_native_form(options, error):
-    native = _Recorder()
+    native = NativeRecorder()
     for scan in _key_scans(native):
         with pytest.raises(error):
             scan(Direction.FORWARD, **options)
@@ -163,7 +140,7 @@ POSITION_CASES = [
 @pytest.mark.parametrize(("options", "expected"), POSITION_CASES)
 @pytest.mark.parametrize("direction", Direction)
 def test_position_options_translate_on_every_scan(options, expected, direction):
-    native = _Recorder()
+    native = NativeRecorder()
     for scan in _position_scans(native):
         scan(direction, **options)
     backward = direction is Direction.BACKWARD
@@ -191,7 +168,7 @@ def test_position_options_translate_on_every_scan(options, expected, direction):
     ],
 )
 def test_position_options_reject_values_without_a_native_form(options, error):
-    native = _Recorder()
+    native = NativeRecorder()
     for scan in _position_scans(native):
         with pytest.raises(error):
             scan(Direction.FORWARD, **options)

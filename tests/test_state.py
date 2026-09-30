@@ -10,11 +10,10 @@ from datetime import datetime, timezone
 import importlib
 
 from prosody import (
-    Direction,
     Message,
-    value,
     ValueState,
     MapState,
+    SetState,
     DequeState,
     StateError,
     PermanentStateError,
@@ -23,9 +22,12 @@ from prosody import (
     TransientError,
     PublishedDeque,
     PublishedMap,
+    PublishedSet,
+    PublishedValue,
 )
-from prosody.query import _KeyQuery, _PositionQuery
 import pytest
+
+from support import NativeRecorder
 
 
 def test_permanent_state_error():
@@ -92,242 +94,110 @@ def test_exports_present():
     ):
         assert hasattr(prosody, n), n
 
-class _StubScan:
-    def __init__(self, items):
-        self._items = list(items)
-        self._i = 0
-        self.closed = False
+WRITES = {"set", "clear", "remove", "insert", "push_back", "push_front"}
 
-    def __aiter__(self):
-        return self
+# (wrapper, call, native method, native arguments) for every read or write
+# whose Python name or arguments differ from, or match, the native call.
+MAPPINGS = [
+    (ValueState, lambda s: s.get(), "get", ()),
+    (ValueState, lambda s: s.set(1), "set", (1,)),
+    (ValueState, lambda s: s.clear(), "clear", ()),
+    (MapState, lambda s: s.get("k"), "get", ("k",)),
+    (MapState, lambda s: s.get_many(["a", "b"]), "get_many", (["a", "b"],)),
+    (MapState, lambda s: s.contains("k"), "contains_key", ("k",)),
+    (MapState, lambda s: s.contains_many(["a"]), "contains_many", (["a"],)),
+    (MapState, lambda s: s.is_empty(), "is_empty", ()),
+    (MapState, lambda s: s.set("k", 1), "set", ("k", 1)),
+    (MapState, lambda s: s.remove("k"), "remove", ("k",)),
+    (MapState, lambda s: s.clear(), "clear", ()),
+    (SetState, lambda s: s.add("a"), "insert", ("a",)),
+    (SetState, lambda s: s.discard("b"), "remove", ("b",)),
+    (SetState, lambda s: s.contains("a"), "contains", ("a",)),
+    (SetState, lambda s: s.contains_many(["a"]), "contains_many", (["a"],)),
+    (SetState, lambda s: s.is_empty(), "is_empty", ()),
+    (SetState, lambda s: s.clear(), "clear", ()),
+    (DequeState, lambda s: s.append(1), "push_back", (1,)),
+    (DequeState, lambda s: s.appendleft(2), "push_front", (2,)),
+    (DequeState, lambda s: s.pop(), "pop_back", ()),
+    (DequeState, lambda s: s.popleft(), "pop_front", ()),
+    (DequeState, lambda s: s.peek(), "peek_back", ()),
+    (DequeState, lambda s: s.peekleft(), "peek_front", ()),
+    (DequeState, lambda s: s.get(3), "get", (3,)),
+    (DequeState, lambda s: s.size(), "len", ()),
+    (DequeState, lambda s: s.is_empty(), "is_empty", ()),
+    (DequeState, lambda s: s.clear(), "clear", ()),
+    (PublishedValue, lambda s: s.get("u"), "get", ("u",)),
+    (PublishedMap, lambda s: s.get("u", "a"), "get", ("u", "a")),
+    (PublishedMap, lambda s: s.get_many("u", ["a"]), "get_many", ("u", ["a"])),
+    (PublishedMap, lambda s: s.contains("u", "a"), "contains_key", ("u", "a")),
+    (PublishedMap, lambda s: s.contains_many("u", ["a"]), "contains_many", ("u", ["a"])),
+    (PublishedMap, lambda s: s.is_empty("u"), "is_empty", ("u",)),
+    (PublishedSet, lambda s: s.contains("u", "a"), "contains", ("u", "a")),
+    (PublishedSet, lambda s: s.contains_many("u", ["a"]), "contains_many", ("u", ["a"])),
+    (PublishedSet, lambda s: s.is_empty("u"), "is_empty", ("u",)),
+    (PublishedDeque, lambda s: s.get("u", 1), "get", ("u", 1)),
+    (PublishedDeque, lambda s: s.size("u"), "len", ("u",)),
+    (PublishedDeque, lambda s: s.is_empty("u"), "is_empty", ("u",)),
+    (PublishedDeque, lambda s: s.peek("u"), "peek_back", ("u",)),
+    (PublishedDeque, lambda s: s.peekleft("u"), "peek_front", ("u",)),
+]
 
-    async def __anext__(self):
-        if self._i >= len(self._items):
-            raise StopAsyncIteration
-        item = self._items[self._i]
-        self._i += 1
-        return item
 
-    async def aclose(self):
-        self.closed = True
+@pytest.mark.parametrize(("wrapper", "call", "name", "args"), MAPPINGS)
+async def test_each_method_calls_its_native_operation(wrapper, call, name, args):
+    native = NativeRecorder({name: "result"})
+    result = await call(wrapper(native))
+    assert native.calls == [(name, args)]
+    assert result == (None if name in WRITES else "result")
 
-class _StubNative:
-    def __init__(self, scan_items=()):
-        self.calls = []
-        self._scan_items = scan_items
-        self.scans = []
 
-    def scan(self, query):
-        self.calls.append(("scan", query))
-        s = _StubScan(self._scan_items)
-        self.scans.append(s)
-        return s
+async def test_deque_get_resolves_a_negative_index():
+    native = NativeRecorder({"len": 2, "get": "last"})
+    for get in (DequeState(native).get, lambda i: PublishedDeque(native).get("u", i)):
+        native.calls.clear()
+        assert await get(-1) == "last"
+        assert native.calls[-1][0] == "get"
+        assert native.calls[-1][1][-1] == 1
+        native.calls.clear()
+        assert await get(-3) is None
+        assert [name for name, _ in native.calls] == ["len"]
 
-    def keys(self, query):
-        # The cheap key-only scan: yields bare keys, mirroring the native path
-        # that never decodes a value.
-        self.calls.append(("keys", query))
-        s = _StubScan([k for k, _ in self._scan_items])
-        self.scans.append(s)
-        return s
 
-    async def commit(self):
-        self.calls.append(("commit", ()))
-        return "applied"
-
-    async def rollback(self):
-        self.calls.append(("rollback", ()))
-        return "no_op"
-
-    def __getattr__(self, name):
-        async def coro(*args):
-            self.calls.append((name, args))
-            return ("R", name, args)
-
-        return coro
-
-async def test_value_delegation():
-    n = _StubNative()
-    v = ValueState(n)
-    await v.get()
-    await v.set(1)
-    await v.clear()
-    await v.commit()
-    await v.rollback()
-    assert [c[0] for c in n.calls] == ["get", "set", "clear", "commit", "rollback"]
-
-async def test_map_delegation():
-    n = _StubNative()
-    m = MapState(n)
-    await m.get("k")
-    await m.get_many(["a", "b"])
-    await m.set("k", 1)
-    await m.remove("k")
-    await m.clear()
-    await m.commit()
-    await m.rollback()
-    assert [c[0] for c in n.calls] == [
-        "get",
-        "get_many",
-        "set",
-        "remove",
-        "clear",
-        "commit",
-        "rollback",
-    ]
-    assert n.calls[0][1] == ("k",)
-    assert n.calls[1][1] == (["a", "b"],)
-    assert n.calls[2][1] == ("k", 1)
-
-async def test_deque_method_mapping():
-    n = _StubNative()
-    d = DequeState(n)
-    await d.append(1)
-    await d.appendleft(2)
-    await d.pop()
-    await d.popleft()
-    await d.get(3)
-    await d.size()
-    await d.is_empty()
-    await d.clear()
-    assert [c[0] for c in n.calls] == [
-        "push_back",
-        "push_front",
-        "pop_back",
-        "pop_front",
-        "get",
-        "len",
-        "is_empty",
-        "clear",
-    ]
-    assert n.calls[0][1] == (1,)  # append forwards item to push_back
-    assert n.calls[4][1] == (3,)  # get(index) forwards index
-
-async def test_map_scan_transforms():
+async def test_scan_transforms():
     entries = [("a", 1), ("b", 2)]
-    m = MapState(_StubNative(entries))
-    assert [e async for e in m.items()] == [("a", 1), ("b", 2)]
-    assert [k async for k in m.keys()] == ["a", "b"]
-    assert [v async for v in m.values()] == [1, 2]
-    assert [k async for k in m] == ["a", "b"]  # __aiter__ = keys (dict-like)
+    handle = MapState(NativeRecorder(items=entries))
+    published = PublishedMap(NativeRecorder(items=entries))
+    assert [e async for e in handle.items()] == entries
+    assert [e async for e in published.items("u")] == entries
+    assert [k async for k in handle.keys()] == ["a", "b"]
+    assert [k async for k in published.keys("u")] == ["a", "b"]
+    assert [v async for v in handle.values()] == [1, 2]
+    assert [v async for v in published.values("u")] == [1, 2]
+    assert [k async for k in handle] == ["a", "b"]  # __aiter__ = keys (dict-like)
+    members = [("a",), ("b",)]
+    assert [m async for m in SetState(NativeRecorder(items=members))] == ["a", "b"]
+    deque = DequeState(NativeRecorder(items=[1, 2, 3]))
+    assert [x async for x in deque] == [1, 2, 3]
 
-async def test_map_contains_delegates():
-    n = _StubNative()
-    await MapState(n).contains("k")
-    assert n.calls == [("contains_key", ("k",))]
-
-class _GetStub:
-    """A map native whose ``get`` returns a fixed value regardless of key, to
-    exercise :meth:`MapState.get`'s absent-vs-present-falsy branch."""
-
-    def __init__(self, value):
-        self._value = value
-
-    async def get(self, key):
-        return self._value
 
 async def test_map_get_default():
+    def handle(value):
+        return MapState(NativeRecorder({"get": value}))
+
     # Absent (native None) returns the default...
-    assert await MapState(_GetStub(None)).get("k", "fallback") == "fallback"
+    assert await handle(None).get("k", "fallback") == "fallback"
     # ...and None when no default is given.
-    assert await MapState(_GetStub(None)).get("k") is None
+    assert await handle(None).get("k") is None
     # A present-but-falsy value returns as-is, NEVER the default (this is the
     # exact bug a `value or default` implementation would introduce).
     for falsy in (0, False, "", []):
-        assert await MapState(_GetStub(falsy)).get("k", "fallback") == falsy
+        assert await handle(falsy).get("k", "fallback") == falsy
     # A present truthy value returns as-is.
-    assert await MapState(_GetStub(7)).get("k", "fallback") == 7
+    assert await handle(7).get("k", "fallback") == 7
 
-async def test_deque_peek_mapping():
-    n = _StubNative()
-    d = DequeState(n)
-    await d.peek()
-    await d.peekleft()
-    assert [c[0] for c in n.calls] == ["peek_back", "peek_front"]
-
-async def test_deque_values_and_aiter():
-    n = _StubNative([1, 2, 3])
-    assert [x async for x in DequeState(n).values()] == [1, 2, 3]
-    assert [x async for x in DequeState(_StubNative([9]))] == [9]  # __aiter__
 
 async def test_aclosing_closes_scan():
-    n = _StubNative([1, 2, 3])
-    it = DequeState(n).values()
-    async with contextlib.aclosing(it):
+    native = NativeRecorder(items=[1, 2, 3])
+    async with contextlib.aclosing(DequeState(native).values()):
         pass
-    assert n.scans[0].closed is True
-
-
-async def test_published_scans_reuse_typed_state_scan_adapter():
-    class NativeMap:
-        async def contains_key(self, key, map_key):
-            assert (key, map_key) == ("user-1", "a")
-            return True
-
-        def scan(self, key, query):
-            assert (key, query) == ("user-1", _KeyQuery())
-            return _StubScan([("a", 1), ("b", 2)])
-
-        def keys(self, key, query):
-            assert (key, query) == ("user-1", _KeyQuery(backward=True))
-            return _StubScan(["b", "a"])
-
-    class NativeDeque:
-        async def len(self, key):
-            assert key == "user-1"
-            return 2
-
-        async def is_empty(self, key):
-            assert key == "user-1"
-            return False
-
-        async def peek_front(self, key):
-            assert key == "user-1"
-            return 1
-
-        async def peek_back(self, key):
-            assert key == "user-1"
-            return 2
-
-        async def get(self, key, index):
-            assert key == "user-1"
-            return [1, 2][index] if index < 2 else None
-
-        def scan(self, key, query):
-            assert (key, query) == ("user-1", _PositionQuery(backward=True))
-            return _StubScan([2, 1])
-
-    native_map = NativeMap()
-    published_map = PublishedMap(native_map)
-    item_scan = published_map.items("user-1")
-    items = [
-        item
-        async for item in item_scan
-    ]
-    keys = [
-        key
-        async for key in published_map.keys(
-            "user-1", Direction.BACKWARD
-        )
-    ]
-    map_values = [
-        value async for value in published_map.values("user-1")
-    ]
-    native_deque = NativeDeque()
-    published_deque = PublishedDeque(native_deque)
-    deque_scan = published_deque.values("user-1", Direction.BACKWARD)
-    values = [
-        item
-        async for item in deque_scan
-    ]
-    assert items == [("a", 1), ("b", 2)]
-    assert keys == ["b", "a"]
-    assert map_values == [1, 2]
-    assert await published_map.contains("user-1", "a")
-    assert await published_deque.size("user-1") == 2
-    assert not await published_deque.is_empty("user-1")
-    assert await published_deque.peekleft("user-1") == 1
-    assert await published_deque.peek("user-1") == 2
-    assert await published_deque.get("user-1", -1) == 2
-    assert await published_deque.get("user-1", -3) is None
-    assert values == [2, 1]
+    assert native.scans[0].closed is True

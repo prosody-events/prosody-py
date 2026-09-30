@@ -144,3 +144,59 @@ async def _make_state_client(topic, group, client_factory):
         # >= 2 so the async-bridging test can observe two keys interleaving.
         max_concurrency=4,
     )
+
+
+class NativeScan:
+    """A native cursor stub over a fixed list of items."""
+
+    def __init__(self, items):
+        self._items = iter(list(items))
+        self.closed = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._items)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+    async def aclose(self):
+        self.closed = True
+
+
+class NativeRecorder:
+    """A native handle stub that records each call.
+
+    An async method returns ``results[name]``. ``scan`` yields ``items``, and
+    ``keys`` yields the first element of each item.
+    """
+
+    def __init__(self, results=None, items=()):
+        self.calls = []
+        self.scans = []
+        self._results = results or {}
+        self._items = list(items)
+
+    @property
+    def queries(self):
+        return [args[-1] for name, args in self.calls if name in ("scan", "keys")]
+
+    def scan(self, *args):
+        return self._open("scan", args, self._items)
+
+    def keys(self, *args):
+        return self._open("keys", args, [item[0] for item in self._items])
+
+    def _open(self, name, args, items):
+        self.calls.append((name, args))
+        self.scans.append(NativeScan(items))
+        return self.scans[-1]
+
+    def __getattr__(self, name):
+        async def call(*args):
+            self.calls.append((name, args))
+            return self._results.get(name)
+
+        return call
