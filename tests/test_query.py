@@ -85,6 +85,7 @@ def test_key_options_translate_on_every_scan(options, expected, direction):
     for scan in _key_scans(native):
         scan(direction, **options)
     backward = direction is Direction.BACKWARD
+    assert direction.value == ("backward" if backward else "forward")
     assert native.queries == [replace(expected, backward=backward)] * 8
 
 
