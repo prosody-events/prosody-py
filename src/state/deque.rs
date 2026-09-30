@@ -1,10 +1,9 @@
 //! Deque state handles.
 
 use super::{
-    Arc, Bound, BoxDequeState, ConsumerMessage, FutureExt, NativeJsonDequeScan,
-    NativeMessageDequeScan, PositionQuery, PyAny, PyResult, Python, StateEnv, Value, build_message,
-    future_into_py, json_write_item, message_write_item, outcome_token, pyclass, pymethods,
-    pythonize, state_error,
+    Arc, Bound, BoxDequeState, ConsumerMessage, NativeJsonDequeScan, NativeMessageDequeScan,
+    PositionQuery, PyAny, PyResult, Python, StateEnv, Value, build_message, json_object,
+    json_write_item, message_write_item, outcome_token, pyclass, pymethods, run, run_item,
 };
 
 macro_rules! deque_state {
@@ -20,38 +19,27 @@ macro_rules! deque_state {
         impl $name {
             /// Returns the number of live elements.
             fn len<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.len().with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.len().await };
+                run(py, &self.env, op, |_, _, len| Ok(len))
             }
 
             /// Reports whether the deque is empty.
             fn is_empty<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.is_empty().with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.is_empty().await };
+                run(py, &self.env, op, |_, _, empty| Ok(empty))
             }
 
             /// Reads one element by its position from the front.
             fn get<'p>(&self, py: Python<'p>, index: usize) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.get(index).with_context(ctx).await;
-                    Python::attach(|py| match out {
-                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
-                        Err(error) => Err(state_error(py, &env, &error)),
-                    })
-                })
+                run_item(
+                    py,
+                    &self.env,
+                    async move { state.get(index).await },
+                    $restore,
+                )
             }
 
             /// Appends one element.
@@ -60,14 +48,10 @@ macro_rules! deque_state {
                 py: Python<'p>,
                 item: &Bound<'p, PyAny>,
             ) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let item = ($prepare)(py, &self.env, item)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.push_back(item).with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.push_back(item).await };
+                run(py, &self.env, op, |_, _, ()| Ok(()))
             }
 
             /// Prepends one element.
@@ -76,81 +60,61 @@ macro_rules! deque_state {
                 py: Python<'p>,
                 item: &Bound<'p, PyAny>,
             ) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let item = ($prepare)(py, &self.env, item)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.push_front(item).with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.push_front(item).await };
+                run(py, &self.env, op, |_, _, ()| Ok(()))
             }
 
             /// Removes and returns the front element.
             fn pop_front<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.pop_front().with_context(ctx).await;
-                    Python::attach(|py| match out {
-                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
-                        Err(error) => Err(state_error(py, &env, &error)),
-                    })
-                })
+                run_item(
+                    py,
+                    &self.env,
+                    async move { state.pop_front().await },
+                    $restore,
+                )
             }
 
             /// Removes and returns the back element.
             fn pop_back<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.pop_back().with_context(ctx).await;
-                    Python::attach(|py| match out {
-                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
-                        Err(error) => Err(state_error(py, &env, &error)),
-                    })
-                })
+                run_item(
+                    py,
+                    &self.env,
+                    async move { state.pop_back().await },
+                    $restore,
+                )
             }
 
             /// Reads the front endpoint.
             fn peek_front<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.peek_front().with_context(ctx).await;
-                    Python::attach(|py| match out {
-                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
-                        Err(error) => Err(state_error(py, &env, &error)),
-                    })
-                })
+                run_item(
+                    py,
+                    &self.env,
+                    async move { state.peek_front().await },
+                    $restore,
+                )
             }
 
             /// Reads the back endpoint.
             fn peek_back<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.peek_back().with_context(ctx).await;
-                    Python::attach(|py| match out {
-                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
-                        Err(error) => Err(state_error(py, &env, &error)),
-                    })
-                })
+                run_item(
+                    py,
+                    &self.env,
+                    async move { state.peek_back().await },
+                    $restore,
+                )
             }
 
             /// Removes every element.
             fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.clear().with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.clear().await };
+                run(py, &self.env, op, |_, _, ()| Ok(()))
             }
 
             /// Opens an element cursor.
@@ -161,24 +125,19 @@ macro_rules! deque_state {
 
             /// Durably commits the buffered operations and reports the outcome.
             fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.commit().with_context(ctx).await;
-                    Python::attach(|py| {
-                        out.map(outcome_token)
-                            .map_err(|error| state_error(py, &env, &error))
-                    })
+                let op = async move { state.commit().await };
+                run(py, &self.env, op, |_, _, outcome| {
+                    Ok(outcome_token(outcome))
                 })
             }
 
             /// Discards the buffered operations and reports the outcome.
             fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                future_into_py(py, async move {
-                    Ok(outcome_token(state.rollback().with_context(ctx).await))
+                let op = async move { Ok(state.rollback().await) };
+                run(py, &self.env, op, |_, _, outcome| {
+                    Ok(outcome_token(outcome))
                 })
             }
         }
@@ -190,7 +149,7 @@ deque_state!(
     Value,
     NativeJsonDequeScan,
     json_write_item,
-    |py, _env: &StateEnv, item| Ok(pythonize(py, item)?.unbind())
+    json_object
 );
 deque_state!(
     NativeMessageDequeState,

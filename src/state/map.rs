@@ -1,10 +1,9 @@
 //! Ordered-map state handles.
 
 use super::{
-    Arc, Bound, BoxMapState, ConsumerMessage, FutureExt, KeyQuery, NativeJsonMapScan,
-    NativeMapKeyScan, NativeMessageMapScan, Py, PyAny, PyResult, Python, StateEnv, Value,
-    build_message, future_into_py, json_write_item, message_write_item, outcome_token, pyclass,
-    pymethods, pythonize, state_error,
+    Arc, Bound, BoxMapState, ConsumerMessage, KeyQuery, NativeJsonMapScan, NativeMapKeyScan,
+    NativeMessageMapScan, PyAny, PyResult, Python, StateEnv, Value, build_message, json_object,
+    json_write_item, message_write_item, outcome_token, pyclass, pymethods, run, run_item,
 };
 
 macro_rules! map_state {
@@ -20,16 +19,8 @@ macro_rules! map_state {
         impl $name {
             /// Reads one entry.
             fn get<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.get(key).with_context(ctx).await;
-                    Python::attach(|py| match out {
-                        Ok(item) => item.map(|item| ($restore)(py, &env, &item)).transpose(),
-                        Err(error) => Err(state_error(py, &env, &error)),
-                    })
-                })
+                run_item(py, &self.env, async move { state.get(key).await }, $restore)
             }
 
             /// Reads several entries in input order.
@@ -38,30 +29,25 @@ macro_rules! map_state {
                 py: Python<'p>,
                 keys: Vec<String>,
             ) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.get_many(keys).with_context(ctx).await;
-                    Python::attach(|py| match out {
-                        Ok(items) => items
-                            .into_iter()
-                            .map(|item| item.map(|item| ($restore)(py, &env, &item)).transpose())
-                            .collect::<PyResult<Vec<Option<Py<PyAny>>>>>(),
-                        Err(error) => Err(state_error(py, &env, &error)),
-                    })
+                let op = async move { state.get_many(keys).await };
+                run(py, &self.env, op, |py, env, items| {
+                    items
+                        .iter()
+                        .map(|item| {
+                            item.as_ref()
+                                .map(|item| $restore(py, env, item))
+                                .transpose()
+                        })
+                        .collect::<PyResult<Vec<_>>>()
                 })
             }
 
             /// Reports whether one entry exists.
             fn contains_key<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.contains_key(key).with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.contains_key(key).await };
+                run(py, &self.env, op, |_, _, found| Ok(found))
             }
 
             /// Reports whether each key exists, in input order.
@@ -70,24 +56,16 @@ macro_rules! map_state {
                 py: Python<'p>,
                 keys: Vec<String>,
             ) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.contains_many(keys).with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.contains_many(keys).await };
+                run(py, &self.env, op, |_, _, found| Ok(found))
             }
 
             /// Reports whether the map is empty.
             fn is_empty<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.is_empty().with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.is_empty().await };
+                run(py, &self.env, op, |_, _, empty| Ok(empty))
             }
 
             /// Inserts or overwrites one entry.
@@ -97,36 +75,24 @@ macro_rules! map_state {
                 key: String,
                 item: &Bound<'p, PyAny>,
             ) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let item = ($prepare)(py, &self.env, item)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.set(key, item).with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.set(key, item).await };
+                run(py, &self.env, op, |_, _, ()| Ok(()))
             }
 
             /// Removes one entry.
             fn remove<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.remove(key).with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.remove(key).await };
+                run(py, &self.env, op, |_, _, ()| Ok(()))
             }
 
             /// Removes every entry.
             fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.clear().with_context(ctx).await;
-                    Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-                })
+                let op = async move { state.clear().await };
+                run(py, &self.env, op, |_, _, ()| Ok(()))
             }
 
             /// Opens an entry cursor.
@@ -143,24 +109,19 @@ macro_rules! map_state {
 
             /// Durably commits the buffered operations and reports the outcome.
             fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                let env = self.env.clone();
-                future_into_py(py, async move {
-                    let out = state.commit().with_context(ctx).await;
-                    Python::attach(|py| {
-                        out.map(outcome_token)
-                            .map_err(|error| state_error(py, &env, &error))
-                    })
+                let op = async move { state.commit().await };
+                run(py, &self.env, op, |_, _, outcome| {
+                    Ok(outcome_token(outcome))
                 })
             }
 
             /// Discards the buffered operations and reports the outcome.
             fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-                let ctx = self.env.op_context(py)?;
                 let state = Arc::clone(&self.state);
-                future_into_py(py, async move {
-                    Ok(outcome_token(state.rollback().with_context(ctx).await))
+                let op = async move { Ok(state.rollback().await) };
+                run(py, &self.env, op, |_, _, outcome| {
+                    Ok(outcome_token(outcome))
                 })
             }
         }
@@ -172,7 +133,7 @@ map_state!(
     Value,
     NativeJsonMapScan,
     json_write_item,
-    |py, _env: &StateEnv, item| Ok(pythonize(py, item)?.unbind())
+    json_object
 );
 map_state!(
     NativeMessageMapState,

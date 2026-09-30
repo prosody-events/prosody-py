@@ -36,11 +36,12 @@ use prosody::consumer::message::ConsumerMessage;
 use prosody::state::{Direction, StoreOutcome};
 use pyo3::exceptions::PyStopAsyncIteration;
 use pyo3::types::{PyAnyMethods, PyDict, PyString, PyTuple};
-use pyo3::{Bound, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass, pymethods};
+use pyo3::{Bound, IntoPyObject, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::{depythonize, pythonize};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
+use std::future::Future;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -152,6 +153,50 @@ pub(crate) fn state_error(py: Python, env: &StateEnv, error: &ErasedStateError) 
         ErasedCategory::Transient => &env.0.transient_error,
     };
     raise(class.bind(py), error.message())
+}
+
+/// Runs one state operation off the GIL and returns its Python awaitable.
+///
+/// The operation runs inside the caller's OpenTelemetry context. An
+/// [`ErasedStateError`] raises by its category. `convert` builds the Python
+/// result under the GIL.
+pub(crate) fn run<'p, F, C, T, R>(
+    py: Python<'p>,
+    env: &StateEnv,
+    operation: F,
+    convert: C,
+) -> PyResult<Bound<'p, PyAny>>
+where
+    F: Future<Output = Result<T, ErasedStateError>> + Send + 'static,
+    C: FnOnce(Python, &StateEnv, T) -> PyResult<R> + Send + 'static,
+    R: for<'py> IntoPyObject<'py> + Send + 'static,
+{
+    let ctx = env.op_context(py)?;
+    let env = env.clone();
+    future_into_py(py, async move {
+        let out = operation.with_context(ctx).await;
+        Python::attach(|py| match out {
+            Ok(value) => convert(py, &env, value),
+            Err(error) => Err(state_error(py, &env, &error)),
+        })
+    })
+}
+
+/// Runs a read of one optional stored item, like [`run`], and converts the
+/// item with `restore`.
+pub(crate) fn run_item<'p, F, T>(
+    py: Python<'p>,
+    env: &StateEnv,
+    read: F,
+    restore: fn(Python, &StateEnv, &T) -> PyResult<Py<PyAny>>,
+) -> PyResult<Bound<'p, PyAny>>
+where
+    F: Future<Output = Result<Option<T>, ErasedStateError>> + Send + 'static,
+    T: 'static,
+{
+    run(py, env, read, move |py, env, item| {
+        item.map(|item| restore(py, env, &item)).transpose()
+    })
 }
 
 /// Builds a `TransientStateError` for a caller-caused condition the glue
@@ -276,7 +321,8 @@ struct ScanInner<T> {
     retained: VecDeque<T>,
 }
 
-fn json_object(py: Python, _env: &StateEnv, value: &Value) -> PyResult<Py<PyAny>> {
+/// Converts a stored JSON value into a Python object.
+pub(crate) fn json_object(py: Python, _env: &StateEnv, value: &Value) -> PyResult<Py<PyAny>> {
     Ok(pythonize(py, value)?.unbind())
 }
 

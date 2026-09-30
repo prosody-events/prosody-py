@@ -2,20 +2,14 @@
 
 use crate::state::{
     KeyQuery, NativeJsonDequeScan, NativeJsonMapScan, NativeMapKeyScan, PositionQuery, StateEnv,
-    state_error,
+    json_object, run, run_item,
 };
-use prosody::consumer::event_context::ErasedStateError;
 use prosody::high_level::erased::{
     SharedDequeReader, SharedMapReader, SharedSetReader, SharedValueReader,
 };
 use pyo3::{Bound, PyAny, PyResult, Python, pyclass, pymethods};
-use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::pythonize;
 use serde_json::Value;
-
-fn published_error(env: &StateEnv, error: &ErasedStateError) -> pyo3::PyErr {
-    Python::attach(|py| state_error(py, env, error))
-}
 
 /// A read-only published value collection.
 #[pyclass(name = "_NativePublishedValue")]
@@ -28,14 +22,12 @@ pub struct PublishedValue {
 impl PublishedValue {
     fn get<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let value = inner
-                .get(key)
-                .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(pythonize(py, &value)?.unbind()))
-        })
+        run_item(
+            py,
+            &self.env,
+            async move { inner.get(key).await },
+            json_object,
+        )
     }
 }
 
@@ -50,14 +42,12 @@ pub struct PublishedMap {
 impl PublishedMap {
     fn get<'p>(&self, py: Python<'p>, key: String, map_key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let value = inner
-                .get(key, map_key)
-                .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(pythonize(py, &value)?.unbind()))
-        })
+        run_item(
+            py,
+            &self.env,
+            async move { inner.get(key, map_key).await },
+            json_object,
+        )
     }
 
     fn get_many<'p>(
@@ -67,13 +57,9 @@ impl PublishedMap {
         map_keys: Vec<String>,
     ) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let values = inner
-                .get_many(key, map_keys)
-                .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(pythonize(py, &values)?.unbind()))
+        let op = async move { inner.get_many(key, map_keys).await };
+        run(py, &self.env, op, |py, _, values| {
+            Ok(pythonize(py, &values)?.unbind())
         })
     }
 
@@ -84,13 +70,8 @@ impl PublishedMap {
         map_key: String,
     ) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            inner
-                .contains_key(key, map_key)
-                .await
-                .map_err(|error| published_error(&env, &error))
-        })
+        let op = async move { inner.contains_key(key, map_key).await };
+        run(py, &self.env, op, |_, _, found| Ok(found))
     }
 
     fn contains_many<'p>(
@@ -100,24 +81,14 @@ impl PublishedMap {
         map_keys: Vec<String>,
     ) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            inner
-                .contains_many(key, map_keys)
-                .await
-                .map_err(|error| published_error(&env, &error))
-        })
+        let op = async move { inner.contains_many(key, map_keys).await };
+        run(py, &self.env, op, |_, _, found| Ok(found))
     }
 
     fn is_empty<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            inner
-                .is_empty(key)
-                .await
-                .map_err(|error| published_error(&env, &error))
-        })
+        let op = async move { inner.is_empty(key).await };
+        run(py, &self.env, op, |_, _, empty| Ok(empty))
     }
 
     fn scan(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeJsonMapScan> {
@@ -147,13 +118,8 @@ impl PublishedSet {
         member: String,
     ) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            inner
-                .contains(key, member)
-                .await
-                .map_err(|error| published_error(&env, &error))
-        })
+        let op = async move { inner.contains(key, member).await };
+        run(py, &self.env, op, |_, _, found| Ok(found))
     }
 
     fn contains_many<'p>(
@@ -163,24 +129,14 @@ impl PublishedSet {
         members: Vec<String>,
     ) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            inner
-                .contains_many(key, members)
-                .await
-                .map_err(|error| published_error(&env, &error))
-        })
+        let op = async move { inner.contains_many(key, members).await };
+        run(py, &self.env, op, |_, _, found| Ok(found))
     }
 
     fn is_empty<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            inner
-                .is_empty(key)
-                .await
-                .map_err(|error| published_error(&env, &error))
-        })
+        let op = async move { inner.is_empty(key).await };
+        run(py, &self.env, op, |_, _, empty| Ok(empty))
     }
 
     fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
@@ -200,60 +156,44 @@ pub struct PublishedDeque {
 impl PublishedDeque {
     fn get<'p>(&self, py: Python<'p>, key: String, index: usize) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let value = inner
-                .get(key, index)
-                .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(pythonize(py, &value)?.unbind()))
-        })
+        run_item(
+            py,
+            &self.env,
+            async move { inner.get(key, index).await },
+            json_object,
+        )
     }
 
     fn len<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            inner
-                .len(key)
-                .await
-                .map_err(|error| published_error(&env, &error))
-        })
+        let op = async move { inner.len(key).await };
+        run(py, &self.env, op, |_, _, len| Ok(len))
     }
 
     fn is_empty<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            inner
-                .is_empty(key)
-                .await
-                .map_err(|error| published_error(&env, &error))
-        })
+        let op = async move { inner.is_empty(key).await };
+        run(py, &self.env, op, |_, _, empty| Ok(empty))
     }
 
     fn peek_front<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let value = inner
-                .peek_front(key)
-                .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(pythonize(py, &value)?.unbind()))
-        })
+        run_item(
+            py,
+            &self.env,
+            async move { inner.peek_front(key).await },
+            json_object,
+        )
     }
 
     fn peek_back<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
         let inner = self.inner.clone();
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let value = inner
-                .peek_back(key)
-                .await
-                .map_err(|error| published_error(&env, &error))?;
-            Python::attach(|py| Ok(pythonize(py, &value)?.unbind()))
-        })
+        run_item(
+            py,
+            &self.env,
+            async move { inner.peek_back(key).await },
+            json_object,
+        )
     }
 
     fn scan(&self, py: Python, key: String, query: PositionQuery) -> PyResult<NativeJsonDequeScan> {

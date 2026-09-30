@@ -1,8 +1,8 @@
 //! The presence-only set state handle.
 
 use super::{
-    Arc, Bound, BoxSetState, FutureExt, KeyQuery, NativeMapKeyScan, PyAny, PyResult, Python,
-    StateEnv, future_into_py, outcome_token, pyclass, pymethods, state_error,
+    Arc, Bound, BoxSetState, KeyQuery, NativeMapKeyScan, PyAny, PyResult, Python, StateEnv,
+    outcome_token, pyclass, pymethods, run,
 };
 
 /// Ordered set state handle over string members.
@@ -16,13 +16,9 @@ pub struct NativeSetState {
 impl NativeSetState {
     /// Reports whether `member` belongs to the set.
     fn contains<'p>(&self, py: Python<'p>, member: String) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = state.contains(member).with_context(ctx).await;
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
+        let op = async move { state.contains(member).await };
+        run(py, &self.env, op, |_, _, found| Ok(found))
     }
 
     /// Reports whether each member belongs to the set, in input order.
@@ -31,57 +27,37 @@ impl NativeSetState {
         py: Python<'p>,
         members: Vec<String>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = state.contains_many(members).with_context(ctx).await;
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
+        let op = async move { state.contains_many(members).await };
+        run(py, &self.env, op, |_, _, found| Ok(found))
     }
 
     /// Reports whether the set has no members.
     fn is_empty<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = state.is_empty().with_context(ctx).await;
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
+        let op = async move { state.is_empty().await };
+        run(py, &self.env, op, |_, _, empty| Ok(empty))
     }
 
     /// Adds one member.
     fn insert<'p>(&self, py: Python<'p>, member: String) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = state.insert(member).with_context(ctx).await;
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
+        let op = async move { state.insert(member).await };
+        run(py, &self.env, op, |_, _, ()| Ok(()))
     }
 
     /// Removes one member.
     fn remove<'p>(&self, py: Python<'p>, member: String) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = state.remove(member).with_context(ctx).await;
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
+        let op = async move { state.remove(member).await };
+        run(py, &self.env, op, |_, _, ()| Ok(()))
     }
 
     /// Removes every member.
     fn clear<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = state.clear().with_context(ctx).await;
-            Python::attach(|py| out.map_err(|error| state_error(py, &env, &error)))
-        })
+        let op = async move { state.clear().await };
+        run(py, &self.env, op, |_, _, ()| Ok(()))
     }
 
     /// Opens a member cursor.
@@ -92,24 +68,19 @@ impl NativeSetState {
 
     /// Durably commits the buffered operations and reports the outcome.
     fn commit<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
-        let env = self.env.clone();
-        future_into_py(py, async move {
-            let out = state.commit().with_context(ctx).await;
-            Python::attach(|py| {
-                out.map(outcome_token)
-                    .map_err(|error| state_error(py, &env, &error))
-            })
+        let op = async move { state.commit().await };
+        run(py, &self.env, op, |_, _, outcome| {
+            Ok(outcome_token(outcome))
         })
     }
 
     /// Discards the buffered operations and reports the outcome.
     fn rollback<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        let ctx = self.env.op_context(py)?;
         let state = Arc::clone(&self.state);
-        future_into_py(py, async move {
-            Ok(outcome_token(state.rollback().with_context(ctx).await))
+        let op = async move { Ok(state.rollback().await) };
+        run(py, &self.env, op, |_, _, outcome| {
+            Ok(outcome_token(outcome))
         })
     }
 }
