@@ -254,7 +254,7 @@ class _ProsodyClientApi:
         payload: JSONInput,
         *,
         subsystems: Sequence[str],
-        timeout: timedelta,
+        timeout: Duration,
     ) -> dict[str, Outcome[JSONValue]]:
         """Return one outcome for each subsystem.
 
@@ -272,7 +272,7 @@ class _ProsodyClientApi:
         key: str,
         *,
         subsystems: Sequence[str],
-        timeout: timedelta,
+        timeout: Duration,
     ) -> dict[str, Outcome[JSONValue]]:
         """Return one excise outcome for each subsystem."""
         ...

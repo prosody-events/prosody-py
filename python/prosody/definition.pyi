@@ -8,7 +8,7 @@ set members are always ``str``.
 """
 
 from datetime import timedelta
-from typing import Generic, Optional, Union
+from typing import Final, Generic, Optional, Union
 
 from typing_extensions import Literal, TypedDict, TypeVar
 
@@ -26,7 +26,7 @@ class _StateConfig(TypedDict):
     name: str
     kind: str
     payload: Optional[str]
-    ttl_seconds: Optional[int]
+    ttl_seconds: Optional[Union[int, float]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
     keyset_limit: Optional[int]
@@ -40,13 +40,13 @@ class ValueDefinition(Generic[D_co]):
     ``kind = "value"``, ``payload = "json"``. Vends :class:`ValueState` ``[T]``.
     """
 
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    read_cache: ReadCache
-    kind: str
-    payload: str
+    name: Final[str]
+    ttl: Final[Optional[Union[timedelta, int]]]
+    read_uncommitted: Final[Optional[bool]]
+    published: Final[Optional[bool]]
+    read_cache: Final[ReadCache]
+    kind: Final[str]
+    payload: Final[str]
 
     def __init__(
         self,
@@ -68,14 +68,14 @@ class MapDefinition(Generic[D_co]):
     ``keyset_limit`` bounds ordered-scan tracking.
     """
 
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    read_cache: ReadCache
-    keyset_limit: Optional[int]
-    kind: str
-    payload: str
+    name: Final[str]
+    ttl: Final[Optional[Union[timedelta, int]]]
+    read_uncommitted: Final[Optional[bool]]
+    published: Final[Optional[bool]]
+    read_cache: Final[ReadCache]
+    keyset_limit: Final[Optional[int]]
+    kind: Final[str]
+    payload: Final[str]
 
     def __init__(
         self,
@@ -98,14 +98,14 @@ class SetDefinition:
     ``keyset_limit`` bounds ordered-scan tracking, as on a map.
     """
 
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    read_cache: ReadCache
-    keyset_limit: Optional[int]
-    kind: str
-    payload: None
+    name: Final[str]
+    ttl: Final[Optional[Union[timedelta, int]]]
+    read_uncommitted: Final[Optional[bool]]
+    published: Final[Optional[bool]]
+    read_cache: Final[ReadCache]
+    keyset_limit: Final[Optional[int]]
+    kind: Final[str]
+    payload: Final[None]
 
     def __init__(
         self,
@@ -128,14 +128,14 @@ class DequeDefinition(Generic[D_co]):
     ``capacity`` is deque-only.
     """
 
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    read_cache: ReadCache
-    capacity: Optional[int]
-    kind: str
-    payload: str
+    name: Final[str]
+    ttl: Final[Optional[Union[timedelta, int]]]
+    read_uncommitted: Final[Optional[bool]]
+    published: Final[Optional[bool]]
+    read_cache: Final[ReadCache]
+    capacity: Final[Optional[int]]
+    kind: Final[str]
+    payload: Final[str]
 
     def __init__(
         self,
@@ -158,11 +158,11 @@ class MessageValueDefinition(Generic[D_co]):
     :class:`ValueState` ``[Message[P]]``.
     """
 
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    kind: str
-    payload: str
+    name: Final[str]
+    ttl: Final[Optional[Union[timedelta, int]]]
+    read_uncommitted: Final[Optional[bool]]
+    kind: Final[str]
+    payload: Final[str]
 
     def __init__(
         self,
@@ -182,12 +182,12 @@ class MessageMapDefinition(Generic[D_co]):
     :class:`MapState` ``[Message[P]]``. ``keyset_limit`` bounds ordered-scan tracking.
     """
 
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    keyset_limit: Optional[int]
-    kind: str
-    payload: str
+    name: Final[str]
+    ttl: Final[Optional[Union[timedelta, int]]]
+    read_uncommitted: Final[Optional[bool]]
+    keyset_limit: Final[Optional[int]]
+    kind: Final[str]
+    payload: Final[str]
 
     def __init__(
         self,
@@ -208,12 +208,12 @@ class MessageDequeDefinition(Generic[D_co]):
     :class:`DequeState` ``[Message[P]]``. ``capacity`` is deque-only.
     """
 
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    capacity: Optional[int]
-    kind: str
-    payload: str
+    name: Final[str]
+    ttl: Final[Optional[Union[timedelta, int]]]
+    read_uncommitted: Final[Optional[bool]]
+    capacity: Final[Optional[int]]
+    kind: Final[str]
+    payload: Final[str]
 
     def __init__(
         self,

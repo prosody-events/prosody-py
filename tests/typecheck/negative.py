@@ -10,11 +10,13 @@ from typing_extensions import TypedDict
 from prosody import (
     Context,
     Direction,
+    EventHandler,
     MapDefinition,
     Message,
     MessageDequeDefinition,
     ProsodyClient,
     SetDefinition,
+    Timer,
     map,
     message_deque,
     set,
@@ -24,6 +26,11 @@ from prosody import ProsodyHandler  # type: ignore[attr-defined]
 
 class Event(TypedDict):
     amount: int
+
+
+class MissingExcise(EventHandler):
+    async def on_message(self, context: Context, message: Message) -> None: ...
+    async def on_timer(self, context: Context, timer: Timer) -> None: ...
 
 
 TOTALS: MapDefinition[int] = map("negative-totals")
@@ -51,3 +58,6 @@ async def expected_errors(
     await tags.add(1)  # type: ignore[arg-type]
 
     await ProsodyClient.create(unknown_option=True)  # type: ignore[call-arg]
+
+    TOTALS.name = "renamed"  # type: ignore[misc]
+    MissingExcise()  # type: ignore[abstract]

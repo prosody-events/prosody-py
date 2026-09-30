@@ -7,7 +7,7 @@ same object in a handler.
 
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import ClassVar, Generic, Optional, Protocol, Union
+from typing import Any, ClassVar, Generic, Optional, Union
 
 from typing_extensions import Literal, TypedDict, TypeVar
 
@@ -42,18 +42,7 @@ class _StateConfig(TypedDict):
     capacity: Optional[int]
 
 
-class _Definition(Protocol):
-    name: str
-    kind: str
-    payload: Optional[str]
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    keyset_limit: Optional[int]
-    capacity: Optional[int]
-
-
-def _config(definition: _Definition) -> _StateConfig:
+def _config(definition: Any) -> _StateConfig:
     """Build the registration config dict the owning client consumes.
 
     Excludes ``read_cache``: the owner-side registration path never reads it.

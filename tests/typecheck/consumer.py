@@ -146,7 +146,7 @@ async def request_typed(client: ProsodyClient) -> None:
         "orders",
         "order-1",
         subsystems=["inventory"],
-        timeout=timedelta(seconds=2),
+        timeout=2.0,
     )
     assert_type(excise_results, dict[str, Outcome[JSONValue]])
     assert_type(results, dict[str, Outcome[JSONValue]])

@@ -4,16 +4,13 @@
 as its first argument because no handler supplies one.
 """
 
-from typing import Generic, List, Optional, Protocol, Union
+from typing import Any, Generic, List, Optional, Union
 
 from typing_extensions import TypeVar
 
 from prosody.message import JSONValue
 from prosody.query import (
     Direction,
-    _KeyQuery,
-    _NativeScan,
-    _PositionQuery,
     _StateScan,
     _deque_index,
     _identity,
@@ -28,7 +25,7 @@ V = TypeVar("V", default=JSONValue)
 class PublishedValue(Generic[T]):
     """Read-only access to a published value collection."""
 
-    def __init__(self, native: "_PublishedValueNative[T]") -> None:
+    def __init__(self, native: Any) -> None:
         self._native = native
 
     async def get(self, key: str) -> Optional[T]:
@@ -38,7 +35,7 @@ class PublishedValue(Generic[T]):
 class PublishedMap(Generic[V]):
     """Read-only access to a published ordered-map collection."""
 
-    def __init__(self, native: "_PublishedMapNative[V]") -> None:
+    def __init__(self, native: Any) -> None:
         self._native = native
 
     async def get(self, key: str, map_key: str) -> Optional[V]:
@@ -108,7 +105,7 @@ class PublishedMap(Generic[V]):
 class PublishedSet:
     """Read-only access to a published set collection."""
 
-    def __init__(self, native: "_PublishedSetNative") -> None:
+    def __init__(self, native: Any) -> None:
         self._native = native
 
     async def contains(self, key: str, member: str) -> bool:
@@ -140,7 +137,7 @@ class PublishedSet:
 class PublishedDeque(Generic[T]):
     """Read-only access to a published deque collection."""
 
-    def __init__(self, native: "_PublishedDequeNative[T]") -> None:
+    def __init__(self, native: Any) -> None:
         self._native = native
 
     async def get(self, key: str, index: int) -> Optional[T]:
@@ -174,64 +171,3 @@ class PublishedDeque(Generic[T]):
         query = _position_query(direction, from_, after, to, before, range, limit)
         return _StateScan(self._native.scan(key, query), _identity)
 
-
-class _PublishedValueNative(Protocol[T]):
-    async def get(self, key: str) -> Optional[T]:
-        raise NotImplementedError
-
-
-class _PublishedMapNative(Protocol[V]):
-    async def get(self, key: str, map_key: str) -> Optional[V]:
-        raise NotImplementedError
-
-    async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]:
-        raise NotImplementedError
-
-    async def contains_key(self, key: str, map_key: str) -> bool:
-        raise NotImplementedError
-
-    async def contains_many(self, key: str, map_keys: List[str]) -> List[bool]:
-        raise NotImplementedError
-
-    async def is_empty(self, key: str) -> bool:
-        raise NotImplementedError
-
-    def scan(self, key: str, query: _KeyQuery) -> "_NativeScan[tuple[str, V]]":
-        raise NotImplementedError
-
-    def keys(self, key: str, query: _KeyQuery) -> "_NativeScan[str]":
-        raise NotImplementedError
-
-
-class _PublishedSetNative(Protocol):
-    async def contains(self, key: str, member: str) -> bool:
-        raise NotImplementedError
-
-    async def contains_many(self, key: str, members: List[str]) -> List[bool]:
-        raise NotImplementedError
-
-    async def is_empty(self, key: str) -> bool:
-        raise NotImplementedError
-
-    def keys(self, key: str, query: _KeyQuery) -> "_NativeScan[str]":
-        raise NotImplementedError
-
-
-class _PublishedDequeNative(Protocol[T]):
-    async def get(self, key: str, index: int) -> Optional[T]:
-        raise NotImplementedError
-
-    async def len(self, key: str) -> int:
-        raise NotImplementedError
-
-    async def is_empty(self, key: str) -> bool:
-        raise NotImplementedError
-
-    async def peek_front(self, key: str) -> Optional[T]:
-        raise NotImplementedError
-
-    async def peek_back(self, key: str) -> Optional[T]:
-        raise NotImplementedError
-
-    def scan(self, key: str, query: _PositionQuery) -> "_NativeScan[T]":
-        raise NotImplementedError

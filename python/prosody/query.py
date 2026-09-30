@@ -9,11 +9,11 @@ import enum
 import sys
 from dataclasses import dataclass
 from typing import (
+    Any,
     Awaitable,
     Callable,
     Generic,
     Optional,
-    Protocol,
     Tuple,
     TypeVar,
     Union,
@@ -220,14 +220,6 @@ def _identity(item: X) -> X:
     return item
 
 
-class _NativeScan(Protocol[X]):
-    async def __anext__(self) -> X:
-        raise NotImplementedError
-
-    async def aclose(self) -> None:
-        raise NotImplementedError
-
-
 class _StateScan(Generic[Y]):
     """Async iterator over a native scan cursor, applying a per-flavour transform.
 
@@ -243,7 +235,7 @@ class _StateScan(Generic[Y]):
     close use ``contextlib.aclosing(...)``.
     """
 
-    def __init__(self, native: _NativeScan[X], transform: Callable[[X], Y]) -> None:
+    def __init__(self, native: Any, transform: Callable[[Any], Y]) -> None:
         self._native = native
         self._transform = transform
 
