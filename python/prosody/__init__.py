@@ -101,7 +101,7 @@ class ProsodyClient:
                 subsystem.
             TypeError: If ``definition`` is a message collection definition.
         """
-        reader = _READERS.get(type(definition))
+        reader = next((r for cls, r in _READERS.items() if isinstance(definition, cls)), None)
         if reader is None:
             raise TypeError(
                 "definition must be a JSON ValueDefinition, MapDefinition, "
