@@ -8,7 +8,8 @@ error-category classification, null/shape/kind guards, and scan flattening).
 
 The type parameter of every handle (``T`` / ``V``) is a structural JSON
 annotation; see :mod:`prosody.definition`. Map keys and set members are always
-``str``.
+``str``. A handle with the default ``JSONValue`` type accepts any
+:data:`~prosody.message.JSONInput` write, such as a ``TypedDict``.
 """
 
 import enum
@@ -36,7 +37,7 @@ from prosody.definition import (
     set as set,
     value as value,
 )
-from prosody.message import JSONValue
+from prosody.message import JSONInput, JSONValue
 from prosody.published import (
     PublishedDeque as PublishedDeque,
     PublishedMap as PublishedMap,
@@ -72,6 +73,9 @@ class ValueState(Generic[T]):
     async def get(self) -> Optional[T]:
         """Read the current value, or ``None`` when absent/cleared."""
         ...
+    @overload
+    async def set(self: "ValueState[JSONValue]", value: JSONInput) -> None: ...
+    @overload
     async def set(self, value: T) -> None:
         """Buffer a write of ``value``.
 
@@ -143,6 +147,9 @@ class MapState(Generic[V]):
     async def is_empty(self) -> bool:
         """Whether the map holds no entries."""
         ...
+    @overload
+    async def set(self: "MapState[JSONValue]", key: str, value: JSONInput) -> None: ...
+    @overload
     async def set(self, key: str, value: V) -> None:
         """Insert or overwrite ``key``.
 
@@ -314,6 +321,9 @@ class DequeState(Generic[T]):
     ``is_empty()`` are methods because ``len`` cannot be async.
     """
 
+    @overload
+    async def append(self: "DequeState[JSONValue]", item: JSONInput) -> None: ...
+    @overload
     async def append(self, item: T) -> None:
         """Append ``item`` at the back.
 
@@ -321,6 +331,9 @@ class DequeState(Generic[T]):
         (transient).
         """
         ...
+    @overload
+    async def appendleft(self: "DequeState[JSONValue]", item: JSONInput) -> None: ...
+    @overload
     async def appendleft(self, item: T) -> None:
         """Prepend ``item`` at the front.
 

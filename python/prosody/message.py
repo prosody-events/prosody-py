@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from collections.abc import Mapping, Sequence
 from typing import List, Optional, Union, TypeAlias, Dict, Generic
 
 from typing_extensions import TypeVar
@@ -12,6 +13,18 @@ JSONValue: TypeAlias = Union[
     str,
     List['JSONValue'],
     Dict[str, 'JSONValue']
+]
+
+# A value that the client can write as JSON. Mapping and Sequence accept a
+# TypedDict, a ``dict[str, str]``, or a tuple. The client returns JSONValue.
+JSONInput: TypeAlias = Union[
+    None,
+    bool,
+    int,
+    float,
+    str,
+    Sequence['JSONInput'],
+    Mapping[str, object],
 ]
 
 # PEP 696 default: `Message` (unparameterized) is `Message[JSONValue]`.

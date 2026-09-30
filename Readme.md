@@ -1089,7 +1089,7 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 Await client operations unless an entry returns a property or an async iterator.
 
 - `await ProsodyClient.create(**config) -> ProsodyClient`: Create a client without blocking the event loop.
-- `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
+- `send(topic: str, key: str, payload: JSONInput) -> None`: Send a JSON-serializable message. `JSONInput` (from `prosody.message`) accepts any `Mapping[str, object]` or `Sequence`, such as a `TypedDict`. Values that the client returns use `JSONValue`.
 - `excise(topic: str, key: str) -> None`: Send an excise record for a key.
 - `request(topic, key, payload, *, subsystems, timeout) -> dict[str, Outcome[JSONValue]]`: Return one outcome for each subsystem.
 - `request_excise(topic, key, *, subsystems, timeout) -> dict[str, Outcome[JSONValue]]`: Return one excise outcome for each subsystem.

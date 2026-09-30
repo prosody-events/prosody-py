@@ -24,10 +24,12 @@ from prosody import (
     StoreOutcome,
     Success,
     Timer,
+    deque,
     map,
     message_deque,
     set,
     transient,
+    value,
 )
 from prosody.message import JSONValue
 
@@ -40,6 +42,9 @@ class Response(TypedDict):
     accepted: bool
 
 
+CART = value("cart")
+LABELS = map("labels")
+LOG = deque("log")
 TOTALS: MapDefinition[int] = map("totals")
 EVENTS: MessageDequeDefinition[Event] = message_deque("events", capacity=10)
 TAGS: SetDefinition = set("tags", keyset_limit=64)
@@ -150,3 +155,19 @@ async def request_typed(client: ProsodyClient) -> None:
             assert_type(outcome.value, JSONValue)
         elif isinstance(outcome, Failure):
             assert_type(outcome, Failure)
+
+
+async def write_structured_payloads(client: ProsodyClient, context: Context) -> None:
+    event: Event = {"amount": 1}
+    labels: dict[str, str] = {"region": "west"}
+    await client.send("orders", "order-1", event)
+    await client.send("orders", "order-1", labels)
+    await client.send("orders", "order-1", [event, labels])
+    await client.request(
+        "orders", "order-1", event, subsystems=["inventory"], timeout=timedelta(seconds=2)
+    )
+    await context.state(CART).set(event)
+    await context.state(LABELS).set("order-1", labels)
+    await context.state(LOG).append(event)
+    await context.state(LOG).appendleft(labels)
+    assert_type(await context.state(CART).get(), JSONValue)

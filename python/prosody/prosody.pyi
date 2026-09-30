@@ -20,6 +20,7 @@ from prosody._readers import (
     _NativePublishedSet as _NativePublishedSet,
     _NativePublishedValue as _NativePublishedValue,
 )
+from prosody.message import JSONInput, JSONValue
 from prosody.request import Outcome
 from prosody.state import (
     DequeDefinition,
@@ -47,16 +48,6 @@ StateDefinition: TypeAlias = Union[
     MessageDequeDefinition[object],
 ]
 
-# Define a JSONValue type that represents all possible JSON-serializable values
-JSONValue: TypeAlias = Union[
-    None,
-    bool,
-    int,
-    float,
-    str,
-    List['JSONValue'],
-    Dict[str, 'JSONValue']
-]
 
 # Define a Duration type alias for time-related parameters
 Duration: TypeAlias = Union[float, timedelta]
@@ -238,14 +229,14 @@ class _ProsodyClientApi:
         """
         ...
 
-    async def send(self, topic: str, key: str, payload: JSONValue) -> None:
+    async def send(self, topic: str, key: str, payload: JSONInput) -> None:
         """
         Send a message to a specified topic.
 
         Args:
             topic (str): The topic to which the message should be sent.
             key (str): The key associated with the message.
-            payload (JSONValue): The content of the message (must be JSON-serializable).
+            payload (JSONInput): The content of the message (must be JSON-serializable).
 
         Raises:
             RuntimeError: If there's an error sending the message.
@@ -260,7 +251,7 @@ class _ProsodyClientApi:
         self,
         topic: str,
         key: str,
-        payload: JSONValue,
+        payload: JSONInput,
         *,
         subsystems: Sequence[str],
         timeout: timedelta,
