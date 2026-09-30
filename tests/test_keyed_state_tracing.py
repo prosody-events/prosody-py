@@ -140,7 +140,6 @@ async def random_topic_and_group():
 
 @pytest.mark.tracing
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_state_op_trace_graph(random_topic_and_group):
     topic, group = random_topic_and_group
 

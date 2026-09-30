@@ -4,7 +4,6 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from prosody import Context, ExciseMessage, EventHandler, Message, Timer
-import pytest
 import tsasync
 
 from support import DEFAULT_TIMEOUT
@@ -53,7 +52,6 @@ class TimerTestHandler(CallbackTimerHandler):
         self.message_events = self.results
         self.operation_results = self.results
 
-@pytest.mark.asyncio
 async def test_timer_scheduling_and_firing(client, random_topic_and_group):
 
     topic, _ = random_topic_and_group
@@ -80,7 +78,6 @@ async def test_timer_scheduling_and_firing(client, random_topic_and_group):
     time_diff = abs((timer_event["timer"].time - scheduled_time).total_seconds())
     assert time_diff <= TIMER_TOLERANCE_SECONDS
 
-@pytest.mark.asyncio
 async def test_timer_unschedule(client, random_topic_and_group):
 
     topic, _ = random_topic_and_group
@@ -120,7 +117,6 @@ async def test_timer_unschedule(client, random_topic_and_group):
     time_diff = abs((timer_event["timer"].time - expected_timer_time).total_seconds())
     assert time_diff <= TIMER_TOLERANCE_SECONDS
 
-@pytest.mark.asyncio
 async def test_timer_clear_and_schedule(client, random_topic_and_group):
 
     topic, _ = random_topic_and_group
@@ -160,7 +156,6 @@ async def test_timer_clear_and_schedule(client, random_topic_and_group):
     time_diff = abs((timer_event["timer"].time - new_timer_time).total_seconds())
     assert time_diff <= TIMER_TOLERANCE_SECONDS
 
-@pytest.mark.asyncio
 async def test_timer_clear_scheduled(client, random_topic_and_group):
 
     topic, _ = random_topic_and_group
@@ -200,7 +195,6 @@ async def test_timer_clear_scheduled(client, random_topic_and_group):
         pass
 
 
-@pytest.mark.asyncio
 async def test_timer_scheduled_retrieval(client, random_topic_and_group):
 
     topic, _ = random_topic_and_group

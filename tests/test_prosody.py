@@ -22,7 +22,6 @@ def test_excise_message_has_no_payload():
 
     assert not hasattr(message, "payload")
 
-@pytest.mark.asyncio
 async def test_create_starts_native_construction_when_awaited(monkeypatch):
     calls = []
 
@@ -50,7 +49,6 @@ def test_missing_native_client_reports_attribute_error():
         getattr(client, "missing")
 
 @pytest.mark.parametrize("missing", ["on_message", "on_excise", "on_timer"])
-@pytest.mark.asyncio
 async def test_subscribe_rejects_non_callable_handler_before_consumption(missing):
     class CompleteHandler(EventHandler):
         async def on_message(self, context, message):

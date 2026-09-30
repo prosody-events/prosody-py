@@ -146,7 +146,6 @@ class _StubNative:
 
         return coro
 
-@pytest.mark.asyncio
 async def test_value_delegation():
     n = _StubNative()
     v = ValueState(n)
@@ -157,7 +156,6 @@ async def test_value_delegation():
     await v.rollback()
     assert [c[0] for c in n.calls] == ["get", "set", "clear", "commit", "rollback"]
 
-@pytest.mark.asyncio
 async def test_map_delegation():
     n = _StubNative()
     m = MapState(n)
@@ -181,7 +179,6 @@ async def test_map_delegation():
     assert n.calls[1][1] == (["a", "b"],)
     assert n.calls[2][1] == ("k", 1)
 
-@pytest.mark.asyncio
 async def test_deque_method_mapping():
     n = _StubNative()
     d = DequeState(n)
@@ -206,7 +203,6 @@ async def test_deque_method_mapping():
     assert n.calls[0][1] == (1,)  # append forwards item to push_back
     assert n.calls[4][1] == (3,)  # get(index) forwards index
 
-@pytest.mark.asyncio
 async def test_map_scan_transforms():
     entries = [("a", 1), ("b", 2)]
     m = MapState(_StubNative(entries))
@@ -215,7 +211,6 @@ async def test_map_scan_transforms():
     assert [v async for v in m.values()] == [1, 2]
     assert [k async for k in m] == ["a", "b"]  # __aiter__ = keys (dict-like)
 
-@pytest.mark.asyncio
 async def test_map_contains_delegates():
     n = _StubNative()
     await MapState(n).contains("k")
@@ -231,7 +226,6 @@ class _GetStub:
     async def get(self, key):
         return self._value
 
-@pytest.mark.asyncio
 async def test_map_get_default():
     # Absent (native None) returns the default...
     assert await MapState(_GetStub(None)).get("k", "fallback") == "fallback"
@@ -244,7 +238,6 @@ async def test_map_get_default():
     # A present truthy value returns as-is.
     assert await MapState(_GetStub(7)).get("k", "fallback") == 7
 
-@pytest.mark.asyncio
 async def test_deque_peek_mapping():
     n = _StubNative()
     d = DequeState(n)
@@ -252,13 +245,11 @@ async def test_deque_peek_mapping():
     await d.peekleft()
     assert [c[0] for c in n.calls] == ["peek_back", "peek_front"]
 
-@pytest.mark.asyncio
 async def test_deque_values_and_aiter():
     n = _StubNative([1, 2, 3])
     assert [x async for x in DequeState(n).values()] == [1, 2, 3]
     assert [x async for x in DequeState(_StubNative([9]))] == [9]  # __aiter__
 
-@pytest.mark.asyncio
 async def test_aclosing_closes_scan():
     n = _StubNative([1, 2, 3])
     it = DequeState(n).values()

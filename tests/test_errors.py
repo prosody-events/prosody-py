@@ -46,7 +46,6 @@ class TransientErrorHandler(EventHandler):
     async def on_timer(self, context: Context, timer: Timer) -> None:
         pass
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("fail", ["raise", "unencodable"])
 async def test_transient_failure_retries(client, random_topic_and_group, fail):
     topic, _ = random_topic_and_group
@@ -74,7 +73,6 @@ class PermanentErrorHandler(EventHandler):
     async def on_timer(self, context: Context, timer: Timer) -> None:
         pass
 
-@pytest.mark.asyncio
 async def test_permanent_error_decorator(client, random_topic_and_group):
 
     topic, _ = random_topic_and_group
@@ -92,7 +90,6 @@ async def test_permanent_error_decorator(client, random_topic_and_group):
 
     assert handler.message_count == 1
 
-@pytest.mark.asyncio
 async def test_best_effort_mode_does_not_retry(random_topic_and_group, client_factory):
 
     topic, group = random_topic_and_group

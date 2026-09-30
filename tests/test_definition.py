@@ -59,7 +59,6 @@ def test_publication_and_read_cache_share_the_descriptor():
     assert definition.to_config()["published"] is True
     assert definition.read_cache == timedelta(seconds=2)
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("definition", "reader"),
     (
@@ -84,8 +83,6 @@ async def test_client_state_dispatches_by_definition_type(definition, reader):
         ("checkout", definition.kind, definition.name),
         {"read_cache": definition.read_cache},
     )
-
-@pytest.mark.asyncio
 
 def test_kinds_and_payloads():
     assert deque("d").to_config()["kind"] == "deque"

@@ -53,7 +53,6 @@ def test_set_definition_to_config():
     assert set_definition("tags", read_cache=False).read_cache is False
 
 
-@pytest.mark.asyncio
 async def test_set_methods_map_to_native_set_operations():
     native = _Native({"contains": True, "contains_many": [True, False]})
     tags = SetState(native)
@@ -75,7 +74,6 @@ async def test_set_methods_map_to_native_set_operations():
     ]
 
 
-@pytest.mark.asyncio
 async def test_set_iteration_opens_a_member_query():
     queries = []
 
@@ -90,7 +88,6 @@ async def test_set_iteration_opens_a_member_query():
     assert queries == [_KeyQuery(), _KeyQuery(prefix="a")]
 
 
-@pytest.mark.asyncio
 async def test_published_set_reads_map_to_native_reads():
     native = _Native({"contains": True, "contains_many": [False], "is_empty": True})
     tags = PublishedSet(native)
@@ -105,7 +102,6 @@ async def test_published_set_reads_map_to_native_reads():
     ]
 
 
-@pytest.mark.asyncio
 async def test_map_presence_reads_map_to_native_reads():
     native = _Native({"contains_many": [True, False], "is_empty": False})
     totals = MapState(native)
@@ -115,7 +111,6 @@ async def test_map_presence_reads_map_to_native_reads():
     assert native.calls == [("contains_many", (["a", "b"],)), ("is_empty", ())]
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("handle", [ValueState, MapState, SetState, DequeState])
 @pytest.mark.parametrize(
     ("token", "outcome"),

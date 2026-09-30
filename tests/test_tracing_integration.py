@@ -212,7 +212,6 @@ async def client(random_topic_and_group, client_factory):
 
 @pytest.mark.tracing
 @pytest.mark.integration
-@pytest.mark.asyncio
 async def test_complete_distributed_trace(client, random_topic_and_group):
     """
     Creates a complete distributed trace across message sending, receiving, and timer execution.
