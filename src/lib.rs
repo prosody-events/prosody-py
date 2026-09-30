@@ -134,10 +134,11 @@ fn prosody(py: Python, prosody_module: &Bound<PyModule>) -> PyResult<()> {
 /// Call this for a mid-run flush (e.g. one of several clients shutting
 /// down while others keep running); use [`shutdown_telemetry`] once at
 /// process exit instead. A safe no-op if tracing was never initialized.
-/// Blocks until the export completes.
+/// Blocks until the export completes, with the GIL released so other Python
+/// threads and the handlers keep running.
 #[pyfunction]
-fn flush_telemetry() -> PyResult<()> {
-    core_flush_telemetry()
+fn flush_telemetry(py: Python) -> PyResult<()> {
+    py.detach(core_flush_telemetry)
         .map_err(|error| PyRuntimeError::new_err(format!("Failed to flush telemetry: {error}")))
 }
 
@@ -146,9 +147,9 @@ fn flush_telemetry() -> PyResult<()> {
 /// Automatically registered with `atexit` so it runs once at interpreter
 /// shutdown; call it manually only if the process needs to shut telemetry
 /// down earlier. A safe no-op if tracing was never initialized. Blocks
-/// until the final export completes.
+/// until the final export completes, with the GIL released.
 #[pyfunction]
-fn shutdown_telemetry() -> PyResult<()> {
-    core_shutdown_telemetry()
+fn shutdown_telemetry(py: Python) -> PyResult<()> {
+    py.detach(core_shutdown_telemetry)
         .map_err(|error| PyRuntimeError::new_err(format!("Failed to shut down telemetry: {error}")))
 }
