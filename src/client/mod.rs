@@ -3,7 +3,7 @@
 use opentelemetry::propagation::TextMapPropagator;
 use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache};
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{PyAnyMethods, PyDict, PyTypeMethods};
+use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
@@ -419,38 +419,6 @@ impl ProsodyClient {
             *current.lock() = None;
             result
         })
-    }
-
-    /// Returns a string representation of the `ProsodyClient`.
-    ///
-    /// # Returns
-    ///
-    /// A string representation of the `ProsodyClient`.
-    fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
-        let class_name = slf.get_type().qualname()?;
-        let slf = slf.borrow();
-        check_fork(slf.pid, "ProsodyClient")?;
-        Ok(format!(
-            "{}(producer='running', bootstrap={:?})",
-            class_name,
-            slf.client.producer_config().bootstrap_servers,
-        ))
-    }
-
-    /// Returns a human-readable string description of the `ProsodyClient`.
-    ///
-    /// # Returns
-    ///
-    /// A human-readable description of the `ProsodyClient`.
-    fn __str__(slf: &Bound<Self>) -> PyResult<String> {
-        let class_name = slf.get_type().qualname()?;
-        let slf = slf.borrow();
-        check_fork(slf.pid, "ProsodyClient")?;
-        Ok(format!(
-            "{}: producer=running, bootstrap={}",
-            class_name,
-            slf.client.producer_config().bootstrap_servers.join(","),
-        ))
     }
 
     /// Traverses Python objects contained in this Client for garbage
