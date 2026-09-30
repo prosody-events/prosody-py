@@ -108,6 +108,10 @@ class OrderHandler(EventHandler[OrderEvent]):
             last = page[-1]
         _flags: List[bool] = await totals.contains_many(["a", "b"])
         latest = totals.values(Direction.BACKWARD, limit=3)
+        # A key range is an ascending half-open slice in either direction.
+        _span: List[str] = [
+            key async for key in totals.keys(Direction.BACKWARD, range=slice("a", "m"))
+        ]
         _latest: List[int] = [total async for total in latest]
 
         tags = context.state(TAGS)  # SetState

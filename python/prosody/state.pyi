@@ -168,6 +168,7 @@ class MapState(Generic[V]):
         after: Optional[str] = ...,
         to: Optional[str] = ...,
         before: Optional[str] = ...,
+        range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[Tuple[str, V]]:
         """Async iterator over ``(key, value)`` entries in key order.
@@ -184,6 +185,7 @@ class MapState(Generic[V]):
         after: Optional[str] = ...,
         to: Optional[str] = ...,
         before: Optional[str] = ...,
+        range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[str]:
         """Async iterator over the keys in key order — the cheap key-only scan.
@@ -196,10 +198,13 @@ class MapState(Generic[V]):
         ``prefix`` keeps keys that start with it. ``from_`` and ``after`` start
         at or after a key. ``to`` and ``before`` stop at or before a key. These
         edges are in iteration order, so a ``BACKWARD`` scan starts at the high
-        end. ``limit`` caps the number of keys. Options narrow the scan and
-        never widen it. To page, pass the last key of a page as ``after``.
-        A wrong type raises ``TypeError``. Both ``from_`` and ``after``, both
-        ``to`` and ``before``, or a ``limit`` below 1 raise ``ValueError``.
+        end. ``range`` takes a ``slice`` of keys, such as ``slice("a", "m")``.
+        It is an ascending half-open span that applies in either direction. A
+        ``None`` bound leaves that end open. ``limit`` caps the number of keys.
+        Options narrow the scan and never widen it. To page, pass the last key
+        of a page as ``after``. A wrong type raises ``TypeError``. Both ``from_`` and ``after``, both
+        ``to`` and ``before``, a ``range`` with a step, or a ``limit`` below 1
+        raise ``ValueError``.
         """
         ...
     def values(
@@ -211,6 +216,7 @@ class MapState(Generic[V]):
         after: Optional[str] = ...,
         to: Optional[str] = ...,
         before: Optional[str] = ...,
+        range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[V]:
         """Async iterator over the values in key order.
@@ -276,6 +282,7 @@ class SetState:
         after: Optional[str] = ...,
         to: Optional[str] = ...,
         before: Optional[str] = ...,
+        range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[str]:
         """Async iterator over the members in order.

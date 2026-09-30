@@ -91,7 +91,7 @@ class Handler(EventHandler[Event, Response]):
         await tags.add("a")
         await tags.discard("a")
         assert_type(await tags.contains_many(["a"]), list[bool])
-        async for member in tags.members(from_="a", before="z"):
+        async for member in tags.members(from_="a", before="z", range=slice("b", None)):
             assert_type(member, str)
         assert_type(await tags.rollback(), StoreOutcome)
         assert_type(context.demand, Demand)
@@ -121,7 +121,7 @@ async def read_published_set(client: ProsodyClient) -> None:
     reader = await client.state("checkout", TAGS)
     assert_type(reader, PublishedSet)
     assert_type(await reader.contains("user", "a"), bool)
-    async for member in reader.members("user", limit=10):
+    async for member in reader.members("user", range=slice(None, "m"), limit=10):
         assert_type(member, str)
 
 

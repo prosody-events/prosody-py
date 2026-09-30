@@ -87,6 +87,16 @@ async def test_map_query_options_reach_core(state_client):
             "reverse_from": await keys(Direction.BACKWARD, from_="b1", limit=2),
             "limit": await keys(limit=2),
             "page": await keys(after="a2", limit=2),
+            "range": await keys(range=slice("a2", "b2")),
+            "range_reverse": await keys(Direction.BACKWARD, range=slice("a2", "b2")),
+            "range_open": await keys(range=slice("a3", None)),
+            "range_open_reverse": await keys(
+                Direction.BACKWARD, range=slice("a3", None)
+            ),
+            "range_edge": await keys(range=slice("a2", None), to="b1"),
+            "range_edge_reverse": await keys(
+                Direction.BACKWARD, range=slice("a2", None), from_="b1"
+            ),
             "items": await _wait(_collect(m.items(prefix="b", limit=1))),
             "values": await _wait(
                 _collect(m.values(Direction.BACKWARD, prefix="a"))
@@ -106,6 +116,11 @@ async def test_map_query_options_reach_core(state_client):
     assert obs["reverse_from"] == ["b1", "a3"]
     assert obs["limit"] == ["a1", "a2"]
     assert obs["page"] == ["a3", "b1"]
+    assert obs["range"] == ["a2", "a3", "b1"]
+    assert obs["range_open"] == ["a3", "b1", "b2"]
+    assert obs["range_edge"] == ["a2", "a3", "b1"]
+    for span in ["range", "range_open", "range_edge"]:
+        assert obs[f"{span}_reverse"] == obs[span][::-1]
     assert obs["items"] == [("b1", 3)]
     assert obs["values"] == [2, 1, 0]
 

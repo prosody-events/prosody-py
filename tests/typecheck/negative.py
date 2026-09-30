@@ -40,6 +40,7 @@ async def expected_errors(
 
     totals.keys(limit="10")  # type: ignore[arg-type]
     totals.values(limit=0.5)  # type: ignore[arg-type]
+    totals.keys(range=range(0, 2))  # type: ignore[arg-type]
 
     events = context.state(EVENTS)
     await events.append(message.payload)  # type: ignore[arg-type]

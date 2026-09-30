@@ -10,17 +10,20 @@ use prosody::consumer::event_context::StateCursor;
 use prosody::state::erased::{ErasedDequeRead, ErasedKeyRead};
 use pyo3::{FromPyObject, PyResult, Python};
 use std::num::NonZeroUsize;
+use std::ops::Bound;
 
 /// Options for a map or set query.
 ///
 /// Extracted from the attributes of the Python `_KeyQuery` value. An edge is a
-/// `(key, inclusive)` pair in query order.
+/// `(key, inclusive)` pair in query order. `range` is an ascending half-open
+/// span of keys; an end is `None` when that side of the span is open.
 #[derive(FromPyObject)]
 pub(crate) struct KeyQuery {
     direction: String,
     prefix: Option<String>,
     start: Option<(String, bool)>,
     end: Option<(String, bool)>,
+    range: Option<(Option<String>, Option<String>)>,
     limit: Option<NonZeroUsize>,
 }
 
@@ -68,6 +71,12 @@ impl KeyQuery {
             Some((key, false)) => read.before(key),
             None => read,
         };
+        if let Some((start, end)) = self.range {
+            read = read.range((
+                start.map_or(Bound::Unbounded, Bound::Included),
+                end.map_or(Bound::Unbounded, Bound::Excluded),
+            ));
+        }
         if let Some(limit) = self.limit {
             read = read.limit(limit);
         }

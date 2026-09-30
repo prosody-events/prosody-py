@@ -660,10 +660,11 @@ Map, set, and deque scans accept keyword options. Prosody applies them in storag
 
 - `prefix` keeps map keys or set members that start with a string.
 - `from_` and `after` start at a key, or after it. `to` and `before` stop at a key, or before it.
+- `range` keeps map keys or set members in a `slice` of keys, such as `range=slice("a", "m")`. It is an ascending half-open span that applies in either direction. A `None` bound leaves that end open, so `slice("m", None)` keeps every key from `"m"` up. The span and the edges combine, and the scan keeps only the keys that both select.
 - `limit` returns at most that number of items.
 - Deque scans take positions from the front instead of keys. They also take `range`: an ascending span of positions, given as a `range` or a `slice` such as `range=slice(2, 5)`. The span applies in either direction, so `values(Direction.BACKWARD, range=slice(None, 3))` yields positions 2, 1, and 0. An empty span yields nothing.
 
-The edges follow the scan direction, so a `Direction.BACKWARD` scan starts at the high end. Options narrow a scan and never widen it. Positions cannot be negative: a negative position, or a `range` or `slice` with a negative bound or a step other than 1, raises `ValueError`. To read the last N elements of a deque, call `values(Direction.BACKWARD, limit=N)`. `get(index)` still accepts negative indexes.
+The edges follow the scan direction, so a `Direction.BACKWARD` scan starts at the high end. Options narrow a scan and never widen it. Positions cannot be negative: a negative position, or a `range` or `slice` with a negative bound or a step other than 1, raises `ValueError`. A key `range` that is not a `slice`, or that has a bound other than a string or `None`, raises `TypeError`. A key `range` with a step raises `ValueError`. To read the last N elements of a deque, call `values(Direction.BACKWARD, limit=N)`. `get(index)` still accepts negative indexes.
 
 To read a large map one page at a time, pass the last key of each page as `after`:
 
@@ -1202,7 +1203,7 @@ Each definition type provides `to_config()`. It returns an entry for `state_coll
 
 All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`. JSON and set definitions also expose `published` and `read_cache`. Map and set definitions expose `keyset_limit`. Deque definitions expose `capacity`.
 
-Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accept the keyword options `prefix`, `from_`, `after`, `to`, `before`, and `limit`. Deque scans accept `from_`, `after`, `to`, `before`, `range`, and `limit` with positions. See [Query a part of a collection](#query-a-part-of-a-collection).
+Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accept the keyword options `prefix`, `from_`, `after`, `to`, `before`, `range`, and `limit`. Deque scans accept `from_`, `after`, `to`, `before`, `range`, and `limit` with positions. See [Query a part of a collection](#query-a-part-of-a-collection).
 
 `ValueState[T]`:
 
@@ -1222,7 +1223,7 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 - `set(key: str, value: V) -> None`
 - `remove(key: str) -> None`
 - `clear() -> None`
-- `items(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, limit=None)` — async iterator over `(str, V)` entries
+- `items(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, range=None, limit=None)` — async iterator over `(str, V)` entries
 - `keys(direction=Direction.FORWARD, *, ...)` — async iterator over `str` keys, with the same options
 - `values(direction=Direction.FORWARD, *, ...)` — async iterator over `V` values, with the same options
 - `__aiter__()` — forward async iteration over `str` keys (like `dict`)
@@ -1237,7 +1238,7 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 - `contains_many(members: List[str]) -> List[bool]`
 - `is_empty() -> bool`
 - `clear() -> None`
-- `members(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, limit=None)` — async iterator over `str` members
+- `members(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, range=None, limit=None)` — async iterator over `str` members
 - `__aiter__()` — forward async iteration over `str` members
 - `commit() -> StoreOutcome`
 - `rollback() -> StoreOutcome`

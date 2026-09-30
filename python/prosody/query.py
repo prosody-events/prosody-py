@@ -42,13 +42,16 @@ class Direction(enum.Enum):
 class _KeyQuery:
     """Resolved map or set query options.
 
-    An edge is a ``(key, inclusive)`` pair in iteration order.
+    An edge is a ``(key, inclusive)`` pair in iteration order. ``range`` is an
+    ascending half-open span of keys; an end is ``None`` when that side of the
+    span is open.
     """
 
     direction: str
     prefix: Optional[str] = None
     start: Optional[Tuple[str, bool]] = None
     end: Optional[Tuple[str, bool]] = None
+    range: Optional[Tuple[Optional[str], Optional[str]]] = None
     limit: Optional[int] = None
 
 
@@ -139,6 +142,27 @@ def _span(span: Union[range, slice, None]) -> Optional[Tuple[int, Optional[int]]
     return (_position("range start", start) or 0, _position("range stop", stop))
 
 
+def _key_bound(name: str, key: object) -> Optional[str]:
+    """Return a key-span bound: a ``str``, or ``None`` for an open end."""
+    if key is None or isinstance(key, str):
+        return key
+    raise TypeError(f"{name}: expected a str or None, got {type(key).__name__}")
+
+
+def _key_span(span: Optional[slice]) -> Optional[Tuple[Optional[str], Optional[str]]]:
+    """Resolve a ``slice`` of keys into an ascending half-open span.
+
+    A span whose stop precedes its start is empty.
+    """
+    if span is None:
+        return None
+    if not isinstance(span, slice):
+        raise TypeError(f"range: expected a slice, got {type(span).__name__}")
+    if span.step is not None:
+        raise ValueError(f"range: a key span takes no step, got {span.step!r}")
+    return (_key_bound("range start", span.start), _key_bound("range stop", span.stop))
+
+
 def _key_query(
     direction: Direction,
     prefix: Optional[str],
@@ -146,6 +170,7 @@ def _key_query(
     after: Optional[str],
     to: Optional[str],
     before: Optional[str],
+    span: Optional[slice],
     limit: Optional[int],
 ) -> _KeyQuery:
     """Resolve map or set query options."""
@@ -154,6 +179,7 @@ def _key_query(
         prefix,
         _edge("from_", from_, "after", after),
         _edge("to", to, "before", before),
+        _key_span(span),
         _limit(limit),
     )
 

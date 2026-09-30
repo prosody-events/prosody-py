@@ -36,6 +36,7 @@ class PublishedMap(Generic[V]):
         after: Optional[str] = ...,
         to: Optional[str] = ...,
         before: Optional[str] = ...,
+        range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[Tuple[str, V]]: ...
     def keys(
@@ -48,6 +49,7 @@ class PublishedMap(Generic[V]):
         after: Optional[str] = ...,
         to: Optional[str] = ...,
         before: Optional[str] = ...,
+        range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[str]: ...
     def values(
@@ -60,6 +62,7 @@ class PublishedMap(Generic[V]):
         after: Optional[str] = ...,
         to: Optional[str] = ...,
         before: Optional[str] = ...,
+        range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[V]: ...
 
@@ -78,6 +81,7 @@ class PublishedSet:
         after: Optional[str] = ...,
         to: Optional[str] = ...,
         before: Optional[str] = ...,
+        range: Optional[slice] = ...,
         limit: Optional[int] = ...,
     ) -> _StateScan[str]: ...
 

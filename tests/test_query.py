@@ -83,9 +83,18 @@ KEY_CASES = [
     ({"to": "y"}, _KeyQuery("backward", end=("y", True))),
     ({"before": "y"}, _KeyQuery("backward", end=("y", False))),
     ({"limit": 3}, _KeyQuery("backward", limit=3)),
+    ({"range": slice("a", "m")}, _KeyQuery("backward", range=("a", "m"))),
+    ({"range": slice("a", None)}, _KeyQuery("backward", range=("a", None))),
+    ({"range": slice(None, "m")}, _KeyQuery("backward", range=(None, "m"))),
+    ({"range": slice(None, None)}, _KeyQuery("backward", range=(None, None))),
+    ({"range": slice("m", "a")}, _KeyQuery("backward", range=("m", "a"))),
     (
         {"prefix": "p", "after": "p1", "before": "p9", "limit": 2},
-        _KeyQuery("backward", "p", ("p1", False), ("p9", False), 2),
+        _KeyQuery("backward", "p", ("p1", False), ("p9", False), limit=2),
+    ),
+    (
+        {"from_": "b", "range": slice("a", "m"), "limit": 2},
+        _KeyQuery("backward", start=("b", True), range=("a", "m"), limit=2),
     ),
 ]
 
@@ -110,6 +119,12 @@ def test_key_options_translate_on_every_scan(options, expected):
         ({"limit": "2"}, TypeError),
         ({"limit": True}, TypeError),
         ({"limit": 2**64}, ValueError),
+        ({"range": slice("a", "m", 1)}, ValueError),
+        ({"range": slice("a", "m", -1)}, ValueError),
+        ({"range": ["a", "m"]}, TypeError),
+        ({"range": range(0, 2)}, TypeError),
+        ({"range": slice(1, "m")}, TypeError),
+        ({"range": slice("a", b"m")}, TypeError),
     ],
 )
 def test_key_options_reject_values_without_a_native_form(options, error):

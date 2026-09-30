@@ -25,6 +25,7 @@ class _KeyQuery:
     prefix: Optional[str]
     start: Optional[Tuple[str, bool]]
     end: Optional[Tuple[str, bool]]
+    range: Optional[Tuple[Optional[str], Optional[str]]]
     limit: Optional[int]
 
 

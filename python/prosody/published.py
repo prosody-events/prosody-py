@@ -66,9 +66,10 @@ class PublishedMap(Generic[V]):
         after: Optional[str] = None,
         to: Optional[str] = None,
         before: Optional[str] = None,
+        range: Optional[slice] = None,
         limit: Optional[int] = None,
     ) -> "_StateScan[tuple[str, V]]":
-        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
         return _StateScan(self._native.scan(key, query), _identity)
 
     def keys(
@@ -81,9 +82,10 @@ class PublishedMap(Generic[V]):
         after: Optional[str] = None,
         to: Optional[str] = None,
         before: Optional[str] = None,
+        range: Optional[slice] = None,
         limit: Optional[int] = None,
     ) -> "_StateScan[str]":
-        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
         return _StateScan(self._native.keys(key, query), _identity)
 
     def values(
@@ -96,9 +98,10 @@ class PublishedMap(Generic[V]):
         after: Optional[str] = None,
         to: Optional[str] = None,
         before: Optional[str] = None,
+        range: Optional[slice] = None,
         limit: Optional[int] = None,
     ) -> "_StateScan[V]":
-        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
         return _StateScan(self._native.scan(key, query), lambda entry: entry[1])
 
 
@@ -127,9 +130,10 @@ class PublishedSet:
         after: Optional[str] = None,
         to: Optional[str] = None,
         before: Optional[str] = None,
+        range: Optional[slice] = None,
         limit: Optional[int] = None,
     ) -> "_StateScan[str]":
-        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
         return _StateScan(self._native.keys(key, query), _identity)
 
 

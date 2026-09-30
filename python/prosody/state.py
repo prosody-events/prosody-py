@@ -181,13 +181,14 @@ class MapState(Generic[V]):
         after: Optional[str] = None,
         to: Optional[str] = None,
         before: Optional[str] = None,
+        range: Optional[slice] = None,
         limit: Optional[int] = None,
     ) -> _StateScan:
         """Async iterator over ``(key, value)`` entries in key order.
 
         The query options select a part of the map; see :meth:`keys`.
         """
-        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
         return _StateScan(self._native.scan(query), _identity)
 
     def keys(
@@ -199,6 +200,7 @@ class MapState(Generic[V]):
         after: Optional[str] = None,
         to: Optional[str] = None,
         before: Optional[str] = None,
+        range: Optional[slice] = None,
         limit: Optional[int] = None,
     ) -> _StateScan:
         """Async iterator over the keys in key order — the cheap key-only scan.
@@ -211,10 +213,12 @@ class MapState(Generic[V]):
         ``prefix`` keeps keys that start with it. ``from_`` and ``after`` start
         at or after a key. ``to`` and ``before`` stop at or before a key. These
         edges are in iteration order, so a ``BACKWARD`` scan starts at the high
-        end. ``limit`` caps the number of keys. Options narrow the scan and
-        never widen it. To page, pass the last key of a page as ``after``.
+        end. ``range`` takes a ``slice`` of keys, such as ``slice("a", "m")``.
+        It is an ascending half-open span that applies in either direction. A
+        ``None`` bound leaves that end open. ``limit`` caps the number of keys.
+        Options narrow the scan and never widen it. To page, pass the last key of a page as ``after``.
         """
-        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
         return _StateScan(self._native.keys(query), _identity)
 
     def values(
@@ -226,6 +230,7 @@ class MapState(Generic[V]):
         after: Optional[str] = None,
         to: Optional[str] = None,
         before: Optional[str] = None,
+        range: Optional[slice] = None,
         limit: Optional[int] = None,
     ) -> _StateScan:
         """Async iterator over the values in key order.
@@ -235,7 +240,7 @@ class MapState(Generic[V]):
         cheap path :meth:`keys` is; it costs the same as :meth:`items`. The
         query options match :meth:`keys`.
         """
-        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
         return _StateScan(self._native.scan(query), lambda e: e[1])
 
     def __aiter__(self) -> _StateScan:
@@ -299,13 +304,14 @@ class SetState:
         after: Optional[str] = None,
         to: Optional[str] = None,
         before: Optional[str] = None,
+        range: Optional[slice] = None,
         limit: Optional[int] = None,
     ) -> _StateScan:
         """Async iterator over the members in order.
 
         The query options match :meth:`MapState.keys`.
         """
-        query = _key_query(direction, prefix, from_, after, to, before, limit)
+        query = _key_query(direction, prefix, from_, after, to, before, range, limit)
         return _StateScan(self._native.keys(query), _identity)
 
     def __aiter__(self) -> _StateScan:
