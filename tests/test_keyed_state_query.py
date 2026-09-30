@@ -1,8 +1,8 @@
 """Infra-backed checks that query options, sets, store outcomes, and the demand
 cross the native boundary intact.
 
-Each scenario runs inside a live handler with the fixtures and collections of
-``test_keyed_state.py``. Core owns the query semantics; these tests check that
+Each scenario runs inside a live handler with the fixtures in ``conftest.py``
+and the collections in ``support.py``. Core owns the query semantics; these tests check that
 each Python option reaches core as the matching query setting.
 """
 
@@ -19,7 +19,7 @@ from prosody import (
     set as set_definition,
 )
 
-from test_keyed_state import (  # noqa: F401 (fixtures)
+from support import (
     BOOTSTRAP,
     CASSANDRA_KEYSPACE,
     CASSANDRA_NODES,
@@ -28,8 +28,6 @@ from test_keyed_state import (  # noqa: F401 (fixtures)
     _collect,
     _wait,
     nonce,
-    random_topic_and_group,
-    state_client,
 )
 
 

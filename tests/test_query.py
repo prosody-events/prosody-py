@@ -2,7 +2,7 @@
 
 Each scan method resolves its options into one native query value. These tests
 check that translation for every option, on every handle and published reader,
-against recording stubs. ``test_keyed_state.py`` checks that the native layer
+against recording stubs. ``test_keyed_state_query.py`` checks that the native layer
 applies the same values against a live store.
 """
 

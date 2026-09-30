@@ -1,6 +1,6 @@
 """Pure-Python tests for the set surface, store outcomes, and demand values.
 
-Recording stubs stand in for the native handles. ``test_keyed_state.py``
+Recording stubs stand in for the native handles. ``test_keyed_state_query.py``
 checks the same wiring against a live consumer.
 """
 
