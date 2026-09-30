@@ -224,7 +224,7 @@ async def test_map_items_direction_token():
     n = _StubNative([("a", 1)])
     async for _ in MapState(n).items(Direction.BACKWARD):
         pass
-    assert n.calls[0] == ("scan", _KeyQuery("backward"))  # Direction -> token
+    assert n.calls[0] == ("scan", _KeyQuery(backward=True))
 
 @pytest.mark.asyncio
 async def test_map_keys_direction_token():
@@ -233,12 +233,12 @@ async def test_map_keys_direction_token():
     n = _StubNative([("a", 1)])
     async for _ in MapState(n).keys():
         pass
-    assert n.calls[0] == ("keys", _KeyQuery("forward"))
+    assert n.calls[0] == ("keys", _KeyQuery())
 
     n_back = _StubNative([("a", 1)])
     async for _ in MapState(n_back).keys(Direction.BACKWARD):
         pass
-    assert n_back.calls[0] == ("keys", _KeyQuery("backward"))
+    assert n_back.calls[0] == ("keys", _KeyQuery(backward=True))
 
 @pytest.mark.asyncio
 async def test_map_values_project_the_pair_scan():
@@ -249,8 +249,8 @@ async def test_map_values_project_the_pair_scan():
     async for _ in MapState(n).values(Direction.BACKWARD, limit=1):
         pass
     assert n.calls == [
-        ("scan", _KeyQuery("forward")),
-        ("scan", _KeyQuery("backward", limit=1)),
+        ("scan", _KeyQuery()),
+        ("scan", _KeyQuery(backward=True, limit=1)),
     ]
 
 @pytest.mark.asyncio
@@ -301,7 +301,7 @@ async def test_deque_values_direction_token():
     n = _StubNative([1])
     async for _ in DequeState(n).values(Direction.BACKWARD):
         pass
-    assert n.calls[0] == ("scan", _PositionQuery("backward"))
+    assert n.calls[0] == ("scan", _PositionQuery(backward=True))
 
 @pytest.mark.asyncio
 async def test_aclosing_closes_scan():
@@ -319,11 +319,11 @@ async def test_published_scans_reuse_typed_state_scan_adapter():
             return True
 
         def scan(self, key, query):
-            assert (key, query) == ("user-1", _KeyQuery("forward"))
+            assert (key, query) == ("user-1", _KeyQuery())
             return _StubScan([("a", 1), ("b", 2)])
 
         def keys(self, key, query):
-            assert (key, query) == ("user-1", _KeyQuery("backward"))
+            assert (key, query) == ("user-1", _KeyQuery(backward=True))
             return _StubScan(["b", "a"])
 
     class NativeDeque:
@@ -348,7 +348,7 @@ async def test_published_scans_reuse_typed_state_scan_adapter():
             return [1, 2][index] if index < 2 else None
 
         def scan(self, key, query):
-            assert (key, query) == ("user-1", _PositionQuery("backward"))
+            assert (key, query) == ("user-1", _PositionQuery(backward=True))
             return _StubScan([2, 1])
 
     native_map = NativeMap()

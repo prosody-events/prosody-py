@@ -5,10 +5,10 @@
 //! This module applies the resolved options to core's fluent query. Core
 //! owns every query semantic.
 
-use super::{StateEnv, parse_direction};
 use prosody::consumer::event_context::StateCursor;
+use prosody::state::Direction;
 use prosody::state::erased::{ErasedDequeRead, ErasedKeyRead};
-use pyo3::{FromPyObject, PyResult, Python};
+use pyo3::FromPyObject;
 use std::num::NonZeroUsize;
 use std::ops::Bound;
 
@@ -19,7 +19,7 @@ use std::ops::Bound;
 /// span of keys; an end is `None` when that side of the span is open.
 #[derive(FromPyObject)]
 pub(crate) struct KeyQuery {
-    direction: String,
+    backward: bool,
     prefix: Option<String>,
     start: Option<(String, bool)>,
     end: Option<(String, bool)>,
@@ -35,7 +35,7 @@ pub(crate) struct KeyQuery {
 /// when the span has no upper bound.
 #[derive(FromPyObject)]
 pub(crate) struct PositionQuery {
-    direction: String,
+    backward: bool,
     start: Option<(usize, bool)>,
     end: Option<(usize, bool)>,
     range: Option<(usize, Option<usize>)>,
@@ -47,17 +47,8 @@ impl KeyQuery {
     ///
     /// The direction applies first because core reads `from`, `after`, `to`,
     /// and `before` in the order set before the call.
-    ///
-    /// # Errors
-    ///
-    /// Returns a transient error for an unknown direction token.
-    pub(crate) fn stream<Item>(
-        self,
-        py: Python,
-        env: &StateEnv,
-        read: ErasedKeyRead<Item>,
-    ) -> PyResult<StateCursor<Item>> {
-        let mut read = read.direction(parse_direction(py, env, &self.direction)?);
+    pub(crate) fn stream<Item>(self, read: ErasedKeyRead<Item>) -> StateCursor<Item> {
+        let mut read = read.direction(direction(self.backward));
         if let Some(prefix) = &self.prefix {
             read = read.prefix(prefix);
         }
@@ -80,23 +71,14 @@ impl KeyQuery {
         if let Some(limit) = self.limit {
             read = read.limit(limit);
         }
-        Ok(read.stream())
+        read.stream()
     }
 }
 
 impl PositionQuery {
     /// Applies these options to `read` and opens its cursor without a read.
-    ///
-    /// # Errors
-    ///
-    /// Returns a transient error for an unknown direction token.
-    pub(crate) fn stream<Item>(
-        self,
-        py: Python,
-        env: &StateEnv,
-        read: ErasedDequeRead<Item>,
-    ) -> PyResult<StateCursor<Item>> {
-        let mut read = read.direction(parse_direction(py, env, &self.direction)?);
+    pub(crate) fn stream<Item>(self, read: ErasedDequeRead<Item>) -> StateCursor<Item> {
+        let mut read = read.direction(direction(self.backward));
         read = match self.start {
             Some((position, true)) => read.from(position),
             Some((position, false)) => read.after(position),
@@ -115,6 +97,15 @@ impl PositionQuery {
         if let Some(limit) = self.limit {
             read = read.limit(limit);
         }
-        Ok(read.stream())
+        read.stream()
+    }
+}
+
+/// Maps the `backward` flag of a query to the core scan direction.
+fn direction(backward: bool) -> Direction {
+    if backward {
+        Direction::Backward
+    } else {
+        Direction::Forward
     }
 }

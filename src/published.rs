@@ -91,14 +91,12 @@ impl PublishedMap {
         run(py, &self.env, op, |_, _, empty| Ok(empty))
     }
 
-    fn scan(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeJsonMapScan> {
-        let cursor = query.stream(py, &self.env, self.inner.entries(key))?;
-        Ok(NativeJsonMapScan::new(cursor, self.env.clone()))
+    fn scan(&self, key: String, query: KeyQuery) -> NativeJsonMapScan {
+        NativeJsonMapScan::new(query.stream(self.inner.entries(key)), self.env.clone())
     }
 
-    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
-        let cursor = query.stream(py, &self.env, self.inner.keys(key))?;
-        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
+    fn keys(&self, key: String, query: KeyQuery) -> NativeMapKeyScan {
+        NativeMapKeyScan::new(query.stream(self.inner.keys(key)), self.env.clone())
     }
 }
 
@@ -139,9 +137,8 @@ impl PublishedSet {
         run(py, &self.env, op, |_, _, empty| Ok(empty))
     }
 
-    fn keys(&self, py: Python, key: String, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
-        let cursor = query.stream(py, &self.env, self.inner.keys(key))?;
-        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
+    fn keys(&self, key: String, query: KeyQuery) -> NativeMapKeyScan {
+        NativeMapKeyScan::new(query.stream(self.inner.keys(key)), self.env.clone())
     }
 }
 
@@ -196,8 +193,7 @@ impl PublishedDeque {
         )
     }
 
-    fn scan(&self, py: Python, key: String, query: PositionQuery) -> PyResult<NativeJsonDequeScan> {
-        let cursor = query.stream(py, &self.env, self.inner.values(key))?;
-        Ok(NativeJsonDequeScan::new(cursor, self.env.clone()))
+    fn scan(&self, key: String, query: PositionQuery) -> NativeJsonDequeScan {
+        NativeJsonDequeScan::new(query.stream(self.inner.values(key)), self.env.clone())
     }
 }

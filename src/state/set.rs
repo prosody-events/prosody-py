@@ -61,9 +61,8 @@ impl NativeSetState {
     }
 
     /// Opens a member cursor.
-    fn keys(&self, py: Python, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
-        let cursor = query.stream(py, &self.env, self.state.keys())?;
-        Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
+    fn keys(&self, query: KeyQuery) -> NativeMapKeyScan {
+        NativeMapKeyScan::new(query.stream(self.state.keys()), self.env.clone())
     }
 
     /// Durably commits the buffered operations and reports the outcome.

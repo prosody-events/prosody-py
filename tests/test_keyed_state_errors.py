@@ -3,7 +3,6 @@
 import asyncio
 
 from prosody import value, PermanentStateError, TransientStateError
-from prosody.query import _KeyQuery
 import pytest
 import tsasync
 
@@ -55,34 +54,6 @@ async def test_unregistered_name_is_permanent(state_client):
 
     assert obs["threw"] is True
     assert obs["permanent"] is True
-
-async def test_bad_direction_token_is_transient(state_client):
-    client, topic, _ = state_client
-
-    async def cb(ctx, msg, results):
-        m = ctx.state(STATE_DEFS["totals"])
-        try:
-            # The typed API only passes Direction.value tokens, so drive the
-            # native handle directly to reach parse_direction's guard.
-            m._native.scan(_KeyQuery("sideways"))
-            await results.send({"threw": False})
-        except Exception as e:
-            await results.send(
-                {
-                    "threw": True,
-                    "transient": isinstance(e, TransientStateError),
-                    "msg": str(e),
-                }
-            )
-
-    handler = StateHandler(cb)
-    await _wait(client.subscribe(handler))
-    await _wait(client.send(topic, nonce(), {"go": True}))
-    obs = await _wait(handler.results.receive())
-
-    assert obs["threw"] is True
-    assert obs["transient"] is True
-    assert "forward" in obs["msg"] and "backward" in obs["msg"]
 
 async def test_malformed_definition_at_vend_is_transient(state_client):
     client, topic, _ = state_client

@@ -9,10 +9,7 @@ _Y = TypeVar("_Y")  # yielded item type of a scan
 
 
 class Direction(enum.Enum):
-    """Scan direction over an ordered collection.
-
-    The string values are the tokens the native scan accepts.
-    """
+    """Scan direction over an ordered collection."""
 
     FORWARD = "forward"
     BACKWARD = "backward"
@@ -21,7 +18,7 @@ class Direction(enum.Enum):
 class _KeyQuery:
     """Resolved map or set query options for a native scan."""
 
-    direction: str
+    backward: bool
     prefix: Optional[str]
     start: Optional[Tuple[str, bool]]
     end: Optional[Tuple[str, bool]]
@@ -32,7 +29,7 @@ class _KeyQuery:
 class _PositionQuery:
     """Resolved deque query options for a native scan."""
 
-    direction: str
+    backward: bool
     start: Optional[Tuple[int, bool]]
     end: Optional[Tuple[int, bool]]
     range: Optional[Tuple[int, Optional[int]]]

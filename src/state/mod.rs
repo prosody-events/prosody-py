@@ -19,10 +19,9 @@
 //! [`category`](ErasedStateError::category), never by parsing the message. No
 //! fencing or cursor safety lives here — those are core-owned and this layer
 //! only transports and restores types. Caller-mistake conditions the glue
-//! detects (an unrepresentable value, a wrong item shape, an invalid enum
-//! token) reject TRANSIENT — a caller code error retries and stays visible
-//! rather than discarding the message. Core rejects a JSON null write as
-//! permanent.
+//! detects (an unrepresentable value, a wrong item shape) reject TRANSIENT — a
+//! caller code error retries and stays visible rather than discarding the
+//! message. Core rejects a JSON null write as permanent.
 
 use crate::message::{MessageCore, PythonRecord};
 use opentelemetry::Context as OtelContext;
@@ -33,7 +32,7 @@ use prosody::consumer::event_context::{
     StateCursor,
 };
 use prosody::consumer::message::ConsumerMessage;
-use prosody::state::{Direction, StoreOutcome};
+use prosody::state::StoreOutcome;
 use pyo3::exceptions::PyStopAsyncIteration;
 use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{
@@ -203,32 +202,13 @@ where
 }
 
 /// Builds a `TransientStateError` for a caller-caused condition the glue
-/// detects (an unrepresentable value, a wrong item shape, an invalid enum
-/// token, an out-of-range index).
+/// detects (an unrepresentable value or a wrong item shape).
 ///
 /// Caller mistakes are TRANSIENT, never permanent: a permanent error discards
 /// the in-flight message and can silently lose data, so a code error retries
 /// and stays visible instead.
 fn transient_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
     raise(env.0.transient_error.bind(py), message)
-}
-
-/// Parses a scan-direction token into the core [`Direction`].
-///
-/// # Errors
-///
-/// Returns a transient error if the token is neither `"forward"` nor
-/// `"backward"` (a caller mistake — retries, not discarded).
-pub(crate) fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> PyResult<Direction> {
-    match direction {
-        "forward" => Ok(Direction::Forward),
-        "backward" => Ok(Direction::Backward),
-        other => Err(transient_error(
-            py,
-            env,
-            &format!("direction: expected \"forward\" or \"backward\", got {other:?}"),
-        )),
-    }
 }
 
 /// Names a commit or rollback outcome with the token of the Python

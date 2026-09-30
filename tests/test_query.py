@@ -76,25 +76,25 @@ def _position_scans(native):
 
 
 KEY_CASES = [
-    ({}, _KeyQuery("backward")),
-    ({"prefix": "ord-"}, _KeyQuery("backward", prefix="ord-")),
-    ({"from_": "b"}, _KeyQuery("backward", start=("b", True))),
-    ({"after": "b"}, _KeyQuery("backward", start=("b", False))),
-    ({"to": "y"}, _KeyQuery("backward", end=("y", True))),
-    ({"before": "y"}, _KeyQuery("backward", end=("y", False))),
-    ({"limit": 3}, _KeyQuery("backward", limit=3)),
-    ({"range": slice("a", "m")}, _KeyQuery("backward", range=("a", "m"))),
-    ({"range": slice("a", None)}, _KeyQuery("backward", range=("a", None))),
-    ({"range": slice(None, "m")}, _KeyQuery("backward", range=(None, "m"))),
-    ({"range": slice(None, None)}, _KeyQuery("backward", range=(None, None))),
-    ({"range": slice("m", "a")}, _KeyQuery("backward", range=("m", "a"))),
+    ({}, _KeyQuery(backward=True)),
+    ({"prefix": "ord-"}, _KeyQuery(backward=True, prefix="ord-")),
+    ({"from_": "b"}, _KeyQuery(backward=True, start=("b", True))),
+    ({"after": "b"}, _KeyQuery(backward=True, start=("b", False))),
+    ({"to": "y"}, _KeyQuery(backward=True, end=("y", True))),
+    ({"before": "y"}, _KeyQuery(backward=True, end=("y", False))),
+    ({"limit": 3}, _KeyQuery(backward=True, limit=3)),
+    ({"range": slice("a", "m")}, _KeyQuery(backward=True, range=("a", "m"))),
+    ({"range": slice("a", None)}, _KeyQuery(backward=True, range=("a", None))),
+    ({"range": slice(None, "m")}, _KeyQuery(backward=True, range=(None, "m"))),
+    ({"range": slice(None, None)}, _KeyQuery(backward=True, range=(None, None))),
+    ({"range": slice("m", "a")}, _KeyQuery(backward=True, range=("m", "a"))),
     (
         {"prefix": "p", "after": "p1", "before": "p9", "limit": 2},
-        _KeyQuery("backward", "p", ("p1", False), ("p9", False), limit=2),
+        _KeyQuery(True, "p", ("p1", False), ("p9", False), limit=2),
     ),
     (
         {"from_": "b", "range": slice("a", "m"), "limit": 2},
-        _KeyQuery("backward", start=("b", True), range=("a", "m"), limit=2),
+        _KeyQuery(backward=True, start=("b", True), range=("a", "m"), limit=2),
     ),
 ]
 
@@ -136,23 +136,23 @@ def test_key_options_reject_values_without_a_native_form(options, error):
 
 
 POSITION_CASES = [
-    ({}, _PositionQuery("forward")),
-    ({"from_": 2}, _PositionQuery("forward", start=(2, True))),
-    ({"after": 2}, _PositionQuery("forward", start=(2, False))),
-    ({"to": 7}, _PositionQuery("forward", end=(7, True))),
-    ({"before": 7}, _PositionQuery("forward", end=(7, False))),
-    ({"limit": 4}, _PositionQuery("forward", limit=4)),
-    ({"range": range(2, 5)}, _PositionQuery("forward", range=(2, 5))),
-    ({"range": range(3, 3)}, _PositionQuery("forward", range=(3, 3))),
-    ({"range": slice(2, 5)}, _PositionQuery("forward", range=(2, 5))),
-    ({"range": slice(None, 4)}, _PositionQuery("forward", range=(0, 4))),
-    ({"range": slice(6, None)}, _PositionQuery("forward", range=(6, None))),
-    ({"range": slice(1, 3, 1)}, _PositionQuery("forward", range=(1, 3))),
-    ({"range": range(5, 2)}, _PositionQuery("forward", range=(5, 2))),
-    ({"range": slice(5, 2)}, _PositionQuery("forward", range=(5, 2))),
+    ({}, _PositionQuery()),
+    ({"from_": 2}, _PositionQuery(start=(2, True))),
+    ({"after": 2}, _PositionQuery(start=(2, False))),
+    ({"to": 7}, _PositionQuery(end=(7, True))),
+    ({"before": 7}, _PositionQuery(end=(7, False))),
+    ({"limit": 4}, _PositionQuery(limit=4)),
+    ({"range": range(2, 5)}, _PositionQuery(range=(2, 5))),
+    ({"range": range(3, 3)}, _PositionQuery(range=(3, 3))),
+    ({"range": slice(2, 5)}, _PositionQuery(range=(2, 5))),
+    ({"range": slice(None, 4)}, _PositionQuery(range=(0, 4))),
+    ({"range": slice(6, None)}, _PositionQuery(range=(6, None))),
+    ({"range": slice(1, 3, 1)}, _PositionQuery(range=(1, 3))),
+    ({"range": range(5, 2)}, _PositionQuery(range=(5, 2))),
+    ({"range": slice(5, 2)}, _PositionQuery(range=(5, 2))),
     (
         {"from_": 1, "before": 9, "range": slice(2, None), "limit": 2},
-        _PositionQuery("forward", (1, True), (9, False), (2, None), 2),
+        _PositionQuery(False, (1, True), (9, False), (2, None), 2),
     ),
 ]
 

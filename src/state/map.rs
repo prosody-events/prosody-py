@@ -96,15 +96,13 @@ macro_rules! map_state {
             }
 
             /// Opens an entry cursor.
-            fn scan(&self, py: Python, query: KeyQuery) -> PyResult<$scan> {
-                let cursor = query.stream(py, &self.env, self.state.entries())?;
-                Ok($scan::new(cursor, self.env.clone()))
+            fn scan(&self, query: KeyQuery) -> $scan {
+                $scan::new(query.stream(self.state.entries()), self.env.clone())
             }
 
             /// Opens a key cursor.
-            fn keys(&self, py: Python, query: KeyQuery) -> PyResult<NativeMapKeyScan> {
-                let cursor = query.stream(py, &self.env, self.state.keys())?;
-                Ok(NativeMapKeyScan::new(cursor, self.env.clone()))
+            fn keys(&self, query: KeyQuery) -> NativeMapKeyScan {
+                NativeMapKeyScan::new(query.stream(self.state.keys()), self.env.clone())
             }
 
             /// Durably commits the buffered operations and reports the outcome.

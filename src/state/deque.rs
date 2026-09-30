@@ -118,9 +118,8 @@ macro_rules! deque_state {
             }
 
             /// Opens an element cursor.
-            fn scan(&self, py: Python, query: PositionQuery) -> PyResult<$scan> {
-                let cursor = query.stream(py, &self.env, self.state.values())?;
-                Ok($scan::new(cursor, self.env.clone()))
+            fn scan(&self, query: PositionQuery) -> $scan {
+                $scan::new(query.stream(self.state.values()), self.env.clone())
             }
 
             /// Durably commits the buffered operations and reports the outcome.

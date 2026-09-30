@@ -87,7 +87,7 @@ async def test_set_iteration_opens_a_member_query():
     tags = SetState(Native())
     assert [member async for member in tags] == ["a", "b"]
     assert [member async for member in tags.members(prefix="a")] == ["a", "b"]
-    assert queries == [_KeyQuery("forward"), _KeyQuery("forward", prefix="a")]
+    assert queries == [_KeyQuery(), _KeyQuery(prefix="a")]
 
 
 @pytest.mark.asyncio

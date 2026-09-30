@@ -29,10 +29,7 @@ K = TypeVar("K")
 
 
 class Direction(enum.Enum):
-    """Scan direction over an ordered collection.
-
-    The string values are the tokens the native scan accepts.
-    """
+    """Scan direction over an ordered collection."""
 
     FORWARD = "forward"
     BACKWARD = "backward"
@@ -47,7 +44,7 @@ class _KeyQuery:
     span is open.
     """
 
-    direction: str
+    backward: bool = False
     prefix: Optional[str] = None
     start: Optional[Tuple[str, bool]] = None
     end: Optional[Tuple[str, bool]] = None
@@ -64,7 +61,7 @@ class _PositionQuery:
     span has no upper bound.
     """
 
-    direction: str
+    backward: bool = False
     start: Optional[Tuple[int, bool]] = None
     end: Optional[Tuple[int, bool]] = None
     range: Optional[Tuple[int, Optional[int]]] = None
@@ -175,7 +172,7 @@ def _key_query(
 ) -> _KeyQuery:
     """Resolve map or set query options."""
     return _KeyQuery(
-        direction.value,
+        Direction(direction) is Direction.BACKWARD,
         prefix,
         _edge("from_", from_, "after", after),
         _edge("to", to, "before", before),
@@ -195,7 +192,7 @@ def _position_query(
 ) -> _PositionQuery:
     """Resolve deque query options."""
     return _PositionQuery(
-        direction.value,
+        Direction(direction) is Direction.BACKWARD,
         _edge(
             "from_", _position("from_", from_), "after", _position("after", after)
         ),
