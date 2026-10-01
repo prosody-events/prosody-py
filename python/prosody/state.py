@@ -65,6 +65,42 @@ from prosody.query import (
 T = TypeVar("T", default=JSONValue)  # value / deque item type
 V = TypeVar("V", default=JSONValue)  # map value type
 
+# The public names, including the definition, reader, and query names that
+# this module re-exports.
+__all__ = [
+    "DequeDefinition",
+    "DequeState",
+    "Direction",
+    "JSONValue",
+    "MapDefinition",
+    "MapState",
+    "MessageDequeDefinition",
+    "MessageMapDefinition",
+    "MessageValueDefinition",
+    "P",
+    "PublishedDeque",
+    "PublishedMap",
+    "PublishedSet",
+    "PublishedValue",
+    "ReadCache",
+    "SetDefinition",
+    "SetState",
+    "StoreOutcome",
+    "T",
+    "V",
+    "ValueDefinition",
+    "ValueState",
+    "X",
+    "Y",
+    "deque",
+    "map",
+    "message_deque",
+    "message_map",
+    "message_value",
+    "set",
+    "value",
+]
+
 
 class StoreOutcome(enum.Enum):
     """The effect of ``commit()`` or ``rollback()`` on a collection.
