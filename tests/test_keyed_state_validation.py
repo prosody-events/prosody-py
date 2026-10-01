@@ -99,6 +99,14 @@ async def test_invalid_option_is_rejected(options, match):
         await make_client(**options)
 
 
+@pytest.mark.parametrize(
+    ("kind", "field"), [("value", "ttl_seconds"), ("map", "keyset_limit"), ("deque", "capacity")]
+)
+async def test_non_numeric_whole_number_raises_type_error(kind, field):
+    with pytest.raises(TypeError, match=f"{field}: must be"):
+        await make_client(**collections(raw(kind=kind, **{field: "5"})))
+
+
 @pytest.mark.parametrize("read_cache", [True, -1, "soon"])
 async def test_invalid_read_cache_is_rejected(read_cache, client_factory):
     with pytest.raises(ValueError, match="state_read_cache"):

@@ -11,8 +11,8 @@ use prosody::state::descriptor::{
 };
 use prosody::state::order_codec::Utf8KeyCodec;
 use prosody::timers::duration::CompactDuration;
-use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyAnyMethods, PyDict};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::types::{PyAnyMethods, PyDict, PyInt};
 use pyo3::{Bound, FromPyObject, PyResult};
 use std::num::NonZeroUsize;
 
@@ -142,7 +142,8 @@ fn required_str(cfg: &Bound<PyDict>, index: usize, field: &str) -> PyResult<Stri
 ///
 /// # Errors
 ///
-/// Returns a `PyValueError` that names the field and states `rule`.
+/// Returns an error that names the field and states `rule`. The error is a
+/// `PyTypeError` for a value that is not a number, else a `PyValueError`.
 fn whole_number<'py, T>(
     cfg: &Bound<'py, PyDict>,
     index: usize,
@@ -156,9 +157,12 @@ where
         return Ok(None);
     };
     value.extract().map(Some).map_err(|_| {
-        PyValueError::new_err(format!(
-            "state_collections[{index}].{field}: must be {rule}"
-        ))
+        let message = format!("state_collections[{index}].{field}: must be {rule}");
+        if value.is_instance_of::<PyInt>() || value.extract::<f64>().is_ok() {
+            PyValueError::new_err(message)
+        } else {
+            PyTypeError::new_err(message)
+        }
     })
 }
 
