@@ -29,7 +29,7 @@ from prosody.errors import (
     PermanentStateError,
     TransientStateError,
 )
-from prosody.handler import EventHandler
+from prosody.handler import EventHandler, ProsodyHandler
 from prosody.message import ExciseMessage, Message
 from prosody.state import (
     Direction,

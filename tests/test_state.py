@@ -86,6 +86,7 @@ def test_exports_present():
         "PublishedSet",
         "Demand",
         "DemandKind",
+        "ProsodyHandler",
         "StateError",
         "PermanentStateError",
         "TransientStateError",

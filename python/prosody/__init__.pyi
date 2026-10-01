@@ -10,7 +10,7 @@ from prosody.errors import (
     permanent as permanent,
     transient as transient,
 )
-from prosody.handler import EventHandler as EventHandler
+from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
 from prosody.message import ExciseMessage as ExciseMessage, Message as Message
 from types import TracebackType
 from typing import Optional, TypeVar, overload

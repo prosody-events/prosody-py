@@ -18,6 +18,7 @@ from prosody import (
     MessageDequeDefinition,
     Outcome,
     ProsodyClient,
+    ProsodyHandler,
     PublishedSet,
     SetDefinition,
     SetState,
@@ -118,6 +119,11 @@ class Handler(EventHandler[Event, Response]):
 
     async def on_timer(self, context: Context, timer: Timer) -> None:
         assert_type(timer.key, str)
+
+
+wrapped_handler = ProsodyHandler(Handler())
+assert_type(wrapped_handler, ProsodyHandler[Event, Response])
+assert_type(wrapped_handler.handler, EventHandler[Event, Response])
 
 
 async def read_published_set(client: ProsodyClient) -> None:
