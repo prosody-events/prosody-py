@@ -51,6 +51,8 @@ from prosody.published import (
     PublishedValue,
 )
 from prosody.query import (
+    X,
+    Y,
     Direction,
     _StateScan,
     _deque_index,
