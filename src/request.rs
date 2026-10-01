@@ -1,12 +1,16 @@
-//! Python outcome values for subsystem responses.
+//! Request arguments and Python outcome values for subsystem responses.
 
+use crate::util::decode_duration;
 use prosody::requester::ResponseError;
-use pyo3::types::{PyAnyMethods, PyModule};
+use prosody::subsystem::SubsystemName;
+use pyo3::exceptions::PyValueError;
+use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyModule};
 use pyo3::{Bound, Py, PyAny, PyResult, Python};
 use pythonize::pythonize;
 use serde_json::Value;
+use std::time::Duration;
 
-pub(crate) fn to_python(
+fn to_python(
     py: Python,
     module: &Bound<'_, PyModule>,
     result: Result<Value, ResponseError>,
@@ -31,4 +35,29 @@ pub(crate) fn to_python(
                 .map(Bound::unbind)
         }
     }
+}
+
+pub(crate) fn request_parameters(
+    subsystems: Vec<String>,
+    timeout: &Bound<'_, PyAny>,
+) -> PyResult<(Vec<SubsystemName>, Duration)> {
+    let subsystems = subsystems
+        .into_iter()
+        .map(|name| {
+            SubsystemName::try_new(name).map_err(|error| PyValueError::new_err(error.to_string()))
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    Ok((subsystems, decode_duration(timeout)?))
+}
+
+pub(crate) fn request_outcomes<I>(py: Python, results: I) -> PyResult<Py<PyAny>>
+where
+    I: IntoIterator<Item = (SubsystemName, Result<Value, ResponseError>)>,
+{
+    let module = py.import("prosody.request")?;
+    let outcomes = PyDict::new(py);
+    for (subsystem, result) in results {
+        outcomes.set_item(subsystem.as_str(), to_python(py, &module, result)?)?;
+    }
+    Ok(outcomes.into_any().unbind())
 }

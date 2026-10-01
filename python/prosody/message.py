@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from collections.abc import Mapping, Sequence
 from typing import List, Optional, Union, TypeAlias, Dict, Generic
 
 from typing_extensions import TypeVar
@@ -12,6 +13,18 @@ JSONValue: TypeAlias = Union[
     str,
     List['JSONValue'],
     Dict[str, 'JSONValue']
+]
+
+# A value that the client can write as JSON. Mapping and Sequence accept a
+# TypedDict, a ``dict[str, str]``, or a tuple. The client returns JSONValue.
+JSONInput: TypeAlias = Union[
+    None,
+    bool,
+    int,
+    float,
+    str,
+    Sequence['JSONInput'],
+    Mapping[str, object],
 ]
 
 # PEP 696 default: `Message` (unparameterized) is `Message[JSONValue]`.
@@ -54,6 +67,17 @@ class Message(Generic[P]):
     payload: P
     """The message payload."""
 
+    source_system: Optional[str] = field(default=None, compare=False)
+    """The system that produced the message, or ``None`` when the record has no
+    source system header."""
+
+    response_requested: bool = field(default=False, compare=False)
+    """``True`` when a request expects a response from this handler.
+
+    For an ordinary event, Prosody discards the handler result. Check this flag
+    to skip the work of building a response that nobody reads.
+    """
+
     _core: Optional[object] = field(default=None, compare=False, repr=False)
     """Internal handle to the message prosody delivered.
 
@@ -73,3 +97,10 @@ class ExciseMessage:
     offset: int
     timestamp: datetime
     key: str
+
+    source_system: Optional[str] = field(default=None, compare=False)
+    """The system that produced the record, or ``None`` when the record has no
+    source system header."""
+
+    response_requested: bool = field(default=False, compare=False)
+    """``True`` when an excise request expects a response from this handler."""

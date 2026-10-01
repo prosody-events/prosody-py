@@ -40,6 +40,15 @@ not yet understand the code well enough to change it.
 encouraged when they are scoped to the area you are already touching. Do not
 sprawl — but do not walk past obvious cleanup either.
 
+**Do not break users without a reason.** The published package has real
+users. A release can break them only for a clear improvement that the
+owner decided on: a fixed defect, an invalid state that the types now
+prevent, or a need of a new feature. "Nothing in this repo calls it" is
+not a reason to remove, rename, or narrow a public member, an error
+class, a log text, or a dependency floor. When you are not sure, keep
+the old shape. List each break under `## Breaking changes` in the PR
+body.
+
 ## Definition of Done
 
 No change is complete until every line below holds. These are acts, not
@@ -68,7 +77,7 @@ This is a Python/Rust hybrid project using PyO3 and Maturin.
 ### Prerequisites
 
 - Docker Compose running with Kafka and Cassandra services
-- Python 3.8+ with a virtual environment
+- Python 3.10+ with a virtual environment
 - Rust toolchain
 
 ### Running Tests
@@ -270,15 +279,10 @@ half-deleted designs are where bloat and bug re-introduction live:
 
 ## Error Classification
 
-Distinguish permanent from transient errors for retry logic:
-
-```rust
-#[derive(Debug, Clone, Copy)]
-pub enum ErrorType {
-    Permanent,  // Business logic - don't retry
-    Transient,  // Network/timeout - retry with backoff
-}
-```
+Classify handler errors through the core `ClassifyError` trait and its
+`ErrorCategory` (`prosody::error`). `WrappedPythonError` implements it for
+the handler bridge. `Permanent` discards the message. `Transient` retries
+with backoff. Never invent a parallel classification.
 
 A permanent error discards the in-flight message. An error the caller's code
 causes (bad input, wrong argument shape) classifies as transient unless the
@@ -316,12 +320,16 @@ Constants → Statics → Types → Implementations → Functions → Errors (bo
 ## Types, Stubs, and Examples
 
 - `python/prosody/*.pyi` — hand-written type stubs; the public typed surface.
-  Every API change updates the stubs in the same commit.
+  Every API change updates the stubs in the same commit. Stubs carry types
+  only.
+- Public API docs live in the docstrings of the runtime `.py` modules, where
+  `help()` and IDEs read them. A natively implemented class with no `.py`
+  wrapper, such as `Context`, keeps its docs in its stub.
 - `tests/typecheck/` — self-falsifying negative fixtures. Expected errors use
   precise `type: ignore` codes; `warn_unused_ignores` fails the gate if a
   public signature accidentally permits one.
-- `examples/` — runnable examples (`keyed_state_typed.py`,
-  `keyed_state_windowing.py`, `tracing.py`), type-checked by mypy.
+- `examples/` — runnable examples. mypy checks `keyed_state_typed.py` and
+  `keyed_state_windowing.py`. It does not check `tracing.py`.
 - Run `make mypy`. It resolves `prosody` from the source tree
   (`mypy_path = "python"`), so no maturin build is required.
 

@@ -1,33 +1,30 @@
 //! Python client for Kafka production and consumption.
 
-use opentelemetry::propagation::TextMapPropagator;
-use prosody::high_level::erased::{ErasedConsumerState, ErasedReadCache};
-use prosody::requester::ResponseError;
-use prosody::subsystem::SubsystemName;
+use prosody::high_level::HighLevelClientError;
+use prosody::high_level::erased::{ErasedConsumerState, ErasedReaderBuildError};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyTypeMethods};
+use pyo3::types::PyDict;
 use pyo3::{Bound, Py, PyAny, PyResult, PyTraverseError, PyVisit, Python, pyclass, pymethods};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::depythonize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::fmt::Display;
 use std::process;
 use std::sync::Arc;
-use std::time::Duration;
-use tracing::{Instrument, debug, info_span};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing::{Instrument, info_span};
 
 use crate::client::config::prepare_config;
 use crate::handler::PythonHandler;
-use crate::published::{PublishedDeque, PublishedMap, PublishedValue};
-use crate::request::to_python;
-use crate::util::decode_duration;
+use crate::published::{PublishedDeque, PublishedMap, PublishedSet, PublishedValue};
+use crate::request::{request_outcomes, request_parameters};
+use crate::state::{StateEnv, state_error};
+use crate::util::{check_fork, parse_read_cache};
 
 mod config;
 mod model;
 
 pub use model::ProsodyClient;
-use model::{consumer_state_name, parse_read_cache, shutdown};
+use model::{consumer_state_name, shutdown};
 
 /// A client for interacting with Kafka using the Prosody library.
 ///
@@ -79,21 +76,10 @@ impl ProsodyClient {
         key: String,
         payload: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
-        // Extract trace headers and convert payload to JSON-serializable value
-        let context = self.get_context.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-
-        let headers: HashMap<String, String> = data.extract()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let payload = depythonize::<Value>(payload)?;
-
-        // Create and set the tracing context
-        let context = self.client.propagator().extract(&headers);
         let span = info_span!("python-send", %topic, %key);
-        if let Err(err) = span.set_parent(context) {
-            debug!("failed to set parent span: {err:#}");
-        }
+        self.env.set_parent(py, &span)?;
 
         // Send the message using the producer
         let client = self.client.clone();
@@ -110,16 +96,9 @@ impl ProsodyClient {
 
     /// Sends an excise record for a key.
     fn excise<'p>(&self, py: Python<'p>, topic: String, key: String) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
-        let context = self.get_context.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-        let headers: HashMap<String, String> = data.extract()?;
-        let context = self.client.propagator().extract(&headers);
+        check_fork(self.pid, "ProsodyClient")?;
         let span = info_span!("python-excise", %topic, %key);
-        if let Err(err) = span.set_parent(context) {
-            debug!("failed to set parent span: {err:#}");
-        }
+        self.env.set_parent(py, &span)?;
 
         let client = self.client.clone();
         future_into_py(py, async move {
@@ -142,17 +121,10 @@ impl ProsodyClient {
         subsystems: Vec<String>,
         timeout: &Bound<'_, PyAny>,
     ) -> PyResult<Py<PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let py = payload.py();
-        let context = self.get_context.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-        let trace_headers: HashMap<String, String> = data.extract()?;
-        let context = self.client.propagator().extract(&trace_headers);
         let span = info_span!("python-request", %topic, %key);
-        if let Err(error) = span.set_parent(context) {
-            debug!("failed to set parent span: {error:#}");
-        }
+        self.env.set_parent(py, &span)?;
         let payload = depythonize::<Value>(payload)?;
         let (subsystems, timeout) = request_parameters(subsystems, timeout)?;
         let client = self.client.clone();
@@ -185,16 +157,9 @@ impl ProsodyClient {
         subsystems: Vec<String>,
         timeout: &Bound<'_, PyAny>,
     ) -> PyResult<Py<PyAny>> {
-        self.check_fork()?;
-        let context = self.get_context.bind(py).call0()?;
-        let data = PyDict::new(py);
-        self.inject.call1(py, (&data, context))?;
-        let trace_headers: HashMap<String, String> = data.extract()?;
-        let context = self.client.propagator().extract(&trace_headers);
+        check_fork(self.pid, "ProsodyClient")?;
         let span = info_span!("python-request-excise", %topic, %key);
-        if let Err(error) = span.set_parent(context) {
-            debug!("failed to set parent span: {error:#}");
-        }
+        self.env.set_parent(py, &span)?;
         let (subsystems, timeout) = request_parameters(subsystems, timeout)?;
         let client = self.client.clone();
         future_into_py(py, async move {
@@ -221,7 +186,7 @@ impl ProsodyClient {
     /// build, with the full error message from the underlying
     /// `ModeConfigurationError`.
     fn consumer_state<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let client = self.client.clone();
         future_into_py(py, async move {
             let state = client.consumer_state().await;
@@ -234,69 +199,43 @@ impl ProsodyClient {
         })
     }
 
-    /// Opens a read-only published value collection.
-    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
-    fn _published_value<'p>(
+    /// Opens a read-only published collection of `kind`: `"value"`, `"map"`,
+    /// `"set"`, or `"deque"`.
+    #[pyo3(signature = (subsystem, kind, name, *, read_cache = None))]
+    fn _published<'p>(
         &self,
         py: Python<'p>,
         subsystem: String,
+        kind: String,
         name: String,
         read_cache: Option<&Bound<'p, PyAny>>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
-        let cache = parse_read_cache(read_cache)?;
-        let env = self.published_env(py)?;
+        check_fork(self.pid, "ProsodyClient")?;
+        let cache = parse_read_cache("read_cache", read_cache)?;
+        let env = self.env.clone();
         let client = self.client.clone();
         future_into_py(py, async move {
-            let inner = client
-                .value_state(subsystem, name, cache)
-                .await
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedValue { inner, env })?.into_any()))
-        })
-    }
-
-    /// Opens a read-only published map collection.
-    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
-    fn _published_map<'p>(
-        &self,
-        py: Python<'p>,
-        subsystem: String,
-        name: String,
-        read_cache: Option<&Bound<'p, PyAny>>,
-    ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
-        let cache = parse_read_cache(read_cache)?;
-        let env = self.published_env(py)?;
-        let client = self.client.clone();
-        future_into_py(py, async move {
-            let inner = client
-                .map_state(subsystem, name, cache)
-                .await
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedMap { inner, env })?.into_any()))
-        })
-    }
-
-    /// Opens a read-only published deque collection.
-    #[pyo3(signature = (subsystem, name, *, read_cache = None))]
-    fn _published_deque<'p>(
-        &self,
-        py: Python<'p>,
-        subsystem: String,
-        name: String,
-        read_cache: Option<&Bound<'p, PyAny>>,
-    ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
-        let cache = parse_read_cache(read_cache)?;
-        let env = self.published_env(py)?;
-        let client = self.client.clone();
-        future_into_py(py, async move {
-            let inner = client
-                .deque_state(subsystem, name, cache)
-                .await
-                .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-            Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner, env })?.into_any()))
+            match kind.as_str() {
+                "value" => {
+                    let inner = opened(&env, client.value_state(subsystem, name, cache).await)?;
+                    Python::attach(|py| Ok(Py::new(py, PublishedValue { inner, env })?.into_any()))
+                }
+                "map" => {
+                    let inner = opened(&env, client.map_state(subsystem, name, cache).await)?;
+                    Python::attach(|py| Ok(Py::new(py, PublishedMap { inner, env })?.into_any()))
+                }
+                "set" => {
+                    let inner = opened(&env, client.set_state(subsystem, name, cache).await)?;
+                    Python::attach(|py| Ok(Py::new(py, PublishedSet { inner, env })?.into_any()))
+                }
+                "deque" => {
+                    let inner = opened(&env, client.deque_state(subsystem, name, cache).await)?;
+                    Python::attach(|py| Ok(Py::new(py, PublishedDeque { inner, env })?.into_any()))
+                }
+                other => Err(PyValueError::new_err(format!(
+                    "kind: expected \"value\", \"map\", \"set\", or \"deque\", got {other:?}"
+                ))),
+            }
         })
     }
 
@@ -315,7 +254,7 @@ impl ProsodyClient {
         py: Python<'p>,
         handler: &Bound<'p, PyAny>,
     ) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let handler = PythonHandler::new(handler)?;
         let retained = handler.clone();
         let current = Arc::clone(&self.handler);
@@ -335,7 +274,7 @@ impl ProsodyClient {
     ///
     /// Returns 0 if the consumer is not in the Running state.
     fn assigned_partition_count<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let client = self.client.clone();
         future_into_py(
             py,
@@ -347,7 +286,7 @@ impl ProsodyClient {
     ///
     /// Returns `false` if the consumer is not in the Running state.
     fn is_stalled<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let client = self.client.clone();
         future_into_py(py, async move { Ok(client.is_stalled().await) })
     }
@@ -370,7 +309,7 @@ impl ProsodyClient {
     /// Returns a `PyRuntimeError` if the consumer is not configured or not
     /// subscribed.
     fn unsubscribe<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let client = self.client.clone();
         let current = Arc::clone(&self.handler);
         future_into_py(py, async move {
@@ -390,7 +329,7 @@ impl ProsodyClient {
     ///
     /// Returns a `PyRuntimeError` if shutdown fails.
     fn shutdown<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
-        self.check_fork()?;
+        check_fork(self.pid, "ProsodyClient")?;
         let shutdown = self.shutdown.clone();
         let current = Arc::clone(&self.handler);
         future_into_py(py, async move {
@@ -400,38 +339,6 @@ impl ProsodyClient {
             *current.lock() = None;
             result
         })
-    }
-
-    /// Returns a string representation of the `ProsodyClient`.
-    ///
-    /// # Returns
-    ///
-    /// A string representation of the `ProsodyClient`.
-    fn __repr__(slf: &Bound<Self>) -> PyResult<String> {
-        let class_name = slf.get_type().qualname()?;
-        let slf = slf.borrow();
-        slf.check_fork()?;
-        Ok(format!(
-            "{}(producer='running', bootstrap={:?})",
-            class_name,
-            slf.client.producer_config().bootstrap_servers,
-        ))
-    }
-
-    /// Returns a human-readable string description of the `ProsodyClient`.
-    ///
-    /// # Returns
-    ///
-    /// A human-readable description of the `ProsodyClient`.
-    fn __str__(slf: &Bound<Self>) -> PyResult<String> {
-        let class_name = slf.get_type().qualname()?;
-        let slf = slf.borrow();
-        slf.check_fork()?;
-        Ok(format!(
-            "{}: producer=running, bootstrap={}",
-            class_name,
-            slf.client.producer_config().bootstrap_servers.join(","),
-        ))
     }
 
     /// Traverses Python objects contained in this Client for garbage
@@ -445,7 +352,10 @@ impl ProsodyClient {
     ///
     /// Returns `Err(PyTraverseError)` if an error occurs during the traversal,
     /// such as when the `PyVisit::call` method fails.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "PyO3 fixes the __traverse__ signature"
+    )]
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         // Never lock synchronization state inherited from another process.
         if process::id() == self.pid
@@ -459,34 +369,22 @@ impl ProsodyClient {
             visit.call(handler.event_set_method().as_any())?;
         }
 
-        visit.call(self.get_context.as_any())?;
-        visit.call(self.inject.as_any())?;
-
         Ok(())
     }
 }
 
-fn request_parameters(
-    subsystems: Vec<String>,
-    timeout: &Bound<'_, PyAny>,
-) -> PyResult<(Vec<SubsystemName>, Duration)> {
-    let subsystems = subsystems
-        .into_iter()
-        .map(|name| {
-            SubsystemName::try_new(name).map_err(|error| PyValueError::new_err(error.to_string()))
-        })
-        .collect::<PyResult<Vec<_>>>()?;
-    Ok((subsystems, decode_duration(timeout)?))
-}
-
-fn request_outcomes<I>(py: Python, results: I) -> PyResult<Py<PyAny>>
-where
-    I: IntoIterator<Item = (SubsystemName, Result<Value, ResponseError>)>,
-{
-    let module = py.import("prosody.request")?;
-    let outcomes = PyDict::new(py);
-    for (subsystem, result) in results {
-        outcomes.set_item(subsystem.as_str(), to_python(py, &module, result)?)?;
-    }
-    Ok(outcomes.into_any().unbind())
+/// Raises a failure to open a published reader.
+///
+/// A reader error raises by its category, as a read does. Any other failure
+/// raises `RuntimeError`.
+fn opened<T, E: Display>(
+    env: &StateEnv,
+    reader: Result<T, ErasedReaderBuildError<E>>,
+) -> PyResult<T> {
+    reader.map_err(|error| match error {
+        ErasedReaderBuildError::Client(HighLevelClientError::StateReader(error)) => {
+            Python::attach(|py| state_error(py, env, &error.into()))
+        }
+        error => PyRuntimeError::new_err(error.to_string()),
+    })
 }

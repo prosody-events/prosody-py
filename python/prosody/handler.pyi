@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Mapping
 from typing import Generic, Protocol
 
@@ -13,9 +14,12 @@ Response = TypeVar("Response", default=JSONValue)
 class _ShutdownEvent(Protocol):
     def wait(self) -> Awaitable[None]: ...
 
-class EventHandler(Generic[P, Response]):
+class EventHandler(ABC, Generic[P, Response]):
+    @abstractmethod
     async def on_message(self, context: Context, message: Message[P]) -> Response: ...
+    @abstractmethod
     async def on_excise(self, context: Context, message: ExciseMessage) -> Response: ...
+    @abstractmethod
     async def on_timer(self, context: Context, timer: Timer) -> None: ...
 
 class ProsodyHandler(Generic[P, Response]):

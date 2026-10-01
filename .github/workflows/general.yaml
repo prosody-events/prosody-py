@@ -26,7 +26,7 @@ jobs:
       infra: ${{ steps.rail.outputs.infra }}
       test: ${{ steps.rail.outputs.test }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Plan affected work
         id: rail
         uses: loadingalias/cargo-rail-action@ebc8ef2740efefe2cd5c42826344a8f1213113ae # v6
@@ -70,14 +70,14 @@ jobs:
           --health-timeout 10s
           --health-retries 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install mold
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           make-default: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -109,9 +109,9 @@ jobs:
     if: needs.plan.outputs.build == 'true' || needs.plan.outputs.test == 'true' || needs.plan.outputs.infra == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up mold
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           make-default: false
       - uses: dtolnay/rust-toolchain@stable
@@ -133,12 +133,12 @@ jobs:
     if: needs.plan.outputs.build == 'true' || needs.plan.outputs.test == 'true' || needs.plan.outputs.infra == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install mold
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           make-default: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -150,7 +150,7 @@ jobs:
           packages: cmake libcurl4-openssl-dev protobuf-compiler
           version: 1.0
       - name: Install type-check dependencies
-        run: pip install "maturin>=1.14,<2.0" "mypy>=1.11" "opentelemetry-api>=1.44.0,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.12.0"
+        run: pip install "maturin>=1.15,<2.0" "mypy>=2.3.1" "opentelemetry-api>=1.45.0,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.16.0"
       - name: Type-check examples against the source tree
         run: mypy
       - name: Build the wheel
@@ -168,10 +168,10 @@ jobs:
     if: needs.plan.outputs.build == 'true' || needs.plan.outputs.test == 'true' || needs.plan.outputs.infra == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install mold
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           make-default: false
 
@@ -196,9 +196,9 @@ jobs:
     if: needs.plan.outputs.docs == 'true' || needs.plan.outputs.build == 'true' || needs.plan.outputs.infra == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up mold
-        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
         with:
           make-default: false
 

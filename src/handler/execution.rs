@@ -1,47 +1,8 @@
 use super::{
     ClassifyError, ConsumerMessage, Context, DateTime, Error, ErrorCategory, EventContext, Future,
-    HashMap, IntoPyDict, Keyed, MessageCore, MessageExecutionContext, Mutex, Py, PyAny,
-    PyAnyMethods, PyErr, PyResult, Python, TimerExecutionContext, Trigger, Utc, error,
-    into_future_with_locals, pythonize,
+    HashMap, IntoPyDict, MessageExecutionContext, Mutex, Py, PyAny, PyAnyMethods, PyErr, PyResult,
+    Python, PythonRecord, TimerExecutionContext, Trigger, Utc, error, into_future_with_locals,
 };
-
-pub(super) trait PythonRecord {
-    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>>;
-}
-
-impl PythonRecord for ConsumerMessage<serde_json::Value> {
-    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>> {
-        let payload = pythonize(py, self.payload())?;
-        let core = Py::new(py, MessageCore::new(self.clone()))?;
-        class.call1(
-            py,
-            (
-                self.topic().as_ref(),
-                self.partition(),
-                self.offset(),
-                *self.timestamp(),
-                self.key().as_ref(),
-                payload,
-                core,
-            ),
-        )
-    }
-}
-
-impl PythonRecord for ConsumerMessage<()> {
-    fn into_python(self, py: Python<'_>, class: &Py<PyAny>) -> PyResult<Py<PyAny>> {
-        class.call1(
-            py,
-            (
-                self.topic().as_ref(),
-                self.partition(),
-                self.offset(),
-                *self.timestamp(),
-                self.key().as_ref(),
-            ),
-        )
-    }
-}
 
 /// Logs Python exceptions with full traceback information.
 ///
@@ -101,10 +62,7 @@ pub(super) fn cancel_task(event_set_method: &Py<PyAny>, shutdown_event: Py<PyAny
 /// * `context` - Message context
 /// * `message` - Kafka message
 /// * `serialized_context` - OpenTelemetry context
-/// * `message_class` - Python Message class
-/// * `event_class` - Python Event class
-/// * `handle_method` - Python handler method
-/// * `locals` - Python event loop task locals
+/// * `execution_context` - Python classes, handler method, and state
 ///
 /// # Returns
 ///
@@ -128,16 +86,13 @@ where
     P: Send + Sync + 'static,
 {
     Python::attach(move |py| {
-        // Create Python message objects using cached OpenTelemetry functions
         let message_context = Context {
             inner: context.boxed(),
-            get_current: execution_context.otel_get_current.clone_ref(py),
-            inject: execution_context.otel_inject.clone_ref(py),
-            propagator: execution_context.propagator,
-            message_class: execution_context.message_class.clone_ref(py),
+            env: execution_context.env.clone(),
+            demand: execution_context.demand,
             state_handles: Mutex::new(HashMap::new()),
         };
-        let message = message.into_python(py, execution_context.record_class)?;
+        let message = message.to_python(py, execution_context.record_class)?;
 
         // Convert serialized_context to a Python dict
         let otel_context = serialized_context.into_py_dict(py)?;
@@ -187,13 +142,10 @@ where
     C: EventContext<Payload = serde_json::Value>,
 {
     Python::attach(move |py| {
-        // Create Python timer object using cached OpenTelemetry functions
         let context_obj = Context {
             inner: context.boxed(),
-            get_current: timer_context.otel_get_current.clone_ref(py),
-            inject: timer_context.otel_inject.clone_ref(py),
-            propagator: timer_context.propagator,
-            message_class: timer_context.message_class.clone_ref(py),
+            env: timer_context.env.clone(),
+            demand: timer_context.demand,
             state_handles: Mutex::new(HashMap::new()),
         };
 
@@ -235,11 +187,11 @@ pub enum WrappedPythonError {
 }
 
 impl ClassifyError for WrappedPythonError {
-    /// Determines error retry behavior based on Python error attributes
+    /// Classifies a handler failure for the retry middleware.
     ///
-    /// Returns:
-    /// - `ErrorCategory::Permanent` for errors with `is_permanent=True`
-    /// - `ErrorCategory::Transient` otherwise
+    /// A Python error with `is_permanent=True` is permanent. Every other error
+    /// is transient. A result with no JSON form is a caller mistake, so it is
+    /// transient: the message retries and the error stays visible.
     fn classify_error(&self) -> ErrorCategory {
         match self {
             WrappedPythonError::Python(error) => {
@@ -248,7 +200,7 @@ impl ClassifyError for WrappedPythonError {
                     _ => ErrorCategory::Transient,
                 })
             }
-            WrappedPythonError::ResultConversion(_) => ErrorCategory::Permanent,
+            WrappedPythonError::ResultConversion(_) => ErrorCategory::Transient,
         }
     }
 }

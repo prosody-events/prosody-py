@@ -7,18 +7,19 @@
 //! - Managing graceful task cancellation during shutdown
 //! - Classifying Python errors for retry/failure handling
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::message::MessageCore;
+use crate::message::PythonRecord;
 use chrono::{DateTime, Utc};
 use futures::pin_mut;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
+use prosody::consumer::DemandType;
 use prosody::consumer::event_context::EventContext;
 use prosody::consumer::message::ConsumerMessage;
 use prosody::consumer::middleware::FallibleHandler;
-use prosody::consumer::{DemandType, Keyed};
 use prosody::error::{ClassifyError, ErrorCategory};
 use prosody::high_level::{ClientHandler, JsonCodecs};
 use prosody::propagator::new_propagator;
@@ -28,7 +29,7 @@ use pyo3::prelude::PyAnyMethods;
 use pyo3::types::IntoPyDict;
 use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 use pyo3_async_runtimes::{TaskLocals, into_future_with_locals};
-use pythonize::{depythonize, pythonize};
+use pythonize::depythonize;
 use serde_json::Value;
 use thiserror::Error;
 use tokio::select;
@@ -38,40 +39,17 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 mod execution;
 
 pub use execution::WrappedPythonError;
-use execution::{PythonRecord, cancel_task, execute, execute_timer, log_exception};
+use execution::{cancel_task, execute, execute_timer, log_exception};
 
 use crate::context::Context;
+use crate::state::StateEnv;
 
 const HANDLER_METHODS: [&str; 3] = ["on_message", "on_excise", "on_timer"];
-
-/// Python objects and dependencies needed for message execution
-struct MessageExecutionContext<'a> {
-    message_class: &'a Py<PyAny>,
-    record_class: &'a Py<PyAny>,
-    event_class: &'a Py<PyAny>,
-    method: &'a Py<PyAny>,
-    locals: &'a TaskLocals,
-    propagator: Arc<TextMapCompositePropagator>,
-    otel_get_current: &'a Py<PyAny>,
-    otel_inject: &'a Py<PyAny>,
-}
-
-/// Python objects and dependencies needed for timer execution
-struct TimerExecutionContext<'a> {
-    timer_class: &'a Py<PyAny>,
-    event_class: &'a Py<PyAny>,
-    timer_method: &'a Py<PyAny>,
-    message_class: &'a Py<PyAny>,
-    locals: &'a TaskLocals,
-    propagator: Arc<TextMapCompositePropagator>,
-    otel_get_current: &'a Py<PyAny>,
-    otel_inject: &'a Py<PyAny>,
-}
 
 /// Base Python class name for message handlers
 const HANDLER_CLASS_NAME: &str = "EventHandler";
 
-/// Python wrapper class name for tracing/cancellation
+/// Internal `prosody.handler` class that adds tracing and cancellation.
 const HANDLER_WRAPPER_CLASS_NAME: &str = "ProsodyHandler";
 
 /// Python class name for Kafka messages
@@ -82,6 +60,28 @@ const EXCISE_CLASS_NAME: &str = "ExciseMessage";
 
 /// Python class name for timer events
 const TIMER_CLASS_NAME: &str = "Timer";
+
+/// Python objects and dependencies needed for message execution
+#[derive(Clone, Copy)]
+struct MessageExecutionContext<'a> {
+    record_class: &'a Py<PyAny>,
+    event_class: &'a Py<PyAny>,
+    method: &'a Py<PyAny>,
+    locals: &'a TaskLocals,
+    env: &'a StateEnv,
+    demand: DemandType,
+}
+
+/// Python objects and dependencies needed for timer execution
+#[derive(Clone, Copy)]
+struct TimerExecutionContext<'a> {
+    timer_class: &'a Py<PyAny>,
+    event_class: &'a Py<PyAny>,
+    timer_method: &'a Py<PyAny>,
+    locals: &'a TaskLocals,
+    env: &'a StateEnv,
+    demand: DemandType,
+}
 
 /// A wrapper for Python-defined message handlers.
 ///
@@ -104,8 +104,7 @@ pub struct PythonHandlerImpl {
     pub event_set_method: Py<PyAny>,
     locals: TaskLocals,
     propagator: Arc<TextMapCompositePropagator>,
-    otel_get_current: Py<PyAny>,
-    otel_inject: Py<PyAny>,
+    env: StateEnv,
 }
 
 impl PythonHandler {
@@ -127,7 +126,9 @@ impl PythonHandler {
         let py = handler.py();
         let prosody_module = py.import("prosody")?;
         let abstract_handler_class = prosody_module.getattr(HANDLER_CLASS_NAME)?;
-        let tracing_handler_class = prosody_module.getattr(HANDLER_WRAPPER_CLASS_NAME)?;
+        let tracing_handler_class = py
+            .import("prosody.handler")?
+            .getattr(HANDLER_WRAPPER_CLASS_NAME)?;
         let message_class = prosody_module.getattr(MESSAGE_CLASS_NAME)?;
         let excise_class = prosody_module.getattr(EXCISE_CLASS_NAME)?;
         let timer_class = prosody_module.getattr(TIMER_CLASS_NAME)?;
@@ -161,16 +162,9 @@ impl PythonHandler {
         // Capture the running event loop
         let locals = TaskLocals::with_running_loop(py)?.copy_context(py)?;
 
-        // Cache OpenTelemetry functions to avoid importing them on every message
-        let otel_get_current = py
-            .import("opentelemetry.context")?
-            .getattr("get_current")?
-            .unbind();
-
-        let otel_inject = py
-            .import("opentelemetry.propagate")?
-            .getattr("inject")?
-            .unbind();
+        // Resolve the Python environment once for every context
+        let propagator = Arc::new(new_propagator());
+        let env = StateEnv::resolve(py, Arc::clone(&propagator))?;
 
         Ok(Self(Arc::new(PythonHandlerImpl {
             handle_method: handle_method.unbind(),
@@ -182,9 +176,8 @@ impl PythonHandler {
             event_class: event_class.unbind(),
             event_set_method: event_set_method.unbind(),
             locals,
-            propagator: Arc::new(new_propagator()),
-            otel_get_current,
-            otel_inject,
+            propagator,
+            env,
         })))
     }
 
@@ -222,6 +215,7 @@ impl PythonHandler {
         &self,
         context: C,
         message: ConsumerMessage<P>,
+        demand: DemandType,
         record_class: &Py<PyAny>,
         method: &Py<PyAny>,
         kind: &str,
@@ -237,14 +231,12 @@ impl PythonHandler {
             .inject_context(&message.span().context(), &mut carrier);
         let cancel_future = context.on_cancel();
         let execution_context = MessageExecutionContext {
-            message_class: &self.0.message_class,
             record_class,
             event_class: &self.0.event_class,
             method,
             locals: &self.0.locals,
-            propagator: self.0.propagator.clone(),
-            otel_get_current: &self.0.otel_get_current,
-            otel_inject: &self.0.otel_inject,
+            env: &self.0.env,
+            demand,
         };
         let (shutdown_event, complete_future) =
             execute(context, message, carrier, execution_context)?;
@@ -283,7 +275,7 @@ impl FallibleHandler for PythonHandler {
     ///
     /// * `context` - Message processing context
     /// * `message` - Kafka message to process
-    /// * `_demand_type` - Whether this is normal processing or failure retry
+    /// * `demand_type` - Whether this is normal processing or failure retry
     ///
     /// # Errors
     ///
@@ -299,10 +291,10 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        let _ = demand_type;
         self.handle_record(
             context,
             message,
+            demand_type,
             &self.0.message_class,
             &self.0.handle_method,
             "message",
@@ -320,10 +312,10 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        let _ = demand_type;
         self.handle_record(
             context,
             message,
+            demand_type,
             &self.0.excise_class,
             &self.0.excise_method,
             "excise",
@@ -337,7 +329,7 @@ impl FallibleHandler for PythonHandler {
     ///
     /// * `context` - Timer processing context
     /// * `trigger` - Timer trigger to process
-    /// * `_demand_type` - Whether this is normal processing or failure retry
+    /// * `demand_type` - Whether this is normal processing or failure retry
     ///
     /// # Errors
     ///
@@ -353,9 +345,8 @@ impl FallibleHandler for PythonHandler {
     where
         C: EventContext<Payload = Self::Payload>,
     {
-        let _ = demand_type; // Not used in Python handler
-
-        // Only process application timers; internal timers are handled by middleware
+        // Only process application timers; internal timers are handled by
+        // middleware
         if trigger.timer_type != TimerType::Application {
             return Ok(Value::Null);
         }
@@ -370,11 +361,9 @@ impl FallibleHandler for PythonHandler {
             timer_class: &self.0.timer_class,
             event_class: &self.0.event_class,
             timer_method: &self.0.timer_method,
-            message_class: &self.0.message_class,
             locals: &self.0.locals,
-            propagator: self.0.propagator.clone(),
-            otel_get_current: &self.0.otel_get_current,
-            otel_inject: &self.0.otel_inject,
+            env: &self.0.env,
+            demand: demand_type,
         };
         let (shutdown_event, complete_future) =
             execute_timer(context, trigger, serialized_context, timer_context)?;

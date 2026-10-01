@@ -5,13 +5,13 @@
 //! objects and handling duration conversions.
 
 use crate::admin::AdminClient;
-use crate::util::{decode_duration, string_or_vec};
+use crate::util::{decode_duration, option, string_or_vec};
 use prosody::admin::{
     AdminConfiguration, AdminConfigurationBuilder, ProsodyAdminClient, TopicConfiguration,
     TopicConfigurationBuilder,
 };
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
+use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{Bound, PyResult, Python};
 use std::process;
 use std::sync::Arc;
@@ -72,7 +72,7 @@ pub fn try_build_admin_config(
 fn build_admin_config(config: &Bound<PyDict>) -> PyResult<AdminConfiguration> {
     let mut builder = AdminConfigurationBuilder::default();
 
-    if let Some(bootstrap) = config.get_item("bootstrap_servers")? {
+    if let Some(bootstrap) = option(config, "bootstrap_servers")? {
         builder.bootstrap_servers(string_or_vec(&bootstrap)?);
     }
 
@@ -105,19 +105,19 @@ pub fn build_topic_config(
     builder.name(topic_name);
 
     if let Some(config) = config {
-        if let Some(partition_count) = config.get_item("partition_count")? {
+        if let Some(partition_count) = option(config, "partition_count")? {
             builder.partition_count(partition_count.extract::<u16>()?);
         }
 
-        if let Some(replication_factor) = config.get_item("replication_factor")? {
+        if let Some(replication_factor) = option(config, "replication_factor")? {
             builder.replication_factor(replication_factor.extract::<u16>()?);
         }
 
-        if let Some(cleanup_policy) = config.get_item("cleanup_policy")? {
+        if let Some(cleanup_policy) = option(config, "cleanup_policy")? {
             builder.cleanup_policy(cleanup_policy.extract::<String>()?);
         }
 
-        if let Some(retention) = config.get_item("retention")? {
+        if let Some(retention) = option(config, "retention")? {
             builder.retention(decode_duration(&retention)?);
         }
     }

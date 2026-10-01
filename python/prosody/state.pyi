@@ -1,579 +1,125 @@
-"""Type stubs for the keyed-state surface.
-
-These stubs override :mod:`prosody.state` for type-checkers, restoring the
-generic types that the runtime erases to ``Any``. The runtime module is a thin
-transport over the native handles vended by :meth:`Context.state`; the native
-(Rust) layer owns every semantic (carrier injection, chunk draining,
-error-category classification, null/shape/kind guards, and scan flattening).
-
-The type parameter of every definition and handle (``T`` / ``V`` / ``P``) is a
-**structural JSON annotation** — TypedDict-oriented. Payloads cross the boundary
-as plain JSON with no model construction or validation in v1, so
-``dataclass`` / Pydantic types are **not** valid type arguments; an adapter hook
-is future work. Map keys are always ``str``.
-"""
-
 import enum
-from datetime import timedelta
 from typing import Generic, List, Optional, Tuple, Union, overload
 
-from typing_extensions import Literal, TypedDict, TypeVar
+from typing_extensions import TypeVar, Unpack
 
-from prosody.message import JSONValue, Message
+from prosody.definition import (
+    DequeDefinition as DequeDefinition,
+    MapDefinition as MapDefinition,
+    MessageDequeDefinition as MessageDequeDefinition,
+    MessageMapDefinition as MessageMapDefinition,
+    MessageValueDefinition as MessageValueDefinition,
+    D_co as D_co,
+    P as P,
+    ReadCache as ReadCache,
+    SetDefinition as SetDefinition,
+    ValueDefinition as ValueDefinition,
+    _StateConfig as _StateConfig,
+    deque as deque,
+    map as map,
+    message_deque as message_deque,
+    message_map as message_map,
+    message_value as message_value,
+    set as set,
+    value as value,
+)
+from prosody.message import JSONInput, JSONValue
+from prosody.published import (
+    PublishedDeque as PublishedDeque,
+    PublishedMap as PublishedMap,
+    PublishedSet as PublishedSet,
+    PublishedValue as PublishedValue,
+)
+from prosody.query import (
+    Direction as Direction,
+    _KeyOptions,
+    _PositionOptions,
+    _StateScan as _StateScan,
+)
 
-# PEP 696 defaults: an unparameterized handle/definition uses ``JSONValue``.
+# PEP 696 defaults: an unparameterized handle uses ``JSONValue``.
 T = TypeVar("T", default=JSONValue)  # value / deque item type
 V = TypeVar("V", default=JSONValue)  # map value type
-P = TypeVar("P", default=JSONValue)  # message payload type
-D_co = TypeVar("D_co", covariant=True, default=JSONValue)
 D = TypeVar("D")  # get() default's own type, preserved in the return
-_Y = TypeVar("_Y")  # yielded item type of a scan
-ReadCache = Optional[Union[timedelta, float, Literal[False]]]
 
 
-class _StateConfig(TypedDict):
-    name: str
-    kind: str
-    payload: str
-    ttl_seconds: Optional[int]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    read_cache: ReadCache
-    keyset_limit: Optional[int]
-    capacity: Optional[int]
+class StoreOutcome(enum.Enum):
+    APPLIED = "applied"
+    NO_OP = "no_op"
 
 
-class Direction(enum.Enum):
-    """Scan direction over an ordered collection.
-
-    The string values are the tokens the native ``scan`` accepts; wrappers pass
-    ``direction.value`` straight through.
-    """
-
-    FORWARD = "forward"
-    BACKWARD = "backward"
+class _Handle:
+    async def commit(self) -> StoreOutcome: ...
+    async def rollback(self) -> StoreOutcome: ...
 
 
-class _StateScan(Generic[_Y]):
-    """Async iterator over a native scan cursor.
+class ValueState(_Handle, Generic[T]):
+    async def get(self) -> Optional[T]: ...
+    @overload
+    async def set(self: "ValueState[JSONValue]", value: JSONInput) -> None: ...
+    @overload
+    async def set(self, value: T) -> None: ...
+    async def clear(self) -> None: ...
 
-    Returned by every scan method (:meth:`MapState.items`, :meth:`MapState.keys`,
-    :meth:`MapState.values`, :meth:`DequeState.values`) and by ``__aiter__``. The
-    native cursor owns retained-chunk flattening, serialization, and
-    ``StopAsyncIteration`` at exhaustion; this adapter only reshapes each item.
 
-    Drive it with ``async for``. Exiting the loop early with a bare ``break``
-    does **not** call :meth:`aclose` — that is harmless by construction (no store
-    permit is held between pulls, the cursor is attempt-epoch fenced, and native
-    ``Drop`` closes it on GC). For a deterministic early close wrap it in
-    ``contextlib.aclosing(...)``.
-
-    The generic parameter restores the yielded type even though the runtime
-    class is one non-generic adapter (``_StateScan[Tuple[str, V]]`` for map
-    items, ``_StateScan[str]`` for keys, ``_StateScan[V]`` / ``_StateScan[T]``
-    for values).
-    """
-
-    def __aiter__(self) -> "_StateScan[_Y]": ...
-    async def __anext__(self) -> _Y: ...
-    async def aclose(self) -> None:
-        """Close the underlying native cursor (idempotent)."""
-        ...
-
-class PublishedValue(Generic[T]):
-    async def get(self, key: str) -> Optional[T]: ...
-
-class PublishedMap(Generic[V]):
-    async def get(self, key: str, map_key: str) -> Optional[V]: ...
-    async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]: ...
-    async def contains(self, key: str, map_key: str) -> bool: ...
+class MapState(_Handle, Generic[V]):
+    @overload
+    async def get(self, key: str) -> Optional[V]: ...
+    @overload
+    async def get(self, key: str, default: D) -> Union[V, D]: ...
+    async def contains(self, key: str) -> bool: ...
+    async def get_many(self, keys: List[str]) -> List[Optional[V]]: ...
+    async def contains_many(self, keys: List[str]) -> List[bool]: ...
+    async def is_empty(self) -> bool: ...
+    @overload
+    async def set(self: "MapState[JSONValue]", key: str, value: JSONInput) -> None: ...
+    @overload
+    async def set(self, key: str, value: V) -> None: ...
+    async def remove(self, key: str) -> None: ...
+    async def clear(self) -> None: ...
     def items(
-        self, key: str, direction: Direction = ...
+        self, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[Tuple[str, V]]: ...
     def keys(
-        self, key: str, direction: Direction = ...
+        self, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[str]: ...
-    def values(self, key: str) -> _StateScan[V]: ...
-
-class PublishedDeque(Generic[T]):
-    async def get(self, key: str, index: int) -> Optional[T]: ...
-    async def size(self, key: str) -> int: ...
-    async def is_empty(self, key: str) -> bool: ...
-    async def peek(self, key: str) -> Optional[T]: ...
-    async def peekleft(self, key: str) -> Optional[T]: ...
     def values(
-        self, key: str, direction: Direction = ...
+        self, direction: Direction = ..., **options: Unpack[_KeyOptions]
+    ) -> _StateScan[V]: ...
+    def __aiter__(self) -> _StateScan[str]: ...
+
+
+class SetState(_Handle):
+    async def add(self, member: str) -> None: ...
+    async def discard(self, member: str) -> None: ...
+    async def contains(self, member: str) -> bool: ...
+    async def contains_many(self, members: List[str]) -> List[bool]: ...
+    async def is_empty(self) -> bool: ...
+    async def clear(self) -> None: ...
+    def members(
+        self, direction: Direction = ..., **options: Unpack[_KeyOptions]
+    ) -> _StateScan[str]: ...
+    def __aiter__(self) -> _StateScan[str]: ...
+
+
+class DequeState(_Handle, Generic[T]):
+    @overload
+    async def append(self: "DequeState[JSONValue]", item: JSONInput) -> None: ...
+    @overload
+    async def append(self, item: T) -> None: ...
+    @overload
+    async def appendleft(self: "DequeState[JSONValue]", item: JSONInput) -> None: ...
+    @overload
+    async def appendleft(self, item: T) -> None: ...
+    async def pop(self) -> Optional[T]: ...
+    async def popleft(self) -> Optional[T]: ...
+    async def peek(self) -> Optional[T]: ...
+    async def peekleft(self) -> Optional[T]: ...
+    async def get(self, index: int) -> Optional[T]: ...
+    async def size(self) -> int: ...
+    async def is_empty(self) -> bool: ...
+    async def clear(self) -> None: ...
+    def values(
+        self, direction: Direction = ..., **options: Unpack[_PositionOptions]
     ) -> _StateScan[T]: ...
-
-
-class ValueDefinition(Generic[D_co]):
-    """A single-value JSON collection definition.
-
-    ``kind = "value"``, ``payload = "json"``. Vends :class:`ValueState` ``[T]``.
-    """
-
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    read_cache: ReadCache
-    kind: str
-    payload: str
-
-    def __init__(
-        self,
-        name: str,
-        ttl: Optional[Union[timedelta, int]] = ...,
-        read_uncommitted: Optional[bool] = ...,
-        published: Optional[bool] = ...,
-        read_cache: ReadCache = ...,
-    ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
-
-
-class MapDefinition(Generic[D_co]):
-    """An ordered-map JSON collection definition (string keys).
-
-    ``kind = "map"``, ``payload = "json"``. Vends :class:`MapState` ``[V]``.
-    ``keyset_limit`` is map-only.
-    """
-
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    read_cache: ReadCache
-    keyset_limit: Optional[int]
-    kind: str
-    payload: str
-
-    def __init__(
-        self,
-        name: str,
-        ttl: Optional[Union[timedelta, int]] = ...,
-        read_uncommitted: Optional[bool] = ...,
-        published: Optional[bool] = ...,
-        read_cache: ReadCache = ...,
-        keyset_limit: Optional[int] = ...,
-    ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
-
-
-class DequeDefinition(Generic[D_co]):
-    """A double-ended-queue JSON collection definition.
-
-    ``kind = "deque"``, ``payload = "json"``. Vends :class:`DequeState` ``[T]``.
-    ``capacity`` is deque-only.
-    """
-
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    published: Optional[bool]
-    read_cache: ReadCache
-    capacity: Optional[int]
-    kind: str
-    payload: str
-
-    def __init__(
-        self,
-        name: str,
-        ttl: Optional[Union[timedelta, int]] = ...,
-        read_uncommitted: Optional[bool] = ...,
-        published: Optional[bool] = ...,
-        read_cache: ReadCache = ...,
-        capacity: Optional[int] = ...,
-    ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
-
-
-class MessageValueDefinition(Generic[D_co]):
-    """A single-value collection storing whole Kafka messages.
-
-    ``kind = "value"``, ``payload = "message"``. Vends
-    :class:`ValueState` ``[Message[P]]``.
-    """
-
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    kind: str
-    payload: str
-
-    def __init__(
-        self,
-        name: str,
-        ttl: Optional[Union[timedelta, int]] = ...,
-        read_uncommitted: Optional[bool] = ...,
-    ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
-
-
-class MessageMapDefinition(Generic[D_co]):
-    """An ordered-map collection storing whole Kafka messages.
-
-    ``kind = "map"``, ``payload = "message"``. Vends
-    :class:`MapState` ``[Message[P]]``. ``keyset_limit`` is map-only.
-    """
-
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    keyset_limit: Optional[int]
-    kind: str
-    payload: str
-
-    def __init__(
-        self,
-        name: str,
-        ttl: Optional[Union[timedelta, int]] = ...,
-        read_uncommitted: Optional[bool] = ...,
-        keyset_limit: Optional[int] = ...,
-    ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
-
-
-class MessageDequeDefinition(Generic[D_co]):
-    """A double-ended-queue collection storing whole Kafka messages.
-
-    ``kind = "deque"``, ``payload = "message"``. Vends
-    :class:`DequeState` ``[Message[P]]``. ``capacity`` is deque-only.
-    """
-
-    name: str
-    ttl: Optional[Union[timedelta, int]]
-    read_uncommitted: Optional[bool]
-    capacity: Optional[int]
-    kind: str
-    payload: str
-
-    def __init__(
-        self,
-        name: str,
-        ttl: Optional[Union[timedelta, int]] = ...,
-        read_uncommitted: Optional[bool] = ...,
-        capacity: Optional[int] = ...,
-    ) -> None: ...
-    def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``."""
-        ...
-
-
-def value(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    published: Optional[bool] = ...,
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
-) -> ValueDefinition[T]:
-    """Define a single-value JSON collection (vends :class:`ValueState` ``[T]``).
-
-    ``T`` is a structural JSON annotation only — no runtime validation happens,
-    so ``dataclass`` / Pydantic types are not valid arguments (adapter hook is
-    future work).
-    """
-    ...
-
-
-def map(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    published: Optional[bool] = ...,
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
-    keyset_limit: Optional[int] = ...,
-) -> MapDefinition[V]:
-    """Define an ordered-map JSON collection (vends :class:`MapState` ``[V]``).
-
-    Map keys are always ``str``; ``keyset_limit`` bounds ordered-scan tracking.
-    ``V`` is a structural JSON annotation only (no runtime validation).
-    """
-    ...
-
-
-def deque(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    published: Optional[bool] = ...,
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
-    capacity: Optional[int] = ...,
-) -> DequeDefinition[T]:
-    """Define a double-ended-queue JSON collection (vends :class:`DequeState` ``[T]``).
-
-    ``capacity`` caps the deque at N slots, enforced lazily on push; runtime-only
-    and freely changed across deploys. ``T`` is a structural JSON annotation only
-    (no runtime validation).
-    """
-    ...
-
-
-def message_value(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-) -> MessageValueDefinition[P]:
-    """Define a single-value collection of whole Kafka messages.
-
-    Vends :class:`ValueState` ``[Message[P]]``. ``P`` annotates the message
-    payload structurally only (no runtime validation).
-
-    Only a message prosody delivered can be stored; see :class:`Message`.
-    """
-    ...
-
-
-def message_map(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    keyset_limit: Optional[int] = ...,
-) -> MessageMapDefinition[P]:
-    """Define an ordered-map collection of whole Kafka messages (string keys).
-
-    Vends :class:`MapState` ``[Message[P]]``. ``P`` annotates the message
-    payload structurally only (no runtime validation).
-
-    Only a message prosody delivered can be stored; see :class:`Message`.
-    """
-    ...
-
-
-def message_deque(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    capacity: Optional[int] = ...,
-) -> MessageDequeDefinition[P]:
-    """Define a double-ended-queue collection of whole Kafka messages.
-
-    Vends :class:`DequeState` ``[Message[P]]``. ``capacity`` caps the deque at N
-    slots, enforced lazily on push; runtime-only and freely changed across
-    deploys. ``P`` annotates the message payload structurally only (no runtime
-    validation).
-
-    Only a message prosody delivered can be stored; see :class:`Message`.
-    """
-    ...
-
-
-class ValueState(Generic[T]):
-    """Typed handle over a single-value collection.
-
-    Valid only within the handler invocation that vended it. All methods are
-    async; the native layer owns validation.
-    """
-
-    async def get(self) -> Optional[T]:
-        """Read the current value, or ``None`` when absent/cleared."""
-        ...
-    async def set(self, value: T) -> None:
-        """Buffer a write of ``value``.
-
-        Writing ``None`` (JSON ``null``) is rejected with :class:`NullValueError`
-        (transient) — call :meth:`clear` to delete instead.
-        """
-        ...
-    async def clear(self) -> None:
-        """Buffer a delete of the value."""
-        ...
-    async def commit(self) -> None:
-        """Durably flush the buffered operations mid-handler.
-
-        Returns ``None`` — the erased core seam drops any store outcome, so there
-        is no applied/noop value.
-        """
-        ...
-    async def rollback(self) -> None:
-        """Discard buffered uncommitted operations back to the committed floor."""
-        ...
-
-
-class MapState(Generic[V]):
-    """Typed handle over an ordered-map collection with string keys.
-
-    Valid only within the handler invocation that vended it. ``remove`` exists
-    because ``del`` cannot be async; map keys are always ``str``.
-    """
-
-    @overload
-    async def get(self, key: str) -> Optional[V]:
-        """Read the value for ``key``, or ``None`` when absent."""
-        ...
-    @overload
-    async def get(self, key: str, default: D) -> Union[V, D]:
-        """Read the value for ``key``; return ``default`` only when absent.
-
-        A present-but-falsy value (``0``, ``False``, ``""``, ``[]``) returns
-        that value, never ``default`` — the branch tests core absence, not
-        truthiness. Fully decodes and resolves the value (unlike
-        :meth:`contains` / :meth:`keys`).
-        """
-        ...
-    async def contains(self, key: str) -> bool:
-        """Report whether a stored cell exists for ``key`` (read-your-writes).
-
-        The cheap presence check — no value decode, no resolver — so a
-        message-backed map answers ``True`` even for a key whose Kafka message
-        can no longer be fetched. Not zero-I/O: a cache miss still reads
-        Cassandra. Not ``__contains__`` — Python's ``in`` cannot ``await``.
-        """
-        ...
-    async def get_many(self, keys: List[str]) -> List[Optional[V]]:
-        """Read several keys in one isolated batch, one result per key in order.
-
-        ``result[i]`` is the value for ``keys[i]`` (``None`` for a missing key).
-        The batched, cache-populating way to read a known set of keys — prefer
-        it over iterating :meth:`keys` and calling :meth:`get` per key.
-        """
-        ...
-    async def set(self, key: str, value: V) -> None:
-        """Insert or overwrite ``key``.
-
-        Writing ``None`` (JSON ``null``) is rejected with :class:`NullValueError`
-        (transient) — call :meth:`remove` to delete instead.
-        """
-        ...
-    async def remove(self, key: str) -> None:
-        """Remove ``key`` (named ``remove`` because ``del`` cannot be async).
-
-        Returns ``None`` deliberately — no hidden "was present" read.
-        """
-        ...
-    async def clear(self) -> None:
-        """Remove every entry."""
-        ...
-    def items(self, direction: Direction = ...) -> _StateScan[Tuple[str, V]]:
-        """Async iterator over ``(key, value)`` entries in key order.
-
-        Accepts a :class:`Direction` (``FORWARD`` default / ``BACKWARD``).
-        """
-        ...
-    def keys(self, direction: Direction = ...) -> _StateScan[str]:
-        """Async iterator over the keys in key order — the cheap key-only scan.
-
-        Never decodes a value or runs the resolver, so a message-backed map
-        enumerates keys with **zero Kafka fetches**. Not zero-I/O: pulling a
-        chunk still does a presence-only read. Accepts a :class:`Direction`
-        (``FORWARD`` default / ``BACKWARD``). When you also need the values,
-        iterate :meth:`items`; for a known set of keys, call :meth:`get_many`.
-        """
-        ...
-    def values(self) -> _StateScan[V]:
-        """Async iterator over the values in forward key order (forward-only).
-
-        A projection of the full ``(key, value)`` scan that drops the keys.
-        Value iteration inherently decodes and resolves, so it is not the cheap
-        path :meth:`keys` is; it costs the same as :meth:`items`.
-        """
-        ...
-    def __aiter__(self) -> _StateScan[str]:
-        """Forward iteration over the **keys**, like ``dict``.
-
-        Use :meth:`items` when you need the values — one batched, fully-resolving
-        scan — rather than per-key :meth:`get` after key iteration.
-        """
-        ...
-    async def commit(self) -> None:
-        """Durably flush the buffered operations mid-handler.
-
-        Returns ``None`` — the erased core seam drops any store outcome.
-        """
-        ...
-    async def rollback(self) -> None:
-        """Discard buffered uncommitted operations back to the committed floor."""
-        ...
-
-
-class DequeState(Generic[T]):
-    """Typed handle over a double-ended queue.
-
-    Valid only within the handler invocation that vended it. ``size()`` and
-    ``is_empty()`` are methods because ``len`` cannot be async.
-    """
-
-    async def append(self, item: T) -> None:
-        """Append ``item`` at the back.
-
-        Writing ``None`` (JSON ``null``) is rejected with :class:`NullValueError`
-        (transient).
-        """
-        ...
-    async def appendleft(self, item: T) -> None:
-        """Prepend ``item`` at the front.
-
-        Writing ``None`` (JSON ``null``) is rejected with :class:`NullValueError`
-        (transient).
-        """
-        ...
-    async def pop(self) -> Optional[T]:
-        """Remove and return the back element, or ``None`` when empty."""
-        ...
-    async def popleft(self) -> Optional[T]:
-        """Remove and return the front element, or ``None`` when empty."""
-        ...
-    async def peek(self) -> Optional[T]:
-        """Read the back element without removing it, or ``None`` when empty.
-
-        Pairs with :meth:`pop`. An endpoint-*slot* read — ``get(size - 1)`` minus
-        the length round trip. Under a TTL an expired back slot yields ``None``
-        even when live interior elements exist; a peek never searches inward.
-        """
-        ...
-    async def peekleft(self) -> Optional[T]:
-        """Read the front element without removing it, or ``None`` when empty.
-
-        Pairs with :meth:`popleft`; the front-endpoint counterpart of
-        :meth:`peek` (``get(0)`` minus the length round trip).
-        """
-        ...
-    async def get(self, index: int) -> Optional[T]:
-        """Read the element at front-relative ``index``, or ``None`` past the end.
-
-        Negative indices resolve from the back, following Python sequence
-        semantics. An index before the front returns ``None``.
-        """
-        ...
-    async def size(self) -> int:
-        """Number of live elements (named ``size`` because ``len`` cannot be async)."""
-        ...
-    async def is_empty(self) -> bool:
-        """Whether the deque holds no live elements."""
-        ...
-    async def clear(self) -> None:
-        """Remove every element."""
-        ...
-    def values(self, direction: Direction = ...) -> _StateScan[T]:
-        """Async iterator over the elements in index order.
-
-        Accepts a :class:`Direction` (``FORWARD`` default / ``BACKWARD``).
-        """
-        ...
-    def __aiter__(self) -> _StateScan[T]:
-        """Forward iteration over the elements."""
-        ...
-    async def commit(self) -> None:
-        """Durably flush the buffered operations mid-handler.
-
-        Returns ``None`` — the erased core seam drops any store outcome.
-        """
-        ...
-    async def rollback(self) -> None:
-        """Discard buffered uncommitted operations back to the committed floor."""
-        ...
+    def __aiter__(self) -> _StateScan[T]: ...

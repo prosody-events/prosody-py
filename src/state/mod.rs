@@ -9,44 +9,58 @@
 //! Every operation reads the Python-side OpenTelemetry carrier while the GIL is
 //! held, then activates it while polling the erased future off the GIL, letting
 //! core's semantic collection span join the event trace without an extra
-//! `PyO3` binding span. Scans activate the carrier while core constructs its
-//! stream span; pulls transport vectors of up to 256 immediately-ready items
-//! without creating per-chunk binding spans.
+//! `PyO3` binding span. Opening a scan performs no read. Each pull activates
+//! the carrier, and core starts its stream span on the first pull. Pulls
+//! transport vectors of up to 256 immediately-ready items without creating
+//! per-chunk binding spans.
 //!
 //! Errors carry their category structurally: an [`ErasedStateError`] is raised
 //! as `PermanentStateError` or `TransientStateError` by reading its
 //! [`category`](ErasedStateError::category), never by parsing the message. No
 //! fencing or cursor safety lives here — those are core-owned and this layer
 //! only transports and restores types. Caller-mistake conditions the glue
-//! detects (an unrepresentable value, a `null` write, a wrong item shape, an
-//! invalid enum token, an out-of-range index) reject TRANSIENT — a caller code
-//! error retries and stays visible rather than discarding the message.
+//! detects (an unrepresentable value, a wrong item shape) reject TRANSIENT — a
+//! caller code error retries and stays visible rather than discarding the
+//! message. Core rejects a JSON null write as permanent.
 
-use crate::message::MessageCore;
+use crate::message::{MessageCore, PythonRecord};
 use opentelemetry::Context as OtelContext;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::FutureExt;
-use prosody::consumer::Keyed;
 use prosody::consumer::event_context::{
-    BoxDequeState, BoxMapState, BoxStateCursor, BoxValueState, ErasedCategory, ErasedStateError,
+    BoxDequeState, BoxMapState, BoxSetState, BoxValueState, ErasedCategory, ErasedStateError,
+    StateCursor,
 };
 use prosody::consumer::message::ConsumerMessage;
-use prosody::state::Direction;
+use prosody::state::StoreOutcome;
 use pyo3::exceptions::PyStopAsyncIteration;
-use pyo3::gc::{PyTraverseError, PyVisit};
-use pyo3::types::{PyAnyMethods, PyDict, PyString, PyTuple};
-use pyo3::{Bound, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass, pymethods};
+use pyo3::types::{PyAnyMethods, PyDict};
+use pyo3::{
+    Bound, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyRef, PyResult, Python, pyclass,
+    pymethods,
+};
 use pyo3_async_runtimes::tokio::future_into_py;
 use pythonize::{depythonize, pythonize};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
+use std::future::Future;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{Span, debug};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-mod handles;
+mod deque;
+mod map;
+mod query;
+mod set;
+mod value;
 
-pub(crate) use handles::*;
+pub(crate) use deque::{NativeJsonDequeState, NativeMessageDequeState};
+pub(crate) use map::{NativeJsonMapState, NativeMessageMapState};
+pub(crate) use query::{KeyQuery, PositionQuery};
+pub(crate) use set::NativeSetState;
+pub(crate) use value::{NativeJsonValueState, NativeMessageValueState};
 
 /// Maximum number of immediately-ready scan items transported through `PyO3`
 /// in one vector. Core owns ready draining, error ordering, and pull
@@ -57,14 +71,20 @@ const SCAN_READY_CHUNK_SIZE: NonZeroUsize = match NonZeroUsize::new(256) {
     None => NonZeroUsize::MIN,
 };
 
-/// Cheaply-cloned per-handle environment: the OpenTelemetry carrier accessors,
-/// the propagator, the cached Python `Message` class, and the three Python
-/// state-error classes. Every vended handle shares one `Arc`, so cloning it per
-/// vend is a refcount bump.
-#[derive(Clone)]
+/// Cheaply-cloned Python environment: the OpenTelemetry carrier accessors,
+/// the propagator, the Python `Message` class, and the two Python state-error
+/// classes. A client or handler resolves it once. Its contexts, state handles,
+/// readers, and cursors share one `Arc`.
+///
+/// No holder visits these objects for GC traversal. They are module-level
+/// objects that cannot form a cycle through a holder, and many holders share
+/// one reference to each, so a visit from each holder would break the
+/// `tp_traverse` contract.
+#[derive(Clone, Debug)]
 pub(crate) struct StateEnv(Arc<StateEnvInner>);
 
 /// The shared, immutable contents of a [`StateEnv`].
+#[derive(Debug)]
 struct StateEnvInner {
     /// `opentelemetry.context.get_current`.
     get_current: Py<PyAny>,
@@ -78,37 +98,32 @@ struct StateEnvInner {
     permanent_error: Py<PyAny>,
     /// The Python `TransientStateError` class.
     transient_error: Py<PyAny>,
-    /// The Python `NullValueError` class.
-    null_value_error: Py<PyAny>,
+}
+
+struct ScanInner<T> {
+    cursor: StateCursor<T>,
+    retained: VecDeque<T>,
 }
 
 impl StateEnv {
-    /// Resolves the environment at vend time, looking up the three state-error
-    /// classes from the `prosody` package.
-    ///
-    /// The classes are defined in the Python layer; resolving them here (rather
-    /// than at handler init) keeps a client that never vends state working even
-    /// before that layer exists.
+    /// Resolves the OpenTelemetry functions and the `prosody` classes.
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if the `prosody` import or a class lookup fails.
+    /// Returns a `PyErr` if an import or a class lookup fails.
     pub(crate) fn resolve(
         py: Python,
-        get_current: &Py<PyAny>,
-        inject: &Py<PyAny>,
         propagator: Arc<TextMapCompositePropagator>,
-        message_class: &Py<PyAny>,
     ) -> PyResult<Self> {
+        let otel = |module: &str, name: &str| py.import(module)?.getattr(name).map(Bound::unbind);
         let prosody = py.import("prosody")?;
         Ok(Self(Arc::new(StateEnvInner {
-            get_current: get_current.clone_ref(py),
-            inject: inject.clone_ref(py),
+            get_current: otel("opentelemetry.context", "get_current")?,
+            inject: otel("opentelemetry.propagate", "inject")?,
             propagator,
-            message_class: message_class.clone_ref(py),
+            message_class: prosody.getattr("Message")?.unbind(),
             permanent_error: prosody.getattr("PermanentStateError")?.unbind(),
             transient_error: prosody.getattr("TransientStateError")?.unbind(),
-            null_value_error: prosody.getattr("NullValueError")?.unbind(),
         })))
     }
 
@@ -123,26 +138,23 @@ impl StateEnv {
         Ok(inner.propagator.extract(&headers))
     }
 
-    /// Visits the Python handles this environment holds for GC traversal.
+    /// Sets the active Python OpenTelemetry context as the parent of `span`.
     ///
-    /// Takes `visit` by value and returns it so the caller's `__traverse__`
-    /// (whose signature is fixed by `PyO3` to receive `PyVisit` by value)
-    /// consumes it here rather than only borrowing it.
-    fn traverse<'a>(&self, visit: PyVisit<'a>) -> Result<PyVisit<'a>, PyTraverseError> {
-        visit.call(self.0.get_current.as_any())?;
-        visit.call(self.0.inject.as_any())?;
-        visit.call(self.0.message_class.as_any())?;
-        visit.call(self.0.permanent_error.as_any())?;
-        visit.call(self.0.transient_error.as_any())?;
-        visit.call(self.0.null_value_error.as_any())?;
-        Ok(visit)
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the carrier cannot be read.
+    pub(crate) fn set_parent(&self, py: Python, span: &Span) -> PyResult<()> {
+        if let Err(error) = span.set_parent(self.op_context(py)?) {
+            debug!("failed to set parent span: {error:#}");
+        }
+        Ok(())
     }
 }
 
 /// Instantiates a Python exception `class` with `message` and turns it into a
 /// `PyErr`.
-fn raise(py: Python, class: &Py<PyAny>, message: &str) -> PyErr {
-    match class.bind(py).call1((message,)) {
+pub(crate) fn raise(class: &Bound<PyAny>, message: &str) -> PyErr {
+    match class.call1((message,)) {
         Ok(instance) => PyErr::from_value(instance),
         // Constructing the exception itself failed — surface that error.
         Err(error) => error,
@@ -156,46 +168,106 @@ pub(crate) fn state_error(py: Python, env: &StateEnv, error: &ErasedStateError) 
         ErasedCategory::Permanent => &env.0.permanent_error,
         ErasedCategory::Transient => &env.0.transient_error,
     };
-    raise(py, class, error.message())
+    raise(class.bind(py), error.message())
+}
+
+/// Runs one state operation off the GIL and returns its Python awaitable.
+///
+/// The operation runs inside the caller's OpenTelemetry context. An
+/// [`ErasedStateError`] raises by its category. `convert` builds the Python
+/// result under the GIL.
+pub(crate) fn run<'p, F, C, T, R>(
+    py: Python<'p>,
+    env: &StateEnv,
+    operation: F,
+    convert: C,
+) -> PyResult<Bound<'p, PyAny>>
+where
+    F: Future<Output = Result<T, ErasedStateError>> + Send + 'static,
+    C: FnOnce(Python, &StateEnv, T) -> PyResult<R> + Send + 'static,
+    R: for<'py> IntoPyObject<'py> + Send + 'static,
+{
+    let ctx = env.op_context(py)?;
+    let env = env.clone();
+    future_into_py(py, async move {
+        let out = operation.with_context(ctx).await;
+        Python::attach(|py| match out {
+            Ok(value) => convert(py, &env, value),
+            Err(error) => Err(state_error(py, &env, &error)),
+        })
+    })
+}
+
+/// Runs a read of one optional stored item, like [`run`], and converts the
+/// item with `restore`.
+pub(crate) fn run_item<'p, F, T>(
+    py: Python<'p>,
+    env: &StateEnv,
+    read: F,
+    restore: fn(Python, &StateEnv, &T) -> PyResult<Py<PyAny>>,
+) -> PyResult<Bound<'p, PyAny>>
+where
+    F: Future<Output = Result<Option<T>, ErasedStateError>> + Send + 'static,
+    T: 'static,
+{
+    run(py, env, read, move |py, env, item| {
+        item.map(|item| restore(py, env, &item)).transpose()
+    })
 }
 
 /// Builds a `TransientStateError` for a caller-caused condition the glue
-/// detects (an unrepresentable value, a wrong item shape, an invalid enum
-/// token, an out-of-range index).
+/// detects, such as an unrepresentable value or a malformed definition.
 ///
 /// Caller mistakes are TRANSIENT, never permanent: a permanent error discards
 /// the in-flight message and can silently lose data, so a code error retries
 /// and stays visible instead.
-fn transient_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
-    raise(py, &env.0.transient_error, message)
+pub(crate) fn transient_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
+    raise(env.0.transient_error.bind(py), message)
 }
 
-/// Builds a `NullValueError` for a JSON-`null` write (a transient caller
-/// mistake). `null` is not a storable value; `message` is the fully-formed
-/// rejection text (the caller appends the collection's deletion verb).
-fn null_value_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
-    raise(py, &env.0.null_value_error, message)
-}
-
-/// Parses a scan-direction token into the core [`Direction`].
-///
-/// # Errors
-///
-/// Returns a transient error if the token is neither `"forward"` nor
-/// `"backward"` (a caller mistake — retries, not discarded).
-pub(crate) fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> PyResult<Direction> {
-    match direction {
-        "forward" => Ok(Direction::Forward),
-        "backward" => Ok(Direction::Backward),
-        other => Err(transient_error(
-            py,
-            env,
-            &format!("direction: expected \"forward\" or \"backward\", got {other:?}"),
-        )),
+/// Names a commit or rollback outcome with the token of the Python
+/// `StoreOutcome` enum.
+fn outcome_token(outcome: StoreOutcome) -> &'static str {
+    match outcome {
+        StoreOutcome::Applied => "applied",
+        StoreOutcome::NoOp => "no_op",
     }
 }
 
-/// Recovers the consumer message a delivered `Message` carries.
+/// Builds the Python `Message` for a message read out of a collection.
+///
+/// The message carries its [`MessageCore`], so it can be stored into another
+/// collection, and its consumer permit stays held while Python holds it.
+fn build_message(
+    py: Python,
+    env: &StateEnv,
+    message: &ConsumerMessage<Value>,
+) -> PyResult<Py<PyAny>> {
+    message.to_python(py, &env.0.message_class)
+}
+
+/// Prepares a JSON write.
+///
+/// A JSON null passes through. Core rejects a null write as permanent.
+fn json_write_item(py: Python, env: &StateEnv, item: &Bound<PyAny>) -> PyResult<Value> {
+    if item.is_instance(env.0.message_class.bind(py))? {
+        return Err(transient_error(
+            py,
+            env,
+            "a Kafka-message payload cannot be stored in a JSON collection",
+        ));
+    }
+    depythonize::<Value>(item).map_err(|error| {
+        transient_error(
+            py,
+            env,
+            &format!("value is not representable as JSON: {error}"),
+        )
+    })
+}
+
+/// Prepares a Kafka-message write from the consumer message that a delivered
+/// `Message` carries.
 ///
 /// The dataclass fields are not enough to rebuild one, and rebuilding is
 /// forbidden — see [`MessageCore`] for why. Every `Message` prosody hands to a
@@ -204,17 +276,16 @@ pub(crate) fn parse_direction(py: Python, env: &StateEnv, direction: &str) -> Py
 ///
 /// # Errors
 ///
-/// Returns a transient error when the message carries no core message. Storing
+/// Returns a transient error when `item` carries no core message. Storing
 /// something other than a delivered message is a caller mistake, and caller
 /// mistakes reject transient so the event stays visible instead of being
 /// discarded.
-fn consumer_message(
+fn message_write_item(
     py: Python,
     env: &StateEnv,
-    message: &Bound<PyAny>,
+    item: &Bound<PyAny>,
 ) -> PyResult<ConsumerMessage<Value>> {
-    message
-        .getattr("_core")
+    item.getattr("_core")
         .ok()
         .and_then(|core| core.cast_into::<MessageCore>().ok())
         .map(|core| core.get().message())
@@ -222,87 +293,23 @@ fn consumer_message(
             transient_error(
                 py,
                 env,
-                "only a message prosody delivered can be stored; one built in Python carries no \
+                "expected a Kafka message that prosody delivered; one built in Python carries no \
                  Kafka position to store",
             )
         })
 }
 
-/// Positionally constructs the Python `Message`, identical to `handler.rs`.
-///
-/// Carries the resolved message as its [`MessageCore`], so a message read back
-/// out of a collection can be stored into another one and its consumer permit
-/// stays held for as long as Python holds the message.
-fn build_message(
-    py: Python,
-    env: &StateEnv,
-    message: &ConsumerMessage<Value>,
-) -> PyResult<Py<PyAny>> {
-    let payload = pythonize(py, message.payload())?;
-    let core = Py::new(py, MessageCore::new(message.clone()))?;
-    let object = env.0.message_class.bind(py).call1((
-        message.topic().as_ref(),
-        message.partition(),
-        message.offset(),
-        *message.timestamp(),
-        message.key().as_ref(),
-        payload,
-        core,
-    ))?;
-    Ok(object.unbind())
-}
-
-/// Prepares a JSON write.
-fn json_write_item(
-    py: Python,
-    env: &StateEnv,
-    item: &Bound<PyAny>,
-    deletion_advice: &str,
-) -> PyResult<Value> {
-    if item.is_instance(env.0.message_class.bind(py))? {
-        return Err(transient_error(
-            py,
-            env,
-            "a Kafka-message payload cannot be stored in a JSON collection",
-        ));
-    }
-    let value = depythonize::<Value>(item).map_err(|error| {
-        transient_error(
-            py,
-            env,
-            &format!("value is not representable as JSON: {error}"),
-        )
-    })?;
-    if value.is_null() {
-        return Err(null_value_error(
-            py,
-            env,
-            &format!("JSON null is not a storable value{deletion_advice}"),
-        ));
-    }
-    Ok(value)
-}
-
-struct ScanInner<T> {
-    cursor: BoxStateCursor<T>,
-    retained: VecDeque<T>,
-}
-
-fn json_object(py: Python, _env: &StateEnv, value: &Value) -> PyResult<Py<PyAny>> {
+/// Converts a stored JSON value into a Python object.
+pub(crate) fn json_object(py: Python, _env: &StateEnv, value: &Value) -> PyResult<Py<PyAny>> {
     Ok(pythonize(py, value)?.unbind())
 }
 
 fn json_map_entry(
     py: Python,
-    _env: &StateEnv,
+    env: &StateEnv,
     (key, value): &(String, Value),
 ) -> PyResult<Py<PyAny>> {
-    let value = pythonize(py, value)?;
-    Ok(
-        PyTuple::new(py, [PyString::new(py, key).into_any(), value])?
-            .into_any()
-            .unbind(),
-    )
+    (key, json_object(py, env, value)?).into_py_any(py)
 }
 
 fn message_map_entry(
@@ -310,12 +317,7 @@ fn message_map_entry(
     env: &StateEnv,
     (key, message): &(String, ConsumerMessage<Value>),
 ) -> PyResult<Py<PyAny>> {
-    let value = build_message(py, env, message)?.into_bound(py);
-    Ok(
-        PyTuple::new(py, [PyString::new(py, key).into_any(), value])?
-            .into_any()
-            .unbind(),
-    )
+    (key, build_message(py, env, message)?).into_py_any(py)
 }
 
 macro_rules! native_scan {
@@ -328,7 +330,7 @@ macro_rules! native_scan {
         }
 
         impl $name {
-            pub(crate) fn new(cursor: BoxStateCursor<$item>, env: StateEnv) -> Self {
+            pub(crate) fn new(cursor: StateCursor<$item>, env: StateEnv) -> Self {
                 Self {
                     inner: Arc::new(Mutex::new(ScanInner {
                         cursor,
@@ -353,29 +355,26 @@ macro_rules! native_scan {
                 let env = self.env.clone();
                 future_into_py(py, async move {
                     let mut guard = inner.lock().await;
-                    if let Some(item) = guard.retained.front() {
-                        let object = Python::attach(|py| ($restore)(py, &env, item))?;
-                        guard.retained.pop_front();
-                        return Ok(object);
-                    }
-                    let pulled = guard
-                        .cursor
-                        .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
-                        .with_context(ctx)
-                        .await;
-                    match pulled {
-                        Err(error) => Python::attach(|py| Err(state_error(py, &env, &error))),
-                        Ok(None) => Err(PyStopAsyncIteration::new_err(())),
-                        Ok(Some(items)) => {
-                            guard.retained.extend(items);
-                            let Some(item) = guard.retained.front() else {
-                                return Err(PyStopAsyncIteration::new_err(()));
-                            };
-                            let object = Python::attach(|py| ($restore)(py, &env, item))?;
-                            guard.retained.pop_front();
-                            Ok(object)
+                    if guard.retained.is_empty() {
+                        let pulled = guard
+                            .cursor
+                            .next_ready_chunk(SCAN_READY_CHUNK_SIZE)
+                            .with_context(ctx)
+                            .await;
+                        match pulled {
+                            Err(error) => {
+                                return Python::attach(|py| Err(state_error(py, &env, &error)));
+                            }
+                            Ok(None) => return Err(PyStopAsyncIteration::new_err(())),
+                            Ok(Some(items)) => guard.retained.extend(items),
                         }
                     }
+                    let Some(item) = guard.retained.front() else {
+                        return Err(PyStopAsyncIteration::new_err(()));
+                    };
+                    let object = Python::attach(|py| ($restore)(py, &env, item))?;
+                    guard.retained.pop_front();
+                    Ok(object)
                 })
             }
 
@@ -388,11 +387,6 @@ macro_rules! native_scan {
                     guard.cursor.close().await;
                     Ok(())
                 })
-            }
-
-            /// Traverses the Python handles this cursor holds for GC.
-            fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-                self.env.traverse(visit).map(|_| ())
             }
         }
     };
@@ -413,7 +407,5 @@ native_scan!(
 native_scan!(
     NativeMapKeyScan,
     String,
-    |py, _env: &StateEnv, key: &String| {
-        Ok::<Py<PyAny>, PyErr>(PyString::new(py, key).into_any().unbind())
-    }
+    |py, _env: &StateEnv, key: &String| key.into_py_any(py)
 );

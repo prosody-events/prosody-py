@@ -30,12 +30,12 @@ separate stub package. For example, run `mypy your_application/` after installin
 Prosody and mypy. Keyed-state definitions carry their declared value type through
 `Context.state(...)`. `EventHandler[Payload, Response]` preserves both declared types.
 An unsubscripted handler uses `JSONValue` for both types.
-See [Keyed State](#keyed-state-cassandra) for typed examples.
+See [Keyed State](#keyed-state) for typed examples.
 
 ## Quick Start
 
 ```python
-from prosody import Context, EventHandler, Message, ProsodyClient
+from prosody import Context, EventHandler, ExciseMessage, Message, ProsodyClient
 from prosody.message import JSONValue
 import datetime
 
@@ -78,7 +78,7 @@ class MyHandler(EventHandler):
 
 
 # Subscribe to messages using the custom handler
-client.subscribe(MyHandler())
+await client.subscribe(MyHandler())
 
 # Send a message to a topic
 await client.send("my-topic", "message-key", {"content": "Hello, Kafka!"})
@@ -646,10 +646,41 @@ Do not reuse a durable name for a different collection kind or payload type. Cre
 | Collection | JSON payload | Kafka message | Main operations |
 | --- | --- | --- | --- |
 | Value | `value` | `message_value` | `get`, `set`, `clear` |
-| Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `set`, `remove`, `items`, `keys`, `clear` |
+| Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `set`, `remove`, `items`, `keys`, `values`, `clear` |
+| Ordered string set | `set` | - | `add`, `discard`, `contains`, `contains_many`, `is_empty`, `members`, `clear` |
 | Deque | `deque` | `message_deque` | `append`, `appendleft`, `pop`, `popleft`, `get`, `size`, `values`, `clear` |
 
-All operations are asynchronous. Map and deque scans use `async for`. Map keys are strings.
+All operations are asynchronous. Map, set, and deque scans use `async for`. Map keys and set members are strings. A set stores only its members.
+
+The `map` and `set` constructors share their names with Python built-ins. Import them under other names, such as `from prosody import set as set_state`, when a module also uses the built-ins.
+
+### Query a part of a collection
+
+Map, set, and deque scans accept keyword options. Prosody applies them in storage, so a scan reads only the selected entries:
+
+- `prefix` keeps map keys or set members that start with a string.
+- `from_` and `after` start at a key, or after it. `to` and `before` stop at a key, or before it.
+- `range` keeps map keys or set members in a `slice` of keys, such as `range=slice("a", "m")`. It is an ascending half-open span that applies in either direction. A `None` bound leaves that end open, so `slice("m", None)` keeps every key from `"m"` up. The span and the edges combine, and the scan keeps only the keys that both select.
+- `limit` returns at most that number of items.
+- Deque scans take positions from the front instead of keys. They also take `range`: an ascending span of positions, given as a `range` or a `slice` such as `range=slice(2, 5)`. The span applies in either direction, so `values(Direction.BACKWARD, range=slice(None, 3))` yields positions 2, 1, and 0. An empty span yields nothing.
+
+The edges follow the scan direction, so a `Direction.BACKWARD` scan starts at the high end. Options narrow a scan and never widen it. Positions cannot be negative: a negative position, or a `range` or `slice` with a negative bound or a step other than 1, raises `ValueError`. A key `range` that is not a `slice`, or that has a bound other than a string or `None`, raises `TypeError`. A key `range` with a step raises `ValueError`. To read the last N elements of a deque, call `values(Direction.BACKWARD, limit=N)`. `get(index)` still accepts negative indexes.
+
+To read a large map one page at a time, pass the last key of each page as `after`:
+
+```python
+async def order_pages(context: Context) -> None:
+    orders = context.state(ORDERS)
+    last: Optional[str] = None
+    while True:
+        page = [key async for key in orders.keys(after=last, limit=100)]
+        if not page:
+            break
+        await process(page)
+        last = page[-1]
+```
+
+An option of the wrong type, such as `limit=1.5`, raises `TypeError`. A bad value raises `ValueError`: both `from_` and `after`, both `to` and `before`, a `limit` below 1, or a number above the platform maximum.
 
 `None` means absence. Do not store this value. Use `clear()` or `remove()`. Payload annotations guide the type checker but do not validate data.
 
@@ -662,6 +693,20 @@ This transaction applies only to keyed state. Some workflows need state changes 
 - `read_uncommitted=True` persists keyed-state changes before Prosody records the event as complete. If the process stops between these steps, Prosody can process the same event again. The retry sees state changes from the earlier attempt. You must make these keyed-state changes idempotent. Each retry must produce the same state.
 - `await state.commit()` commits the collection's pending changes before the handler ends. A later handler failure does not remove them.
 - `await state.rollback()` discards pending changes since the last `commit()`. It cannot undo committed changes.
+
+Both calls return a `StoreOutcome`. `StoreOutcome.APPLIED` means the call wrote or discarded pending changes. `StoreOutcome.NO_OP` means nothing was pending.
+
+### Retries
+
+`context.demand` tells a handler why the current attempt runs. It is a `Demand` with a `kind` and a `retry` count. `DemandKind.NORMAL` has `retry == 0`. `DemandKind.FAILURE` marks a retry after a failure, and `retry` is 1 on the first retry.
+
+```python
+async def on_message(self, context: Context, message: Message) -> None:
+    if context.demand.kind is DemandKind.FAILURE:
+        log.warning("retry %d for %s", context.demand.retry, message.key)
+```
+
+The count is an estimate. It restarts at 1 when Prosody defers an event after immediate retries. Keep an exact attempt count in keyed state if a handler needs one.
 
 ### Published state
 
@@ -684,7 +729,7 @@ current_order = context.state(CURRENT_ORDER)
 await current_order.set({"sku": "book"})
 ```
 
-Read published state from a handler or other application code. The Prosody client does not need an active subscription.
+Read published state from a handler or other application code. The Prosody client does not need an active subscription. A client that only reads published state does not need `subscribed_topics`.
 
 Use the subsystem and the same definition to open a reader:
 
@@ -695,7 +740,7 @@ current_order = await order_reader.get("customer-123")
 
 The reader cannot see pending changes that exist only in a handler. It cannot change the collection. Each read takes an explicit key because no handler supplies one.
 
-Map and deque readers fetch data in chunks. They do not load the complete collection before iteration starts.
+Map, set, and deque readers fetch data in chunks. They do not load the complete collection before iteration starts. Their scans accept the same query options as the handler scans.
 
 The default cache window is five seconds. Set `read_cache=timedelta(...)` to select a different window. Set `read_cache=False` to bypass the cache.
 
@@ -715,9 +760,9 @@ all traces to Python.
 To use OpenTelemetry tracing with Prosody, you need to install the following packages:
 
 ```
-opentelemetry-sdk>=1.26.0
-opentelemetry-api>=1.26.0
-opentelemetry-exporter-otlp-proto-grpc>=1.26.0
+opentelemetry-sdk>=1.45.0
+opentelemetry-api>=1.45.0
+opentelemetry-exporter-otlp-proto-grpc>=1.45.0
 ```
 
 ### Initializing Tracing
@@ -745,7 +790,7 @@ Set the following standard OpenTelemetry environment variables:
 
 ```
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 OTEL_SERVICE_NAME=my-service-name
 ```
 
@@ -838,6 +883,16 @@ Call `shutdown()` when the application terminates. It stops all client services 
 await client.shutdown()
 ```
 
+Use the client as an async context manager. The `async with` block calls `shutdown()` when it exits, also when an exception stops it:
+
+```python
+async with await ProsodyClient.create(subscribed_topics="my-topic") as client:
+    await client.subscribe(MyHandler())
+    await run_until_stopped()
+```
+
+Repeated and concurrent `shutdown()` calls await the same operation, so an explicit `shutdown()` inside the block is safe.
+
 Handle application shutdown with an asyncio event:
 
 ```python
@@ -856,19 +911,16 @@ async def main():
             sig, lambda s=sig: asyncio.create_task(shutdown(shutdown_event, s))
         )
 
-    client = await ProsodyClient.create(
+    async with await ProsodyClient.create(
         bootstrap_servers="localhost:9092",
         group_id="my-consumer-group",
         subscribed_topics="my-topic"
-    )
+    ) as client:
+        # Subscribe with the application handler.
+        await client.subscribe(MyHandler())
 
-    # Subscribe with the application handler.
-    client.subscribe(MyHandler())
-
-    # Wait for a shutdown signal.
-    await shutdown_event.wait()
-
-    await client.shutdown()
+        # Wait for a shutdown signal. The block then shuts the client down.
+        await shutdown_event.wait()
 
 
 async def shutdown(event: asyncio.Event, signal: signal.Signals):
@@ -890,7 +942,7 @@ The error classes and decorators apply to `on_message`, `on_excise`, and `on_tim
 Use the `@permanent` decorator to classify exceptions that should not be retried:
 
 ```python
-from prosody import EventHandler, Context, Message, permanent
+from prosody import Context, EventHandler, ExciseMessage, Message, Timer, permanent
 
 
 class MyHandler(EventHandler):
@@ -1037,7 +1089,7 @@ PROSODY_TOPIC_RETENTION=7d                   # Retention as humantime string (7d
 Await client operations unless an entry returns a property or an async iterator.
 
 - `await ProsodyClient.create(**config) -> ProsodyClient`: Create a client without blocking the event loop.
-- `send(topic: str, key: str, payload: JSONValue) -> None`: Send a JSON-serializable message.
+- `send(topic: str, key: str, payload: JSONInput) -> None`: Send a JSON-serializable message. `JSONInput` (from `prosody.message`) accepts any `Mapping[str, object]` or `Sequence`, such as a `TypedDict`. Values that the client returns use `JSONValue`.
 - `excise(topic: str, key: str) -> None`: Send an excise record for a key.
 - `request(topic, key, payload, *, subsystems, timeout) -> dict[str, Outcome[JSONValue]]`: Return one outcome for each subsystem.
 - `request_excise(topic, key, *, subsystems, timeout) -> dict[str, Outcome[JSONValue]]`: Return one excise outcome for each subsystem.
@@ -1047,10 +1099,12 @@ Await client operations unless an entry returns a property or an async iterator.
 - `source_system: str`: Get the configured source system identifier.
 - `state(subsystem: str, definition: ValueDefinition[T]) -> PublishedValue[T]`: Open a read-only published value.
 - `state(subsystem: str, definition: MapDefinition[V]) -> PublishedMap[V]`: Open a read-only published map.
+- `state(subsystem: str, definition: SetDefinition) -> PublishedSet`: Open a read-only published set.
 - `state(subsystem: str, definition: DequeDefinition[T]) -> PublishedDeque[T]`: Open a read-only published deque.
 - `subscribe(handler: EventHandler[P, R]) -> None`: Start event processing with the specified handler.
 - `unsubscribe() -> None`: Stop the consumer. You can subscribe again later.
 - `shutdown() -> None`: Stop all client services. Concurrent and repeated calls await the same operation.
+- `async with await ProsodyClient.create(**config) as client`: Call `shutdown()` when the block exits.
 
 ### AdminClient
 
@@ -1099,6 +1153,8 @@ Represents a Kafka message as a frozen dataclass with the following attributes:
 - `timestamp: datetime`: The timestamp when the message was created or sent.
 - `key: str`: The message key.
 - `payload: P`: The typed message payload. `ExciseMessage` has no payload attribute.
+- `source_system: Optional[str]`: The system that produced the message, or `None` when the record has no source system header.
+- `response_requested: bool`: `True` when a request expects a response from this handler. For an ordinary event, Prosody discards the handler result.
 
 `Message[P]` defaults to `Message[JSONValue]`. Supplying a `TypedDict` payload
 specialization gives field-level checking without runtime model construction or
@@ -1106,7 +1162,7 @@ validation.
 
 ### ExciseMessage
 
-An `ExciseMessage` has `topic`, `partition`, `offset`, `timestamp`, and `key` attributes. It has no `payload` attribute.
+An `ExciseMessage` has `topic`, `partition`, `offset`, `timestamp`, `key`, `source_system`, and `response_requested` attributes. It has no `payload` attribute.
 
 ### Context
 
@@ -1119,7 +1175,8 @@ Represents the current event context:
 - `scheduled() -> List[datetime]`: Returns a list of all scheduled timer times
 - `should_cancel() -> bool`: Check if cancellation has been requested (includes timeout and shutdown)
 - `on_cancel() -> None`: Completes when cancellation occurs
-- `state(definition) -> ValueState[T] | MapState[V] | DequeState[T]`: Bind a registered collection for the current attempt. Message definitions return handles that contain `Message[P]`. An unregistered or mismatched definition raises `PermanentStateError`. See [Keyed State](#keyed-state-2).
+- `demand: Demand`: Why this attempt runs. See [Retries](#retries).
+- `state(definition) -> ValueState[T] | MapState[V] | SetState | DequeState[T]`: Bind a registered collection for the current attempt. Message definitions return handles that contain `Message[P]`. An unregistered or mismatched definition raises `PermanentStateError`. See [Keyed State](#keyed-state).
 
 ### Timer
 
@@ -1142,10 +1199,11 @@ Represents a timer that has fired, provided to the `on_timer` method:
 
 ### Keyed State
 
-Definition constructors return frozen objects used both in `state_collections` and with `context.state()`. JSON definitions accept `published` and `read_cache` in addition to the options below:
+Definition constructors return frozen objects used both in `state_collections` and with `context.state()`. JSON and set definitions accept `published` and `read_cache` in addition to the options below:
 
 - `value(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None) -> ValueDefinition[T]`
 - `map(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, keyset_limit=None) -> MapDefinition[V]`
+- `set(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, keyset_limit=None) -> SetDefinition`
 - `deque(name, *, ttl=None, read_uncommitted=None, published=None, read_cache=None, capacity=None) -> DequeDefinition[T]`
 - `message_value(name, *, ttl=None, read_uncommitted=None) -> MessageValueDefinition[P]`
 - `message_map(name, *, ttl=None, read_uncommitted=None, keyset_limit=None) -> MessageMapDefinition[P]`
@@ -1153,30 +1211,47 @@ Definition constructors return frozen objects used both in `state_collections` a
 
 Each definition type provides `to_config()`. It returns an entry for `state_collections`.
 
-All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`. JSON definitions also expose `published` and `read_cache`. Map definitions expose `keyset_limit`. Deque definitions expose `capacity`.
+All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`. JSON and set definitions also expose `published` and `read_cache`. Map and set definitions expose `keyset_limit`. Deque definitions expose `capacity`.
+
+Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accept the keyword options `prefix`, `from_`, `after`, `to`, `before`, `range`, and `limit`. Deque scans accept `from_`, `after`, `to`, `before`, `range`, and `limit` with positions. See [Query a part of a collection](#query-a-part-of-a-collection).
 
 `ValueState[T]`:
 
 - `get() -> Optional[T]`
 - `set(value: T) -> None`
 - `clear() -> None`
-- `commit() -> None`
-- `rollback() -> None`
+- `commit() -> StoreOutcome`
+- `rollback() -> StoreOutcome`
 
 `MapState[V]` (keys are `str`):
 
 - `get(key: str, default=None) -> Optional[V] | default` — default only on absence
 - `contains(key: str) -> bool` — test whether the map contains the key
 - `get_many(keys: List[str]) -> List[Optional[V]]`
+- `contains_many(keys: List[str]) -> List[bool]` — test several keys in one batch
+- `is_empty() -> bool`
 - `set(key: str, value: V) -> None`
 - `remove(key: str) -> None`
 - `clear() -> None`
-- `items(direction=Direction.FORWARD)` — async iterator over `(str, V)` entries
-- `keys(direction=Direction.FORWARD)` — async iterator over `str` keys
-- `values()` — async iterator over `V` values (forward-only)
+- `items(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, range=None, limit=None)` — async iterator over `(str, V)` entries
+- `keys(direction=Direction.FORWARD, *, ...)` — async iterator over `str` keys, with the same options
+- `values(direction=Direction.FORWARD, *, ...)` — async iterator over `V` values, with the same options
 - `__aiter__()` — forward async iteration over `str` keys (like `dict`)
-- `commit() -> None`
-- `rollback() -> None`
+- `commit() -> StoreOutcome`
+- `rollback() -> StoreOutcome`
+
+`SetState` (members are `str`):
+
+- `add(member: str) -> None`
+- `discard(member: str) -> None` — no effect when the member is absent
+- `contains(member: str) -> bool`
+- `contains_many(members: List[str]) -> List[bool]`
+- `is_empty() -> bool`
+- `clear() -> None`
+- `members(direction=Direction.FORWARD, *, prefix=None, from_=None, after=None, to=None, before=None, range=None, limit=None)` — async iterator over `str` members
+- `__aiter__()` — forward async iteration over `str` members
+- `commit() -> StoreOutcome`
+- `rollback() -> StoreOutcome`
 
 `DequeState[T]`:
 
@@ -1190,21 +1265,24 @@ All definitions expose `name`, `kind`, `payload`, `ttl`, and `read_uncommitted`.
 - `is_empty() -> bool`
 - `clear() -> None`
 - `get(index: int) -> Optional[T]`
-- `values(direction=Direction.FORWARD)` — async iterator over `T` elements
+- `values(direction=Direction.FORWARD, *, from_=None, after=None, to=None, before=None, range=None, limit=None)` — async iterator over `T` elements
 - `__aiter__()` — forward async iteration over `T` elements
-- `commit() -> None`
-- `rollback() -> None`
+- `commit() -> StoreOutcome`
+- `rollback() -> StoreOutcome`
 
 `Direction`: an enum with `Direction.FORWARD` and `Direction.BACKWARD`.
 
-Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `items`, `keys`, and `values`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, and `values` return async iterators directly.
+`StoreOutcome`: an enum with `StoreOutcome.APPLIED` and `StoreOutcome.NO_OP`.
+
+`Demand`: a frozen dataclass with `kind: DemandKind` and `retry: int`. `DemandKind` is an enum with `DemandKind.NORMAL` and `DemandKind.FAILURE`.
+
+Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `items`, `keys`, and `values`. `PublishedSet` provides `contains`, `contains_many`, `is_empty`, and `members`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, `values`, and `members` return async iterators directly and accept the handler query options.
 
 Errors:
 
 - `StateError`: Base class for all keyed-state errors. Catch it to handle both error categories.
 - `TransientStateError` (subclasses `TransientError`): Reports a keyed-state error that Prosody can retry.
-- `NullValueError` (subclasses `TransientStateError` and `ValueError`): a `None` / JSON-`null` write; use `clear()` / `remove(key)` to delete instead.
-- `PermanentStateError` (subclasses `PermanentError`): Reports a keyed-state error that another attempt cannot resolve.
+- `PermanentStateError` (subclasses `PermanentError`): Reports a keyed-state error that another attempt cannot resolve. A `None` (JSON `null`) write raises it; use `clear()` or `remove(key)` to delete.
 
 Handler error types and decorators:
 

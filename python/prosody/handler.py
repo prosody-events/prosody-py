@@ -36,7 +36,7 @@ def _get_sentry():
             )
         _sentry = sentry_sdk
     except ImportError:
-        _log.error("SENTRY_DSN is set but sentry-sdk is not installed. Run: pip install 'prosody[sentry]'")
+        _log.error("SENTRY_DSN is set but sentry-sdk is not installed. Run: pip install 'prosody-events[sentry]'")
     return _sentry
 
 

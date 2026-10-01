@@ -5,15 +5,16 @@ This module provides type information and documentation for the Prosody library,
 which offers high-performance Python bindings for Kafka message handling.
 """
 from datetime import timedelta
-from typing import AsyncIterator, Dict, Generic, List, Literal, Mapping, Optional, Sequence, TypeAlias, TypeVar, Union
+from typing import AsyncIterator, Dict, List, Literal, Mapping, Optional, Sequence, TypeAlias, TypeVar, Union
 from typing_extensions import Self
 
 from prosody import EventHandler
-from prosody.message import Message
+from prosody.message import JSONInput, JSONValue
 from prosody.request import Outcome
 from prosody.state import (
     DequeDefinition,
     MapDefinition,
+    SetDefinition,
     MessageDequeDefinition,
     MessageMapDefinition,
     MessageValueDefinition,
@@ -29,22 +30,13 @@ V = TypeVar("V")
 StateDefinition: TypeAlias = Union[
     ValueDefinition[object],
     MapDefinition[object],
+    SetDefinition,
     DequeDefinition[object],
     MessageValueDefinition[object],
     MessageMapDefinition[object],
     MessageDequeDefinition[object],
 ]
 
-# Define a JSONValue type that represents all possible JSON-serializable values
-JSONValue: TypeAlias = Union[
-    None,
-    bool,
-    int,
-    float,
-    str,
-    List['JSONValue'],
-    Dict[str, 'JSONValue']
-]
 
 # Define a Duration type alias for time-related parameters
 Duration: TypeAlias = Union[float, timedelta]
@@ -59,38 +51,6 @@ def flush_telemetry() -> None:
 def shutdown_telemetry() -> None:
     """Exports buffered telemetry and shuts down the process-global pipeline."""
     ...
-
-
-class _NativePublishedValue(Generic[T]):
-    async def get(self, key: str) -> Optional[T]: ...
-
-class _NativeScan(Generic[T]):
-    def __aiter__(self) -> _NativeScan[T]: ...
-    async def __anext__(self) -> T: ...
-    async def aclose(self) -> None: ...
-
-class NativeJsonDequeScan(_NativeScan[JSONValue]): ...
-class NativeJsonMapScan(_NativeScan[tuple[str, JSONValue]]): ...
-class NativeMessageDequeScan(_NativeScan[Message[JSONValue]]): ...
-class NativeMessageMapScan(_NativeScan[tuple[str, Message[JSONValue]]]): ...
-class NativeMapKeyScan(_NativeScan[str]): ...
-
-
-class _NativePublishedMap(Generic[V]):
-    async def get(self, key: str, map_key: str) -> Optional[V]: ...
-    async def get_many(self, key: str, map_keys: List[str]) -> List[Optional[V]]: ...
-    async def contains_key(self, key: str, map_key: str) -> bool: ...
-    async def scan(self, key: str, direction: str) -> NativeJsonMapScan: ...
-    async def keys(self, key: str, direction: str) -> NativeMapKeyScan: ...
-
-
-class _NativePublishedDeque(Generic[T]):
-    async def get(self, key: str, index: int) -> Optional[T]: ...
-    async def len(self, key: str) -> int: ...
-    async def is_empty(self, key: str) -> bool: ...
-    async def peek_front(self, key: str) -> Optional[T]: ...
-    async def peek_back(self, key: str) -> Optional[T]: ...
-    async def scan(self, key: str, direction: str) -> NativeJsonDequeScan: ...
 
 
 class _ProsodyClientApi:
@@ -121,6 +81,7 @@ class _ProsodyClientApi:
             shutdown_timeout: Optional[Duration] = None,
             poll_interval: Optional[Duration] = None,
             commit_interval: Optional[Duration] = None,
+            statistics_interval: Optional[Duration] = None,
             mode: Optional[Literal['pipeline', 'low-latency', 'best-effort']] = None,
             retry_base: Optional[Duration] = None,
             max_retries: Optional[int] = None,
@@ -168,98 +129,25 @@ class _ProsodyClientApi:
             state_collections: Optional[Sequence[StateDefinition]] = None,
             state_cache_dir: Optional[str] = None,
             state_owned_cache_size: Optional[str] = None,
+            state_memtable_size: Optional[str] = None,
             state_read_cache_size: Optional[str] = None,
             state_read_cache: Optional[Union[Duration, Literal[False]]] = None,
-            state_recovery_delay: Optional[Duration] = None,
             subsystem: Optional[str] = None,
             peer_bind_address: Optional[str] = None,
             peer_advertised_connect: Optional[str] = None,
             peer_network_name: Optional[str] = None,
             peer_cache_capacity: Optional[int] = None,
             peer_registration_ttl: Optional[Duration] = None,
-    ) -> Self:
-        """
-        Create a Prosody client without blocking the Python event loop.
+    ) -> Self: ...
 
-        Args:
-            bootstrap_servers: Kafka servers for initial connection.
-            mock: Use mock client for testing if True.
-            source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
-            send_timeout: Timeout for message send operations.
-            group_id: Consumer group name.
-            idempotence_cache_size: Global shared cache capacity across all partitions for message deduplication. Must be at least 1. Default: 8192.
-            idempotence_version: Version string for cache-busting deduplication hashes. Changing this invalidates all previously recorded entries. Default: "1".
-            idempotence_ttl: TTL for deduplication records in Cassandra. Default: 7 days.
-            subscribed_topics: Topics to subscribe to.
-            allowed_events: Allowed event type prefixes. All are allowed if unset.
-            max_concurrency: Maximum global concurrency limit.
-            max_uncommitted: Max number of uncommitted messages.
-            stall_threshold: Threshold determining when message processing has stalled.
-            shutdown_timeout: Shutdown budget; handlers complete freely before cancellation fires near the deadline.
-            poll_interval: Time between message polls.
-            commit_interval: Time between offset commits.
-            mode: Operating mode ('pipeline', 'low-latency', or 'best-effort').
-            retry_base: Initial delay for exponential backoff in retries.
-            max_retries: Low-latency retries before routing to the failure topic. Zero routes the initial failure without retrying.
-            max_retry_delay: Maximum delay between retries.
-            failure_topic: Topic for failed messages in low-latency mode.
-            probe_port: Port for the probe server. Explicitly pass None to disable.
-            slab_size: Timer slab partitioning duration. Controls how timers are grouped.
-            cassandra_nodes: List of Cassandra contact nodes (hostnames or IPs with optional ports).
-            cassandra_keyspace: Keyspace used for persistent Prosody data. Defaults to 'prosody'.
-            cassandra_datacenter: Preferred datacenter for query routing and load balancing.
-            cassandra_rack: Preferred rack identifier for topology-aware routing.
-            cassandra_user: Username for authenticating with Cassandra cluster.
-            cassandra_password: Password for authenticating with Cassandra cluster.
-            cassandra_retention: Retention period for persistent timer and deferral data. Defaults to 1 year.
-            scheduler_failure_weight: Target proportion of execution time for failure/retry task processing (0.0 to 1.0).
-            scheduler_max_wait: Wait duration at which urgency boost reaches maximum intensity.
-            scheduler_wait_weight: Maximum urgency boost (in seconds of virtual time) for waiting tasks.
-            scheduler_cache_size: Cache capacity for tracking per-key virtual time in the scheduler.
-            monopolization_enabled: Whether monopolization detection is enabled.
-            monopolization_threshold: Threshold for monopolization detection (0.0 to 1.0).
-            monopolization_window: Rolling window duration for monopolization detection.
-            monopolization_cache_size: Cache size for tracking key execution intervals.
-            defer_enabled: Whether deferral is enabled for transient failures.
-            defer_base: Base exponential backoff delay for deferred retries.
-            defer_max_delay: Maximum delay between deferred retries.
-            defer_failure_threshold: Failure rate threshold for disabling deferral (0.0 to 1.0).
-            defer_failure_window: Sliding window duration for failure rate tracking.
-            loader_cache_size: Maximum messages retained by the shared Kafka loader. Env: PROSODY_LOADER_CACHE_SIZE. Defaults to 1024.
-            defer_store_cache_size: Maximum deferred store cache entries (default: 8192). Env: PROSODY_DEFER_STORE_CACHE_SIZE.
-            loader_seek_timeout: Timeout for Kafka loader seek operations. Env: PROSODY_LOADER_SEEK_TIMEOUT. Defaults to 30 seconds.
-            loader_discard_threshold: Sequential-read distance before the loader seeks. Env: PROSODY_LOADER_DISCARD_THRESHOLD. Defaults to 100.
-            timeout: Fixed timeout duration for handler execution. Defaults to 80% of stall threshold.
-            telemetry_topic: Kafka topic to produce internal telemetry events to. Defaults to 'prosody.telemetry-events'.
-            telemetry_enabled: Whether the telemetry emitter is enabled. Defaults to True.
-            message_spans: Span linking for message execution ('child' or 'follows_from'). Defaults to 'child'.
-            timer_spans: Span linking for timer execution ('child' or 'follows_from'). Defaults to 'follows_from'.
-            state_collections: Keyed-state collections to register before subscribe. Pass the definition objects from `value`/`map`/`deque`/`message_value`/`message_map`/`message_deque`; each serializes into a collection config entry. Duplicate names are rejected.
-            state_cache_dir: Disk workspace for the local keyed-state cache; each live client needs its own directory (it is locked exclusively). Env: PROSODY_STATE_CACHE_DIR. Defaults to a per-client temp dir.
-            state_owned_cache_size: Capacity of the owning keyed-state cache, such as ``"64 MiB"``. Env: ``PROSODY_STATE_OWNED_CACHE_SIZE``. The storage engine selects its default when neither is set.
-            state_read_cache_size: Capacity of the published-state read cache, such as ``"1 MiB"``. Env: ``PROSODY_STATE_READ_CACHE_SIZE``. Uses the owned cache size when set, or 1 MiB when both sizes are unset.
-            state_read_cache: Default published-read cache TTL, or `False` to bypass the cache. Env: ``PROSODY_STATE_READ_CACHE_TTL``. Defaults to 5 seconds.
-            state_recovery_delay: Delay before the keyed-state recovery sweep; every collection TTL must strictly exceed it. Whole seconds >= 1 (a `timedelta` or float seconds). Env: PROSODY_STATE_RECOVERY_DELAY. Defaults to 30s.
-            subsystem: Name under which published JSON collections are advertised. Env: ``PROSODY_SUBSYSTEM``. Published collections require it.
-            peer_bind_address: Socket address for the peer listener. Prosody reads ``PROSODY_PEER_BIND_ADDRESS`` when absent.
-            peer_advertised_connect: Connect URI for remote peers. Prosody reads ``PROSODY_PEER_ADVERTISED_CONNECT`` when absent.
-            peer_network_name: Network name for direct routes. Prosody reads ``PROSODY_PEER_NETWORK_NAME`` when absent.
-            peer_cache_capacity: Maximum entries in each peer cache. Prosody reads ``PROSODY_PEER_CACHE_CAPACITY`` when absent.
-            peer_registration_ttl: Peer registration lease. Prosody reads ``PROSODY_PEER_REGISTRATION_TTL`` when absent.
-        Raises:
-            ValueError: If the configuration is invalid.
-            RuntimeError: If the client fails to initialize.
-        """
-        ...
-
-    async def send(self, topic: str, key: str, payload: JSONValue) -> None:
+    async def send(self, topic: str, key: str, payload: JSONInput) -> None:
         """
         Send a message to a specified topic.
 
         Args:
             topic (str): The topic to which the message should be sent.
             key (str): The key associated with the message.
-            payload (JSONValue): The content of the message (must be JSON-serializable).
+            payload (JSONInput): The content of the message (must be JSON-serializable).
 
         Raises:
             RuntimeError: If there's an error sending the message.
@@ -274,10 +162,10 @@ class _ProsodyClientApi:
         self,
         topic: str,
         key: str,
-        payload: JSONValue,
+        payload: JSONInput,
         *,
         subsystems: Sequence[str],
-        timeout: timedelta,
+        timeout: Duration,
     ) -> dict[str, Outcome[JSONValue]]:
         """Return one outcome for each subsystem.
 
@@ -295,7 +183,7 @@ class _ProsodyClientApi:
         key: str,
         *,
         subsystems: Sequence[str],
-        timeout: timedelta,
+        timeout: Duration,
     ) -> dict[str, Outcome[JSONValue]]:
         """Return one excise outcome for each subsystem."""
         ...
@@ -309,16 +197,6 @@ class _ProsodyClientApi:
             The current state.
         """
         ...
-
-    async def _published_value(
-        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
-    ) -> _NativePublishedValue[JSONValue]: ...
-    async def _published_map(
-        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
-    ) -> _NativePublishedMap[JSONValue]: ...
-    async def _published_deque(
-        self, subsystem: str, name: str, *, read_cache: Optional[Union[Duration, Literal[False]]] = None
-    ) -> _NativePublishedDeque[JSONValue]: ...
 
     async def subscribe(self, handler: EventHandler[P, R]) -> None:
         """
@@ -446,7 +324,7 @@ class AdminClient:
             partition_count: Number of partitions for the topic. Uses broker default if not specified.
             replication_factor: Replication factor for the topic. Uses broker default if not specified.
             cleanup_policy: Cleanup policy ("delete", "compact", "delete,compact"). Uses cluster default if not specified.
-            retention: Message retention time. Can be a timedelta object, float seconds, or duration string.
+            retention: Message retention time as a timedelta or float seconds.
                       Uses cluster default if not specified.
 
         Raises:

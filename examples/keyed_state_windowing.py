@@ -1,4 +1,4 @@
-"""Type-checked burst-batching example (README §3.2, in Python).
+"""Type-checked burst-batching example from the README.
 
 Exercised by ``mypy`` as a CI gate so the fuller README example stays honest: a
 per-key ``value`` flag plus a capacity-bounded ``message_deque`` batch a burst of
@@ -38,9 +38,11 @@ async def notify(user_id: str, activities: List["Message[Activity]"]) -> None:
 
 # Declare the collections once, at module scope; register both on the client via
 # ``state_collections=[WINDOW, PENDING]``.
-WINDOW: ValueDefinition[bool] = value("window")  # is a batch open for this user?
+WINDOW: ValueDefinition[bool] = value(
+    "window", ttl=timedelta(days=1)
+)  # is a batch open for this user?
 PENDING: MessageDequeDefinition[Activity] = message_deque(
-    "pending", capacity=100
+    "pending", capacity=100, ttl=timedelta(days=1)
 )  # keep the latest 100 messages
 
 

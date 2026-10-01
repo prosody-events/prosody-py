@@ -7,6 +7,9 @@ from typing_extensions import TypedDict, assert_type
 
 from prosody import (
     Context,
+    Demand,
+    DemandKind,
+    Direction,
     EventHandler,
     ExciseMessage,
     Failure,
@@ -16,11 +19,18 @@ from prosody import (
     Outcome,
     ProsodyClient,
     ProsodyHandler,
+    PublishedSet,
+    SetDefinition,
+    SetState,
+    StoreOutcome,
     Success,
     Timer,
+    deque,
     map,
     message_deque,
+    set,
     transient,
+    value,
 )
 from prosody.message import JSONValue
 
@@ -33,8 +43,12 @@ class Response(TypedDict):
     accepted: bool
 
 
+CART = value("cart")
+LABELS = map("labels")
+LOG = deque("log")
 TOTALS: MapDefinition[int] = map("totals")
 EVENTS: MessageDequeDefinition[Event] = message_deque("events", capacity=10)
+TAGS: SetDefinition = set("tags", keyset_limit=64)
 
 
 @transient(ValueError)
@@ -62,18 +76,41 @@ class DefaultHandler(EventHandler):
 class Handler(EventHandler[Event, Response]):
     async def on_excise(self, context: Context, message: ExciseMessage) -> Response:
         assert_type(message, ExciseMessage)
+        assert_type(message.source_system, Optional[str])
+        assert_type(message.response_requested, bool)
         return {"accepted": True}
 
     async def on_message(self, context: Context, message: Message[Event]) -> Response:
+        assert_type(message.source_system, Optional[str])
+        assert_type(message.response_requested, bool)
         totals = context.state(TOTALS)
         assert_type(await totals.get(message.key), Optional[int])
         assert_type(await totals.get(message.key, 0), int)
         assert_type(await totals.contains(message.key), bool)
         async for key in totals:
             assert_type(key, str)
+        async for entry in totals.items(Direction.BACKWARD, prefix="a", after="a1", limit=5):
+            assert_type(entry, tuple[str, int])
+        assert_type(await totals.contains_many(["a"]), list[bool])
+        assert_type(await totals.is_empty(), bool)
+        assert_type(await totals.commit(), StoreOutcome)
+
+        tags = context.state(TAGS)
+        assert_type(tags, SetState)
+        await tags.add("a")
+        await tags.discard("a")
+        assert_type(await tags.contains_many(["a"]), list[bool])
+        async for member in tags.members(from_="a", before="z", range=slice("b", None)):
+            assert_type(member, str)
+        assert_type(await tags.rollback(), StoreOutcome)
+        assert_type(context.demand, Demand)
+        assert_type(context.demand.kind, DemandKind)
+        assert_type(context.demand.retry, int)
 
         events = context.state(EVENTS)
         await events.append(message)
+        async for item in events.values(range=slice(0, 5), limit=2):
+            assert_type(item, Message[Event])
         event = await events.peek()
         assert_type(event, Optional[Message[Event]])
         if event is not None:
@@ -89,8 +126,18 @@ assert_type(wrapped_handler, ProsodyHandler[Event, Response])
 assert_type(wrapped_handler.handler, EventHandler[Event, Response])
 
 
-async def subscribe_specialized(client: ProsodyClient) -> None:
-    await client.subscribe(Handler())
+async def read_published_set(client: ProsodyClient) -> None:
+    reader = await client.state("checkout", TAGS)
+    assert_type(reader, PublishedSet)
+    assert_type(await reader.contains("user", "a"), bool)
+    async for member in reader.members("user", range=slice(None, "m"), limit=10):
+        assert_type(member, str)
+
+
+async def subscribe_specialized() -> None:
+    async with await ProsodyClient.create(subscribed_topics="orders") as client:
+        assert_type(client, ProsodyClient)
+        await client.subscribe(Handler())
 
 
 async def request_typed(client: ProsodyClient) -> None:
@@ -105,7 +152,7 @@ async def request_typed(client: ProsodyClient) -> None:
         "orders",
         "order-1",
         subsystems=["inventory"],
-        timeout=timedelta(seconds=2),
+        timeout=2.0,
     )
     assert_type(excise_results, dict[str, Outcome[JSONValue]])
     assert_type(results, dict[str, Outcome[JSONValue]])
@@ -114,3 +161,19 @@ async def request_typed(client: ProsodyClient) -> None:
             assert_type(outcome.value, JSONValue)
         elif isinstance(outcome, Failure):
             assert_type(outcome, Failure)
+
+
+async def write_structured_payloads(client: ProsodyClient, context: Context) -> None:
+    event: Event = {"amount": 1}
+    labels: dict[str, str] = {"region": "west"}
+    await client.send("orders", "order-1", event)
+    await client.send("orders", "order-1", labels)
+    await client.send("orders", "order-1", [event, labels])
+    await client.request(
+        "orders", "order-1", event, subsystems=["inventory"], timeout=timedelta(seconds=2)
+    )
+    await context.state(CART).set(event)
+    await context.state(LABELS).set("order-1", labels)
+    await context.state(LOG).append(event)
+    await context.state(LOG).appendleft(labels)
+    assert_type(await context.state(CART).get(), JSONValue)

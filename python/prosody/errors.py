@@ -1,4 +1,4 @@
-import asyncio
+import inspect
 from abc import ABC, abstractmethod
 from functools import wraps
 
@@ -60,9 +60,9 @@ class StateError(Exception):
 
 class PermanentStateError(StateError, PermanentError):
     """
-    Permanent keyed-state failure — a config/deploy error, never a caller data
-    mistake: an unregistered collection name, a registered-identity mismatch, or
-    a duplicate registration.
+    Permanent keyed-state failure: an unregistered collection name, a
+    registered-identity mismatch, a duplicate registration, or a JSON null
+    write. Use `clear()` (value, deque) or `remove(key)` (map) to delete.
 
     Classifies permanent through the existing `is_permanent` bridge unchanged,
     so a rethrown instance discards the message rather than retrying.
@@ -71,23 +71,13 @@ class PermanentStateError(StateError, PermanentError):
 
 class TransientStateError(StateError, TransientError):
     """
-    Transient keyed-state failure — a store timeout AND every caller mistake at
-    the state boundary (a null/unrepresentable write, a wrong item shape, an
-    invalid index, an invalid direction token, a malformed definition).
+    Transient keyed-state failure: a store timeout, or a caller mistake at the
+    state boundary (a value with no JSON form, a wrong item shape, a malformed
+    definition).
 
     Caller mistakes are transient so the message retries and stays visible
     rather than being silently discarded. Classifies transient through the
     existing `is_permanent` bridge unchanged.
-    """
-
-
-class NullValueError(TransientStateError, ValueError):
-    """
-    A `None` / JSON-`null` write, which is not a storable value — use `clear()`
-    (value/deque) or `remove(key)` (map) to delete instead.
-
-    Reads as a `ValueError` to callers who care about the argument, and
-    classifies transient (via `TransientStateError`) if it propagates uncaught.
     """
 
 
@@ -107,7 +97,7 @@ def create_error_decorator(error_class, exception_types):
             except exception_types as e:
                 raise error_class(str(e)) from e
 
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper

@@ -1,0 +1,176 @@
+"""Pure-Python tests for keyed-state query options.
+
+Each scan method resolves its options into one native query value. These tests
+check that translation for every option, on every handle and published reader,
+against recording stubs. ``test_keyed_state_query.py`` checks that the native layer
+applies the same values against a live store.
+"""
+
+from dataclasses import replace
+
+import pytest
+
+from prosody import (
+    DequeState,
+    Direction,
+    MapState,
+    PublishedDeque,
+    PublishedMap,
+    PublishedSet,
+    SetState,
+)
+from prosody.query import _KeyQuery, _PositionQuery
+
+from support import NativeRecorder
+
+
+def _key_scans(native):
+    """Every key-ordered scan method, as a call that takes the options."""
+    handle = MapState(native)
+    members = SetState(native)
+    published = PublishedMap(native)
+    published_set = PublishedSet(native)
+    return [
+        lambda direction, **options: handle.items(direction, **options),
+        lambda direction, **options: handle.keys(direction, **options),
+        lambda direction, **options: handle.values(direction, **options),
+        lambda direction, **options: members.members(direction, **options),
+        lambda direction, **options: published.items("user", direction, **options),
+        lambda direction, **options: published.keys("user", direction, **options),
+        lambda direction, **options: published.values("user", direction, **options),
+        lambda direction, **options: published_set.members(
+            "user", direction, **options
+        ),
+    ]
+
+
+def _position_scans(native):
+    """Every deque scan method, as a call that takes the options."""
+    handle = DequeState(native)
+    published = PublishedDeque(native)
+    return [
+        lambda direction, **options: handle.values(direction, **options),
+        lambda direction, **options: published.values("user", direction, **options),
+    ]
+
+
+KEY_CASES = [
+    ({}, _KeyQuery()),
+    ({"prefix": "ord-"}, _KeyQuery(prefix="ord-")),
+    ({"from_": "b"}, _KeyQuery(start=("b", True))),
+    ({"after": "b"}, _KeyQuery(start=("b", False))),
+    ({"to": "y"}, _KeyQuery(end=("y", True))),
+    ({"before": "y"}, _KeyQuery(end=("y", False))),
+    ({"limit": 3}, _KeyQuery(limit=3)),
+    ({"range": slice("a", "m")}, _KeyQuery(range=("a", "m"))),
+    ({"range": slice("a", None)}, _KeyQuery(range=("a", None))),
+    ({"range": slice(None, "m")}, _KeyQuery(range=(None, "m"))),
+    ({"range": slice(None, None)}, _KeyQuery(range=(None, None))),
+    ({"range": slice("m", "a")}, _KeyQuery(range=("m", "a"))),
+    (
+        {"prefix": "p", "after": "p1", "before": "p9", "limit": 2},
+        _KeyQuery(False, "p", ("p1", False), ("p9", False), limit=2),
+    ),
+    (
+        {"from_": "b", "range": slice("a", "m"), "limit": 2},
+        _KeyQuery(start=("b", True), range=("a", "m"), limit=2),
+    ),
+]
+
+
+@pytest.mark.parametrize(("options", "expected"), KEY_CASES)
+@pytest.mark.parametrize("direction", Direction)
+def test_key_options_translate_on_every_scan(options, expected, direction):
+    native = NativeRecorder()
+    for scan in _key_scans(native):
+        scan(direction, **options)
+    backward = direction is Direction.BACKWARD
+    assert direction.value == ("backward" if backward else "forward")
+    assert native.queries == [replace(expected, backward=backward)] * 8
+
+
+@pytest.mark.parametrize(
+    ("options", "error"),
+    [
+        ({"from_": "a", "after": "a"}, ValueError),
+        ({"to": "z", "before": "z"}, ValueError),
+        ({"limit": 0}, ValueError),
+        ({"limit": -1}, ValueError),
+        ({"limit": 1.5}, TypeError),
+        ({"limit": "2"}, TypeError),
+        ({"limit": True}, TypeError),
+        ({"limit": 2**64}, ValueError),
+        ({"range": slice("a", "m", 1)}, ValueError),
+        ({"range": slice("a", "m", -1)}, ValueError),
+        ({"range": ["a", "m"]}, TypeError),
+        ({"range": range(0, 2)}, TypeError),
+        ({"range": slice(1, "m")}, TypeError),
+        ({"range": slice("a", b"m")}, TypeError),
+    ],
+)
+def test_key_options_reject_values_without_a_native_form(options, error):
+    native = NativeRecorder()
+    for scan in _key_scans(native):
+        with pytest.raises(error):
+            scan(Direction.FORWARD, **options)
+    assert native.queries == []
+
+
+POSITION_CASES = [
+    ({}, _PositionQuery()),
+    ({"from_": 2}, _PositionQuery(start=(2, True))),
+    ({"after": 2}, _PositionQuery(start=(2, False))),
+    ({"to": 7}, _PositionQuery(end=(7, True))),
+    ({"before": 7}, _PositionQuery(end=(7, False))),
+    ({"limit": 4}, _PositionQuery(limit=4)),
+    ({"range": range(2, 5)}, _PositionQuery(range=(2, 5))),
+    ({"range": range(3, 3)}, _PositionQuery(range=(3, 3))),
+    ({"range": slice(2, 5)}, _PositionQuery(range=(2, 5))),
+    ({"range": slice(None, 4)}, _PositionQuery(range=(0, 4))),
+    ({"range": slice(6, None)}, _PositionQuery(range=(6, None))),
+    ({"range": slice(1, 3, 1)}, _PositionQuery(range=(1, 3))),
+    ({"range": range(5, 2)}, _PositionQuery(range=(5, 2))),
+    ({"range": slice(5, 2)}, _PositionQuery(range=(5, 2))),
+    (
+        {"from_": 1, "before": 9, "range": slice(2, None), "limit": 2},
+        _PositionQuery(False, (1, True), (9, False), (2, None), 2),
+    ),
+]
+
+
+@pytest.mark.parametrize(("options", "expected"), POSITION_CASES)
+@pytest.mark.parametrize("direction", Direction)
+def test_position_options_translate_on_every_scan(options, expected, direction):
+    native = NativeRecorder()
+    for scan in _position_scans(native):
+        scan(direction, **options)
+    backward = direction is Direction.BACKWARD
+    assert native.queries == [replace(expected, backward=backward)] * 2
+
+
+@pytest.mark.parametrize(
+    ("options", "error"),
+    [
+        ({"from_": 1, "after": 1}, ValueError),
+        ({"to": 4, "before": 4}, ValueError),
+        ({"from_": -1}, ValueError),
+        ({"before": -2}, ValueError),
+        ({"after": 1.0}, TypeError),
+        ({"range": range(-3, 2)}, ValueError),
+        ({"range": range(0, 6, 2)}, ValueError),
+        ({"range": slice(-3, None)}, ValueError),
+        ({"range": slice(None, -1)}, ValueError),
+        ({"range": slice(0, 4, 2)}, ValueError),
+        ({"range": slice("a", "b")}, TypeError),
+        ({"range": [1, 2]}, TypeError),
+        ({"from_": 2**64}, ValueError),
+        ({"range": slice(0, 2**64)}, ValueError),
+        ({"limit": 0}, ValueError),
+    ],
+)
+def test_position_options_reject_values_without_a_native_form(options, error):
+    native = NativeRecorder()
+    for scan in _position_scans(native):
+        with pytest.raises(error):
+            scan(Direction.FORWARD, **options)
+    assert native.queries == []

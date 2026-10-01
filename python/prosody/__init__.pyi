@@ -1,7 +1,7 @@
 from prosody.context import Context as Context
+from prosody.demand import Demand as Demand, DemandKind as DemandKind
 from prosody.errors import (
     EventHandlerError as EventHandlerError,
-    NullValueError as NullValueError,
     PermanentError as PermanentError,
     PermanentStateError as PermanentStateError,
     StateError as StateError,
@@ -12,7 +12,10 @@ from prosody.errors import (
 )
 from prosody.handler import EventHandler as EventHandler, ProsodyHandler as ProsodyHandler
 from prosody.message import ExciseMessage as ExciseMessage, Message as Message
-from typing import TypeVar, overload
+from types import TracebackType
+from typing import Optional, TypeVar, overload
+
+from typing_extensions import Self
 
 from prosody.prosody import (
     AdminClient as AdminClient,
@@ -39,13 +42,18 @@ from prosody.state import (
     MessageDequeDefinition as MessageDequeDefinition,
     MessageMapDefinition as MessageMapDefinition,
     MessageValueDefinition as MessageValueDefinition,
+    SetDefinition as SetDefinition,
+    SetState as SetState,
+    StoreOutcome as StoreOutcome,
     ValueDefinition as ValueDefinition,
     ValueState as ValueState,
     PublishedValue as PublishedValue,
     PublishedMap as PublishedMap,
+    PublishedSet as PublishedSet,
     PublishedDeque as PublishedDeque,
     deque as deque,
     map as map,
+    set as set,
     message_deque as message_deque,
     message_map as message_map,
     message_value as message_value,
@@ -58,6 +66,13 @@ V = TypeVar("V")
 
 class ProsodyClient(_ProsodyClientApi):
     def __init__(self) -> None: ...
+    async def __aenter__(self) -> Self: ...
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None: ...
 
     @overload
     async def state(
@@ -71,6 +86,12 @@ class ProsodyClient(_ProsodyClientApi):
         subsystem: str,
         definition: MapDefinition[V],
     ) -> PublishedMap[V]: ...
+    @overload
+    async def state(
+        self,
+        subsystem: str,
+        definition: SetDefinition,
+    ) -> PublishedSet: ...
     @overload
     async def state(
         self,
