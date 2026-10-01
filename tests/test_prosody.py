@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import uuid
 
-from prosody import ExciseMessage, EventHandler, Outcome, ProsodyClient
+from prosody import ExciseMessage, EventHandler, Message, Outcome, ProsodyClient
 import pytest
 
 from support import DEFAULT_TIMEOUT, TestHandler
@@ -21,6 +21,13 @@ def test_excise_message_has_no_payload():
     message = ExciseMessage("events", 0, 1, datetime.now(timezone.utc), "key")
 
     assert not hasattr(message, "payload")
+
+def test_source_system_and_response_flag_stay_out_of_equality():
+    now = datetime.now(timezone.utc)
+    extra = {"source_system": "producer", "response_requested": True}
+
+    assert ExciseMessage("t", 0, 1, now, "k") == ExciseMessage("t", 0, 1, now, "k", **extra)
+    assert Message("t", 0, 1, now, "k", {}) == Message("t", 0, 1, now, "k", {}, **extra)
 
 async def test_create_starts_native_construction_when_awaited(monkeypatch):
     calls = []

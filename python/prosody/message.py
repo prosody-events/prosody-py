@@ -67,11 +67,11 @@ class Message(Generic[P]):
     payload: P
     """The message payload."""
 
-    source_system: Optional[str] = None
+    source_system: Optional[str] = field(default=None, compare=False)
     """The system that produced the message, or ``None`` when the record has no
     source system header."""
 
-    response_requested: bool = False
+    response_requested: bool = field(default=False, compare=False)
     """``True`` when a request expects a response from this handler.
 
     For an ordinary event, Prosody discards the handler result. Check this flag
@@ -98,9 +98,9 @@ class ExciseMessage:
     timestamp: datetime
     key: str
 
-    source_system: Optional[str] = None
+    source_system: Optional[str] = field(default=None, compare=False)
     """The system that produced the record, or ``None`` when the record has no
     source system header."""
 
-    response_requested: bool = False
+    response_requested: bool = field(default=False, compare=False)
     """``True`` when an excise request expects a response from this handler."""
