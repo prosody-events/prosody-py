@@ -1,7 +1,7 @@
 import enum
 from typing import Generic, List, Optional, Tuple, Union, overload
 
-from typing_extensions import TypeVar
+from typing_extensions import TypeVar, Unpack
 
 from prosody.definition import (
     DequeDefinition as DequeDefinition,
@@ -30,7 +30,12 @@ from prosody.published import (
     PublishedSet as PublishedSet,
     PublishedValue as PublishedValue,
 )
-from prosody.query import Direction as Direction, _StateScan as _StateScan
+from prosody.query import (
+    Direction as Direction,
+    _KeyOptions,
+    _PositionOptions,
+    _StateScan as _StateScan,
+)
 
 # PEP 696 defaults: an unparameterized handle uses ``JSONValue``.
 T = TypeVar("T", default=JSONValue)  # value / deque item type
@@ -70,40 +75,13 @@ class MapState(Generic[V]):
     async def remove(self, key: str) -> None: ...
     async def clear(self) -> None: ...
     def items(
-        self,
-        direction: Direction = ...,
-        *,
-        prefix: Optional[str] = ...,
-        from_: Optional[str] = ...,
-        after: Optional[str] = ...,
-        to: Optional[str] = ...,
-        before: Optional[str] = ...,
-        range: Optional[slice] = ...,
-        limit: Optional[int] = ...,
+        self, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[Tuple[str, V]]: ...
     def keys(
-        self,
-        direction: Direction = ...,
-        *,
-        prefix: Optional[str] = ...,
-        from_: Optional[str] = ...,
-        after: Optional[str] = ...,
-        to: Optional[str] = ...,
-        before: Optional[str] = ...,
-        range: Optional[slice] = ...,
-        limit: Optional[int] = ...,
+        self, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[str]: ...
     def values(
-        self,
-        direction: Direction = ...,
-        *,
-        prefix: Optional[str] = ...,
-        from_: Optional[str] = ...,
-        after: Optional[str] = ...,
-        to: Optional[str] = ...,
-        before: Optional[str] = ...,
-        range: Optional[slice] = ...,
-        limit: Optional[int] = ...,
+        self, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[V]: ...
     def __aiter__(self) -> _StateScan[str]: ...
     async def commit(self) -> StoreOutcome: ...
@@ -118,16 +96,7 @@ class SetState:
     async def is_empty(self) -> bool: ...
     async def clear(self) -> None: ...
     def members(
-        self,
-        direction: Direction = ...,
-        *,
-        prefix: Optional[str] = ...,
-        from_: Optional[str] = ...,
-        after: Optional[str] = ...,
-        to: Optional[str] = ...,
-        before: Optional[str] = ...,
-        range: Optional[slice] = ...,
-        limit: Optional[int] = ...,
+        self, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[str]: ...
     def __aiter__(self) -> _StateScan[str]: ...
     async def commit(self) -> StoreOutcome: ...
@@ -152,15 +121,7 @@ class DequeState(Generic[T]):
     async def is_empty(self) -> bool: ...
     async def clear(self) -> None: ...
     def values(
-        self,
-        direction: Direction = ...,
-        *,
-        from_: Optional[int] = ...,
-        after: Optional[int] = ...,
-        to: Optional[int] = ...,
-        before: Optional[int] = ...,
-        range: Union[range, slice, None] = ...,
-        limit: Optional[int] = ...,
+        self, direction: Direction = ..., **options: Unpack[_PositionOptions]
     ) -> _StateScan[T]: ...
     def __aiter__(self) -> _StateScan[T]: ...
     async def commit(self) -> StoreOutcome: ...

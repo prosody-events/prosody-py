@@ -1,9 +1,9 @@
-from typing import Generic, List, Optional, Tuple, Union
+from typing import Generic, List, Optional, Tuple
 
-from typing_extensions import TypeVar
+from typing_extensions import TypeVar, Unpack
 
 from prosody.message import JSONValue
-from prosody.query import Direction, _StateScan
+from prosody.query import Direction, _KeyOptions, _PositionOptions, _StateScan
 
 T = TypeVar("T", default=JSONValue)
 V = TypeVar("V", default=JSONValue)
@@ -20,43 +20,13 @@ class PublishedMap(Generic[V]):
     async def contains_many(self, key: str, map_keys: List[str]) -> List[bool]: ...
     async def is_empty(self, key: str) -> bool: ...
     def items(
-        self,
-        key: str,
-        direction: Direction = ...,
-        *,
-        prefix: Optional[str] = ...,
-        from_: Optional[str] = ...,
-        after: Optional[str] = ...,
-        to: Optional[str] = ...,
-        before: Optional[str] = ...,
-        range: Optional[slice] = ...,
-        limit: Optional[int] = ...,
+        self, key: str, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[Tuple[str, V]]: ...
     def keys(
-        self,
-        key: str,
-        direction: Direction = ...,
-        *,
-        prefix: Optional[str] = ...,
-        from_: Optional[str] = ...,
-        after: Optional[str] = ...,
-        to: Optional[str] = ...,
-        before: Optional[str] = ...,
-        range: Optional[slice] = ...,
-        limit: Optional[int] = ...,
+        self, key: str, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[str]: ...
     def values(
-        self,
-        key: str,
-        direction: Direction = ...,
-        *,
-        prefix: Optional[str] = ...,
-        from_: Optional[str] = ...,
-        after: Optional[str] = ...,
-        to: Optional[str] = ...,
-        before: Optional[str] = ...,
-        range: Optional[slice] = ...,
-        limit: Optional[int] = ...,
+        self, key: str, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[V]: ...
 
 
@@ -65,17 +35,7 @@ class PublishedSet:
     async def contains_many(self, key: str, members: List[str]) -> List[bool]: ...
     async def is_empty(self, key: str) -> bool: ...
     def members(
-        self,
-        key: str,
-        direction: Direction = ...,
-        *,
-        prefix: Optional[str] = ...,
-        from_: Optional[str] = ...,
-        after: Optional[str] = ...,
-        to: Optional[str] = ...,
-        before: Optional[str] = ...,
-        range: Optional[slice] = ...,
-        limit: Optional[int] = ...,
+        self, key: str, direction: Direction = ..., **options: Unpack[_KeyOptions]
     ) -> _StateScan[str]: ...
 
 
@@ -86,14 +46,5 @@ class PublishedDeque(Generic[T]):
     async def peek(self, key: str) -> Optional[T]: ...
     async def peekleft(self, key: str) -> Optional[T]: ...
     def values(
-        self,
-        key: str,
-        direction: Direction = ...,
-        *,
-        from_: Optional[int] = ...,
-        after: Optional[int] = ...,
-        to: Optional[int] = ...,
-        before: Optional[int] = ...,
-        range: Union[range, slice, None] = ...,
-        limit: Optional[int] = ...,
+        self, key: str, direction: Direction = ..., **options: Unpack[_PositionOptions]
     ) -> _StateScan[T]: ...
