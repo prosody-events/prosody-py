@@ -95,6 +95,11 @@ def test_exports_present():
     ):
         assert hasattr(prosody, n), n
 
+def test_state_keeps_its_type_variables():
+    state = importlib.import_module("prosody.state")
+    for n in ("T", "V", "P", "X", "Y"):
+        assert hasattr(state, n), n
+
 WRITES = {"set", "clear", "remove", "insert", "push_back", "push_front"}
 
 # (wrapper, call, native method, native arguments) for every read or write
