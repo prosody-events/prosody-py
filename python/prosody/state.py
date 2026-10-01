@@ -78,15 +78,27 @@ class StoreOutcome(enum.Enum):
     NO_OP = "no_op"
 
 
-class ValueState(Generic[T]):
+class _Handle:
+    """The transaction methods that every keyed-state handle shares."""
+
+    def __init__(self, native: Any) -> None:
+        self._native = native
+
+    async def commit(self) -> StoreOutcome:
+        """Durably commit the buffered operations mid-handler."""
+        return StoreOutcome(await self._native.commit())
+
+    async def rollback(self) -> StoreOutcome:
+        """Discard buffered uncommitted operations back to the committed floor."""
+        return StoreOutcome(await self._native.rollback())
+
+
+class ValueState(_Handle, Generic[T]):
     """Typed handle over a single-value collection.
 
     Valid only within the handler invocation that vended it. All methods are
     async; the native layer owns validation.
     """
-
-    def __init__(self, native: Any) -> None:
-        self._native = native
 
     async def get(self) -> Optional[T]:
         """Read the current value, or ``None`` when absent or cleared."""
@@ -104,24 +116,13 @@ class ValueState(Generic[T]):
         """Buffer a delete of the value."""
         await self._native.clear()
 
-    async def commit(self) -> StoreOutcome:
-        """Durably commit the buffered operations mid-handler."""
-        return StoreOutcome(await self._native.commit())
 
-    async def rollback(self) -> StoreOutcome:
-        """Discard buffered uncommitted operations back to the committed floor."""
-        return StoreOutcome(await self._native.rollback())
-
-
-class MapState(Generic[V]):
+class MapState(_Handle, Generic[V]):
     """Typed handle over an ordered-map collection with string keys.
 
     Valid only within the handler invocation that vended it. ``remove`` exists
     because ``del`` cannot be async; map keys are always ``str``.
     """
-
-    def __init__(self, native: Any) -> None:
-        self._native = native
 
     async def get(self, key: str, default: Any = None) -> Any:
         """Read the value for ``key``; return ``default`` only when the key is
@@ -238,24 +239,13 @@ class MapState(Generic[V]):
         """
         return self.keys()
 
-    async def commit(self) -> StoreOutcome:
-        """Durably commit the buffered operations mid-handler."""
-        return StoreOutcome(await self._native.commit())
 
-    async def rollback(self) -> StoreOutcome:
-        """Discard buffered uncommitted operations back to the committed floor."""
-        return StoreOutcome(await self._native.rollback())
-
-
-class SetState:
+class SetState(_Handle):
     """Typed handle over a presence-only ordered set of string members.
 
     Valid only within the handler invocation that vended it. ``contains``
     exists because Python's ``in`` cannot ``await``.
     """
-
-    def __init__(self, native: Any) -> None:
-        self._native = native
 
     async def add(self, member: str) -> None:
         """Add ``member``."""
@@ -295,24 +285,13 @@ class SetState:
         """Forward iteration over the members."""
         return self.members()
 
-    async def commit(self) -> StoreOutcome:
-        """Durably commit the buffered operations mid-handler."""
-        return StoreOutcome(await self._native.commit())
 
-    async def rollback(self) -> StoreOutcome:
-        """Discard buffered uncommitted operations back to the committed floor."""
-        return StoreOutcome(await self._native.rollback())
-
-
-class DequeState(Generic[T]):
+class DequeState(_Handle, Generic[T]):
     """Typed handle over a double-ended queue.
 
     Valid only within the handler invocation that vended it. ``size()`` and
     ``is_empty()`` are methods because ``len`` cannot be async.
     """
-
-    def __init__(self, native: Any) -> None:
-        self._native = native
 
     async def append(self, item: T) -> None:
         """Append ``item`` at the back.
@@ -403,11 +382,3 @@ class DequeState(Generic[T]):
     def __aiter__(self) -> _StateScan:
         """Forward iteration over the elements."""
         return self.values(Direction.FORWARD)
-
-    async def commit(self) -> StoreOutcome:
-        """Durably commit the buffered operations mid-handler."""
-        return StoreOutcome(await self._native.commit())
-
-    async def rollback(self) -> StoreOutcome:
-        """Discard buffered uncommitted operations back to the committed floor."""
-        return StoreOutcome(await self._native.rollback())
