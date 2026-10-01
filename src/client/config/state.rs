@@ -49,8 +49,11 @@ pub(super) fn build_keyed_state_config(
         builder.read_cache_size(Some(size));
     }
 
+    // Every keyed-state option error is a `ValueError`, also a wrong type.
     let cache = option(config, "state_read_cache")?;
-    match parse_read_cache("state_read_cache", cache.as_ref())? {
+    let cache = parse_read_cache("state_read_cache", cache.as_ref())
+        .map_err(|error| PyValueError::new_err(error.value(config.py()).to_string()))?;
+    match cache {
         ErasedReadCache::Inherit => {}
         ErasedReadCache::Disabled => {
             builder.read_cache_ttl(None);

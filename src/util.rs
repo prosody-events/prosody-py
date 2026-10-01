@@ -6,7 +6,7 @@
 use prosody::high_level::erased::ErasedReadCache;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyBool, PyDelta, PyDict, PyDictMethods};
-use pyo3::{Bound, PyAny, PyResult};
+use pyo3::{Bound, PyAny, PyErr, PyResult};
 use std::process;
 use std::time::Duration;
 
@@ -90,12 +90,14 @@ pub fn decode_optional_duration(value: &Bound<PyAny>) -> PyResult<Option<Duratio
 }
 
 /// Parses a read-cache option. `None` inherits the default, `False` bypasses
-/// the cache, and a duration sets the cache window.
+/// the cache, and a duration sets the cache window. A duration is seconds, a
+/// `timedelta`, or an object with a `total_seconds()` method.
 ///
 /// # Errors
 ///
-/// Returns a `PyValueError` that names `field` for `True` or for a value that
-/// is not a duration.
+/// Returns a `PyTypeError` that names `field` for a value that is not a
+/// duration. Returns a `PyValueError` that names `field` for `True` or for a
+/// negative duration.
 pub fn parse_read_cache(field: &str, value: Option<&Bound<PyAny>>) -> PyResult<ErasedReadCache> {
     let Some(value) = value else {
         return Ok(ErasedReadCache::Inherit);
@@ -108,9 +110,20 @@ pub fn parse_read_cache(field: &str, value: Option<&Bound<PyAny>>) -> PyResult<E
         }
         return Ok(ErasedReadCache::Disabled);
     }
-    decode_duration(value)
-        .map(ErasedReadCache::Ttl)
-        .map_err(|error| PyValueError::new_err(format!("{field}: {}", error.value(value.py()))))
+
+    let py = value.py();
+    let message = |error: PyErr| format!("{field}: {}", error.value(py));
+    let ttl = match decode_duration(value) {
+        Err(error) if error.is_instance_of::<PyTypeError>(py) => {
+            let Ok(seconds) = value.call_method0("total_seconds") else {
+                return Err(PyTypeError::new_err(message(error)));
+            };
+            decode_duration(&seconds)
+        }
+        ttl => ttl,
+    };
+    ttl.map(ErasedReadCache::Ttl)
+        .map_err(|error| PyValueError::new_err(message(error)))
 }
 
 /// Reads the option `key` from a keyword-argument dict.

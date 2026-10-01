@@ -107,12 +107,15 @@ async def test_non_numeric_whole_number_raises_type_error(kind, field):
         await make_client(**collections(raw(kind=kind, **{field: "5"})))
 
 
-@pytest.mark.parametrize("read_cache", [True, -1, "soon"])
-async def test_invalid_read_cache_is_rejected(read_cache, client_factory):
+@pytest.mark.parametrize(
+    ("read_cache", "published_error"),
+    [(True, ValueError), (-1, ValueError), ("soon", TypeError)],
+)
+async def test_invalid_read_cache_is_rejected(read_cache, published_error, client_factory):
     with pytest.raises(ValueError, match="state_read_cache"):
         await make_client(state_read_cache=read_cache)
     client = await client_factory(**BASE)
-    with pytest.raises(ValueError, match="read_cache"):
+    with pytest.raises(published_error, match="read_cache"):
         await client.state("owner", value("v", read_cache=read_cache))
 
 
