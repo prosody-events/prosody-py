@@ -18,6 +18,7 @@ class _StateConfig(TypedDict):
     ttl_seconds: Optional[Union[int, float]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
+    read_cache: ReadCache
     keyset_limit: Optional[int]
     capacity: Optional[int]
 

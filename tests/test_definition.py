@@ -26,7 +26,7 @@ import pytest
 def _config(name, kind, payload="json", **options):
     """The expected config dict: every option unset unless named."""
     config = dict.fromkeys(
-        ("ttl_seconds", "read_uncommitted", "published", "keyset_limit", "capacity")
+        ("ttl_seconds", "read_uncommitted", "published", "read_cache", "keyset_limit", "capacity")
     )
     return {"name": name, "kind": kind, "payload": payload, **config, **options}
 
@@ -75,11 +75,11 @@ def test_to_config(definition, expected):
 
 
 @pytest.mark.parametrize("read_cache", [None, False, 2.0, timedelta(seconds=2)])
-def test_read_cache_stays_off_the_config(read_cache):
+def test_read_cache_is_in_the_config(read_cache):
     for define in (value, map, set_definition, deque):
         definition = define("c", read_cache=read_cache)
         assert definition.read_cache == read_cache
-        assert "read_cache" not in definition.to_config()
+        assert definition.to_config()["read_cache"] == read_cache
 
 
 @pytest.mark.parametrize(

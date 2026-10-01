@@ -47,6 +47,7 @@ class _StateConfig(TypedDict):
     ttl_seconds: Optional[Union[float, int]]
     read_uncommitted: Optional[bool]
     published: Optional[bool]
+    read_cache: ReadCache
     keyset_limit: Optional[int]
     capacity: Optional[int]
 
@@ -65,12 +66,7 @@ class _Definition:
     payload: Optional[str] = "json"
 
     def to_config(self) -> _StateConfig:
-        """Return the config dict passed to the client and to ``state()``.
-
-        Excludes ``read_cache``: the owner-side registration path never reads
-        it. A published reader receives it as an explicit argument instead
-        (see :meth:`ProsodyClient.state`).
-        """
+        """Return the config dict passed to the client and to ``state()``."""
         return {
             "name": self.name,
             "kind": self.kind,
@@ -78,6 +74,7 @@ class _Definition:
             "ttl_seconds": _ttl_seconds(self.ttl),
             "read_uncommitted": self.read_uncommitted,
             "published": self.published,
+            "read_cache": self.read_cache,
             "keyset_limit": self.keyset_limit,
             "capacity": self.capacity,
         }
