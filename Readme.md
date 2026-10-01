@@ -698,7 +698,7 @@ Both calls return a `StoreOutcome`. `StoreOutcome.APPLIED` means the call wrote 
 
 ### Retries
 
-`context.demand` tells a handler why the current attempt runs. It is a `Demand` with a `kind` and a `retry` ordinal. `DemandKind.NORMAL` has `retry == 0`. `DemandKind.FAILURE` marks a retry after a failure, and `retry` is 1 on the first retry.
+`context.demand` tells a handler why the current attempt runs. It is a `Demand` with a `kind` and a `retry` count. `DemandKind.NORMAL` has `retry == 0`. `DemandKind.FAILURE` marks a retry after a failure, and `retry` is 1 on the first retry.
 
 ```python
 async def on_message(self, context: Context, message: Message) -> None:
@@ -706,7 +706,7 @@ async def on_message(self, context: Context, message: Message) -> None:
         log.warning("retry %d for %s", context.demand.retry, message.key)
 ```
 
-The ordinal is an estimate. It restarts at 1 when Prosody defers an event after immediate retries. Keep an exact attempt count in keyed state if a handler needs one.
+The count is an estimate. It restarts at 1 when Prosody defers an event after immediate retries. Keep an exact attempt count in keyed state if a handler needs one.
 
 ### Published state
 

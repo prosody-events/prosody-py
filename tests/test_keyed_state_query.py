@@ -201,7 +201,7 @@ async def test_commit_and_rollback_report_store_outcomes(state_client):
     assert obs == {name: expected for name in ["cart", "totals", "tags", "backlog"]}
 
 
-async def test_context_demand_reports_the_retry_ordinal(state_client):
+async def test_context_demand_reports_the_retry_count(state_client):
     client, topic, _ = state_client
     demands = []
 
@@ -219,7 +219,7 @@ async def test_context_demand_reports_the_retry_ordinal(state_client):
     assert obs == [Demand(DemandKind.NORMAL, 0), Demand(DemandKind.FAILURE, 1)]
 
 
-async def test_timer_context_reports_the_retry_ordinal(state_client):
+async def test_timer_context_reports_the_retry_count(state_client):
     client, topic, _ = state_client
     demands = []
 

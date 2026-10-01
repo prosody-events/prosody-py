@@ -197,7 +197,7 @@ impl Context {
     }
 
     /// Reports why this attempt runs: a normal delivery, or a retry after a
-    /// failure with its retry ordinal.
+    /// failure with its retry count.
     ///
     /// # Errors
     ///

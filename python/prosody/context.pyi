@@ -91,7 +91,7 @@ class Context:
         """
         Why this attempt runs: a normal delivery or a retry after a failure.
 
-        ``demand.retry`` is the retry ordinal. It is 0 for a normal delivery
+        ``demand.retry`` is the retry count. It is 0 for a normal delivery
         and 1 on the first retry. It is an estimate; keep an exact attempt
         count in keyed state if the handler needs one.
         """

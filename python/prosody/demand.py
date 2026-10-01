@@ -15,8 +15,8 @@ class DemandKind(enum.Enum):
 class Demand:
     """The demand that :attr:`Context.demand` reports for this attempt.
 
-    ``retry`` is the retry ordinal: 0 for a normal delivery and 1 on the first
-    retry after a failure. The ordinal restarts at 1 when Prosody defers an
+    ``retry`` is the retry count: 0 for a normal delivery and 1 on the first
+    retry after a failure. The count restarts at 1 when Prosody defers an
     event after immediate retries, so it is an estimate. Keep an exact attempt
     count in keyed state if a handler needs one.
     """
