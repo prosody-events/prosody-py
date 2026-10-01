@@ -6,8 +6,6 @@ from typing_extensions import Literal, TypedDict, TypeVar
 from prosody.message import JSONValue
 
 # PEP 696 defaults: an unparameterized definition uses ``JSONValue``.
-T = TypeVar("T", default=JSONValue)  # value / deque item type
-V = TypeVar("V", default=JSONValue)  # map value type
 P = TypeVar("P", default=JSONValue)  # message payload type
 D_co = TypeVar("D_co", covariant=True, default=JSONValue)
 ReadCache = Optional[Union[timedelta, float, Literal[False]]]
@@ -162,70 +160,10 @@ class MessageDequeDefinition(Generic[D_co]):
     def to_config(self) -> _StateConfig: ...
 
 
-def value(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    published: Optional[bool] = ...,
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
-) -> ValueDefinition[T]: ...
-
-
-def map(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    published: Optional[bool] = ...,
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
-    keyset_limit: Optional[int] = ...,
-) -> MapDefinition[V]: ...
-
-
-def set(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    published: Optional[bool] = ...,
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
-    keyset_limit: Optional[int] = ...,
-) -> SetDefinition: ...
-
-
-def deque(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    published: Optional[bool] = ...,
-    read_cache: Optional[Union[timedelta, float, Literal[False]]] = ...,
-    capacity: Optional[int] = ...,
-) -> DequeDefinition[T]: ...
-
-
-def message_value(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-) -> MessageValueDefinition[P]: ...
-
-
-def message_map(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    keyset_limit: Optional[int] = ...,
-) -> MessageMapDefinition[P]: ...
-
-
-def message_deque(
-    name: str,
-    *,
-    ttl: Optional[Union[timedelta, int]] = ...,
-    read_uncommitted: Optional[bool] = ...,
-    capacity: Optional[int] = ...,
-) -> MessageDequeDefinition[P]: ...
+value = ValueDefinition
+map = MapDefinition
+set = SetDefinition
+deque = DequeDefinition
+message_value = MessageValueDefinition
+message_map = MessageMapDefinition
+message_deque = MessageDequeDefinition
