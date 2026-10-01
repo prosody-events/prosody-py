@@ -9,17 +9,6 @@ from typing import AsyncIterator, Dict, List, Literal, Mapping, Optional, Sequen
 from typing_extensions import Self
 
 from prosody import EventHandler
-from prosody._readers import (
-    NativeJsonDequeScan as NativeJsonDequeScan,
-    NativeJsonMapScan as NativeJsonMapScan,
-    NativeMapKeyScan as NativeMapKeyScan,
-    NativeMessageDequeScan as NativeMessageDequeScan,
-    NativeMessageMapScan as NativeMessageMapScan,
-    _NativePublishedDeque as _NativePublishedDeque,
-    _NativePublishedMap as _NativePublishedMap,
-    _NativePublishedSet as _NativePublishedSet,
-    _NativePublishedValue as _NativePublishedValue,
-)
 from prosody.message import JSONInput, JSONValue
 from prosody.request import Outcome
 from prosody.state import (
@@ -208,20 +197,6 @@ class _ProsodyClientApi:
             The current state.
         """
         ...
-
-    async def _published(
-        self,
-        subsystem: str,
-        kind: Literal["value", "map", "set", "deque"],
-        name: str,
-        *,
-        read_cache: Optional[Union[Duration, Literal[False]]] = None,
-    ) -> Union[
-        _NativePublishedValue[JSONValue],
-        _NativePublishedMap[JSONValue],
-        _NativePublishedSet,
-        _NativePublishedDeque[JSONValue],
-    ]: ...
 
     async def subscribe(self, handler: EventHandler[P, R]) -> None:
         """

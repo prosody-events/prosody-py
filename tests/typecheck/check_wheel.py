@@ -7,7 +7,6 @@ from zipfile import ZipFile
 
 REQUIRED = {
     "prosody/__init__.pyi",
-    "prosody/_readers.pyi",
     "prosody/context.pyi",
     "prosody/definition.pyi",
     "prosody/errors.pyi",
