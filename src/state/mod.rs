@@ -216,12 +216,12 @@ where
 }
 
 /// Builds a `TransientStateError` for a caller-caused condition the glue
-/// detects (an unrepresentable value or a wrong item shape).
+/// detects, such as an unrepresentable value or a malformed definition.
 ///
 /// Caller mistakes are TRANSIENT, never permanent: a permanent error discards
 /// the in-flight message and can silently lose data, so a code error retries
 /// and stays visible instead.
-fn transient_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
+pub(crate) fn transient_error(py: Python, env: &StateEnv, message: &str) -> PyErr {
     raise(env.0.transient_error.bind(py), message)
 }
 

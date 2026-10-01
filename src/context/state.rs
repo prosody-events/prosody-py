@@ -7,11 +7,12 @@
 use super::Context;
 use crate::state::{
     NativeJsonDequeState, NativeJsonMapState, NativeJsonValueState, NativeMessageDequeState,
-    NativeMessageMapState, NativeMessageValueState, NativeSetState, StateEnv, raise, state_error,
+    NativeMessageMapState, NativeMessageValueState, NativeSetState, StateEnv, state_error,
+    transient_error,
 };
 use prosody::consumer::event_context::ErasedStateError;
 use pyo3::types::{PyAnyMethods, PyModule};
-use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
+use pyo3::{Bound, Py, PyAny, PyResult, Python};
 use std::sync::Arc;
 
 /// The definition class that selects a collection's handle and wrapper.
@@ -26,18 +27,9 @@ pub(crate) enum StateDefinitionKind {
     MessageDeque,
 }
 
-/// Builds a `TransientStateError` for a malformed or hostile state definition.
-///
-/// A malformed definition is a caller mistake, so it is transient.
-fn transient_state_error(prosody: &Bound<PyModule>, message: &str) -> PyErr {
-    match prosody.getattr("TransientStateError") {
-        Ok(class) => raise(&class, message),
-        Err(error) => error,
-    }
-}
-
 fn state_definition_kind(
     prosody: &Bound<PyModule>,
+    env: &StateEnv,
     definition: &Bound<PyAny>,
 ) -> PyResult<StateDefinitionKind> {
     const CLASSES: [(&str, StateDefinitionKind); 7] = [
@@ -54,8 +46,9 @@ fn state_definition_kind(
             return Ok(kind);
         }
     }
-    Err(transient_state_error(
-        prosody,
+    Err(transient_error(
+        prosody.py(),
+        env,
         "state: definition must come from a Prosody state definition constructor",
     ))
 }
@@ -74,11 +67,13 @@ pub(super) fn bind(
 ) -> PyResult<Py<PyAny>> {
     let prosody = py.import("prosody")?;
 
-    let kind = state_definition_kind(&prosody, definition)?;
+    let kind = state_definition_kind(&prosody, &context.env, definition)?;
     let name = definition
         .getattr("name")
         .and_then(|name| name.extract::<String>())
-        .map_err(|_| transient_state_error(&prosody, "state: definition name must be a string"))?;
+        .map_err(|_| {
+            transient_error(py, &context.env, "state: definition name must be a string")
+        })?;
     let cache_key = (kind, name.clone());
     if let Some(existing) = context.state_handles.lock().get(&cache_key) {
         return Ok(existing.clone_ref(py));
@@ -86,43 +81,44 @@ pub(super) fn bind(
 
     let env = context.env.clone();
     let inner = &context.inner;
-    let native: Py<PyAny> = match kind {
+    let (native, wrapper) = match kind {
         StateDefinitionKind::Value => {
             let state = vend(py, &env, inner.value_state(&name))?;
-            Py::new(py, NativeJsonValueState { state, env })?.into_any()
+            let handle = Py::new(py, NativeJsonValueState { state, env })?.into_any();
+            (handle, "ValueState")
         }
         StateDefinitionKind::Map => {
             let state = vend(py, &env, inner.map_state(&name))?;
-            Py::new(py, NativeJsonMapState { state, env })?.into_any()
+            let handle = Py::new(py, NativeJsonMapState { state, env })?.into_any();
+            (handle, "MapState")
         }
         StateDefinitionKind::Set => {
             let state = vend(py, &env, inner.set_state(&name))?;
-            Py::new(py, NativeSetState { state, env })?.into_any()
+            let handle = Py::new(py, NativeSetState { state, env })?.into_any();
+            (handle, "SetState")
         }
         StateDefinitionKind::Deque => {
             let state = vend(py, &env, inner.deque_state(&name))?;
-            Py::new(py, NativeJsonDequeState { state, env })?.into_any()
+            let handle = Py::new(py, NativeJsonDequeState { state, env })?.into_any();
+            (handle, "DequeState")
         }
         StateDefinitionKind::MessageValue => {
             let state = vend(py, &env, inner.message_value_state(&name))?;
-            Py::new(py, NativeMessageValueState { state, env })?.into_any()
+            let handle = Py::new(py, NativeMessageValueState { state, env })?.into_any();
+            (handle, "ValueState")
         }
         StateDefinitionKind::MessageMap => {
             let state = vend(py, &env, inner.message_map_state(&name))?;
-            Py::new(py, NativeMessageMapState { state, env })?.into_any()
+            let handle = Py::new(py, NativeMessageMapState { state, env })?.into_any();
+            (handle, "MapState")
         }
         StateDefinitionKind::MessageDeque => {
             let state = vend(py, &env, inner.message_deque_state(&name))?;
-            Py::new(py, NativeMessageDequeState { state, env })?.into_any()
+            let handle = Py::new(py, NativeMessageDequeState { state, env })?.into_any();
+            (handle, "DequeState")
         }
     };
-    let wrapper_name = match kind {
-        StateDefinitionKind::Value | StateDefinitionKind::MessageValue => "ValueState",
-        StateDefinitionKind::Map | StateDefinitionKind::MessageMap => "MapState",
-        StateDefinitionKind::Set => "SetState",
-        StateDefinitionKind::Deque | StateDefinitionKind::MessageDeque => "DequeState",
-    };
-    let wrapper = prosody.getattr(wrapper_name)?.call1((native,))?.unbind();
+    let wrapper = prosody.getattr(wrapper)?.call1((native,))?.unbind();
     context
         .state_handles
         .lock()
