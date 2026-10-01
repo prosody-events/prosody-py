@@ -28,8 +28,11 @@ class Event(TypedDict):
 
 
 class MissingExcise(EventHandler):
-    async def on_message(self, context: Context, message: Message) -> None: ...
-    async def on_timer(self, context: Context, timer: Timer) -> None: ...
+    async def on_message(self, context: Context, message: Message) -> None:
+        pass
+
+    async def on_timer(self, context: Context, timer: Timer) -> None:
+        pass
 
 
 TOTALS: MapDefinition[int] = map("negative-totals")

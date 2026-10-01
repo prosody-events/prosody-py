@@ -4,12 +4,12 @@ import ast
 import asyncio
 import pathlib
 import uuid
+from importlib.util import find_spec
 from datetime import timedelta
 
 import pytest
 import tsasync
 
-import prosody
 from prosody import Context, EventHandler, ExciseMessage, Message, ProsodyClient, Timer
 from prosody.prosody import AdminClient
 
@@ -18,7 +18,7 @@ from support import DEFAULT_TIMEOUT
 
 def _stub_options(method: str) -> list[str]:
     """Return the keyword-only option names of ``method`` in ``prosody.pyi``."""
-    stub = pathlib.Path(prosody.__file__).with_name("prosody.pyi")
+    stub = pathlib.Path(find_spec("prosody").origin).with_name("prosody.pyi")
     for node in ast.walk(ast.parse(stub.read_text())):
         if isinstance(node, ast.AsyncFunctionDef) and node.name == method:
             return [argument.arg for argument in node.args.kwonlyargs]

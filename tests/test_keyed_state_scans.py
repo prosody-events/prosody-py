@@ -185,8 +185,7 @@ async def test_cancel_pull_then_followup(state_client):
         it = m.items()
         t = asyncio.ensure_future(it.__anext__())
         t.cancel()
-        with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
-            await t
+        await asyncio.wait([t])
         await _wait(m.set("after", 2))
         return {"ok": (await _wait(m.get("after"))) == 2}
 
