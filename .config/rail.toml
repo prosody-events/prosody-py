@@ -1,0 +1,14 @@
+[plan.work.ci]
+paths = [".config/rail.toml", ".github/**", ".taplo.toml", "Makefile"]
+scope = "repository"
+
+[plan.work.python]
+paths = [
+    "examples/**",
+    "pyproject.toml",
+    "pytest.ini",
+    "python/**",
+    "tests/**",
+    "tox.ini",
+]
+scope = "repository"
