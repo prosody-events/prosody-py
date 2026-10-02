@@ -1,4 +1,4 @@
-prosody-events>=0.5.1  # x-release-please-version
+prosody-events>=0.6.0  # x-release-please-version
 opentelemetry-api>=1.45.0,<2.0.0
 opentelemetry-sdk>=1.45.0,<2.0.0
 opentelemetry-exporter-otlp-proto-grpc>=1.45.0,<2.0.0
