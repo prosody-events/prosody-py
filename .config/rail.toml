@@ -4,6 +4,8 @@ scope = "repository"
 
 [plan.work.python]
 paths = [
+    "LICENSE",
+    "Readme.md",
     "examples/**",
     "pyproject.toml",
     "pytest.ini",
