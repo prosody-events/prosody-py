@@ -159,6 +159,7 @@ jobs:
     if: >-
       contains(fromJSON(needs.plan.outputs.required-work), 'cargo.fmt') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'taplo') ||
+      contains(fromJSON(needs.plan.outputs.required-work), 'python') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'cargo.build') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'ci')
     runs-on: ubuntu-latest
