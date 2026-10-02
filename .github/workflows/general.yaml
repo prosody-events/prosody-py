@@ -6,7 +6,6 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
@@ -20,6 +19,8 @@ jobs:
   plan:
     name: Plan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       required-work: ${{ steps.rail.outputs.required-work }}
     steps:
@@ -28,24 +29,26 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Restore planning evidence
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/planning-evidence
           key: cargo-rail-evidence-${{ runner.os }}-${{ runner.arch }}-${{ github.event.pull_request.base.sha || github.event.before }}
-      - name: Create the evidence directory after a cache miss
+      - name: Create the evidence directory
         run: mkdir -p target/planning-evidence
       - name: Plan affected work
         id: rail
         uses: loadingalias/cargo-rail-action@409962f05d90a78aae995ef6b1c8466010c0a460 # v10.1.1
         with:
-          all: ${{ github.event_name == 'workflow_dispatch' }}
           evidence: target/planning-evidence
 
-  # A separate job records evidence on every push. The routed jobs can skip, and their RUSTFLAGS would not match the plan jobs.
+  # A separate job records evidence on every push, because the routed jobs can skip.
   evidence:
     name: Planning evidence
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -60,18 +63,16 @@ jobs:
           packages: cmake libcurl4-openssl-dev protobuf-compiler
           version: 1.0
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: loadingalias/cargo-rail-action/setup@409962f05d90a78aae995ef6b1c8466010c0a460 # v10.1.1
-      # Clippy evidence is not recorded: Cargo-Rail 0.30.1 marks it incomplete when the clippy::cargo lints run cargo metadata.
+      # Record only cargo.build. Cargo-Rail has no complete evidence for cargo.clippy, cargo.doc,
+      # or cargo.doctest. The Clippy and Documentation jobs route on cargo.build instead,
+      # because its evidence covers the same compiler inputs.
       - name: Record build evidence
         run: >
           cargo rail plan evidence --work cargo.build
           --output target/planning-evidence/cargo.build.json
           -- build --locked --workspace --all-features
-      - name: Print evidence bindings
-        run: >
-          jq '{source_base, cargo_identity, cargo_configuration_identity,
-          toolchain_identity, target_identity, platform}'
-          target/planning-evidence/cargo.build.json
       - name: Save planning evidence
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -86,8 +87,6 @@ jobs:
       contains(fromJSON(needs.plan.outputs.required-work), 'python') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'ci')
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -C target-cpu=x86-64-v3 -C link-arg=-fuse-ld=mold
     services:
       kafka:
         image: apache/kafka:latest
@@ -124,8 +123,6 @@ jobs:
 
       - name: Install mold
         uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
-        with:
-          make-default: false
 
       - uses: actions/setup-python@v7
         with:
@@ -159,18 +156,13 @@ jobs:
     if: >-
       contains(fromJSON(needs.plan.outputs.required-work), 'cargo.fmt') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'taplo') ||
-      contains(fromJSON(needs.plan.outputs.required-work), 'python') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'cargo.build') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'ci')
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -C target-cpu=x86-64-v3 -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v7
       - name: Set up mold
         uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
-        with:
-          make-default: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -182,7 +174,7 @@ jobs:
       - name: Enforce Rust formatting
         run: cargo fmt --check
       - name: Enforce TOML formatting
-        run: taplo validate
+        run: taplo fmt --check
 
   mypy:
     name: Types and wheel metadata
@@ -192,14 +184,10 @@ jobs:
       contains(fromJSON(needs.plan.outputs.required-work), 'cargo.build') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'ci')
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -C target-cpu=x86-64-v3 -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v7
       - name: Install mold
         uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
-        with:
-          make-default: false
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -232,15 +220,11 @@ jobs:
       contains(fromJSON(needs.plan.outputs.required-work), 'cargo.build') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'ci')
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -C target-cpu=x86-64-v3 -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v7
 
       - name: Install mold
         uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
-        with:
-          make-default: false
 
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
@@ -261,18 +245,13 @@ jobs:
     name: Documentation
     needs: plan
     if: >-
-      contains(fromJSON(needs.plan.outputs.required-work), 'cargo.doc') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'cargo.build') ||
       contains(fromJSON(needs.plan.outputs.required-work), 'ci')
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -C target-cpu=x86-64-v3 -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v7
       - name: Set up mold
         uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
-        with:
-          make-default: false
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
