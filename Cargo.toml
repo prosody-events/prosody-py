@@ -11,6 +11,7 @@ repository = "https://github.com/prosody-events/prosody-py"
 version = "0.6.0"
 
 [lib]
+# cdylib only: the bindings have no Rust doctests; Python tests cover them.
 crate-type = ["cdylib"]
 name = "prosody"
 
