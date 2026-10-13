@@ -22,7 +22,7 @@ The Python client reports values it cannot convert to Prosody types. Prosody val
 | Option / Environment Variable           | Description                                          | Default                |
 |-----------------------------------------|------------------------------------------------------|------------------------|
 | `max_concurrency` / `PROSODY_MAX_CONCURRENCY` | Max messages being processed simultaneously    | 32                     |
-| `max_uncommitted` / `PROSODY_MAX_UNCOMMITTED` | Max queued messages before pausing consumption | 64                     |
+| `max_uncommitted` / `PROSODY_MAX_UNCOMMITTED` | Max in-flight messages; at the limit, only a partition with a waiting message pauses | 64 |
 | `timeout` / `PROSODY_TIMEOUT`           | Cancel handler if it runs longer than this           | 80% of stall threshold |
 | `commit_interval` / `PROSODY_COMMIT_INTERVAL` | How often to save progress to Kafka            | 1s                     |
 | `poll_interval` / `PROSODY_POLL_INTERVAL` | How often to fetch new messages from Kafka         | 100ms                  |
