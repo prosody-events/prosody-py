@@ -8,7 +8,7 @@ license = "MIT"
 name = "prosody-py"
 readme = "Readme.md"
 repository = "https://github.com/prosody-events/prosody-py"
-version = "0.6.0"
+version = "0.6.1"
 
 [lib]
 # cdylib only: the bindings have no Rust doctests; Python tests cover them.
