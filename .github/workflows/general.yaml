@@ -57,11 +57,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install build dependencies
-        if: runner.os == 'Linux'
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: cmake libcurl4-openssl-dev protobuf-compiler
-          version: 1.0
+        uses: ./.github/actions/build-dependencies
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: loadingalias/cargo-rail-action/setup@409962f05d90a78aae995ef6b1c8466010c0a460 # v10.1.1
@@ -131,19 +127,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install build dependencies
-        if: runner.os == 'Linux'
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: cmake libcurl4-openssl-dev protobuf-compiler
-          version: 1.0
-      - name: Install Maturin from crates.io
-        uses: baptiste0928/cargo-install@v3
-        with:
-          crate: maturin
+        uses: ./.github/actions/build-dependencies
       - name: Build and run tests
         run: |
           python -m venv venv
           source venv/bin/activate
+          pip install "maturin>=1.15,<2.0"
           maturin develop --extras dev
           pytest -v
         env:
@@ -161,16 +150,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Set up mold
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Install taplo from crates.io
-        uses: baptiste0928/cargo-install@v3
-        with:
-          crate: taplo-cli
-      - uses: Swatinem/rust-cache@v2
+      - name: Install taplo
+        env:
+          TAPLO_VERSION: 0.10.0
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/taplo.gz" \
+            "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-x86_64.gz"
+          gunzip "$RUNNER_TEMP/taplo.gz"
+          sudo install "$RUNNER_TEMP/taplo" /usr/local/bin/taplo
       - name: Enforce Rust formatting
         run: cargo fmt --check
       - name: Enforce TOML formatting
@@ -194,11 +184,8 @@ jobs:
           cache: 'pip'
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install native build dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: cmake libcurl4-openssl-dev protobuf-compiler
-          version: 1.0
+      - name: Install build dependencies
+        uses: ./.github/actions/build-dependencies
       - name: Install type-check dependencies
         run: pip install "maturin>=1.15,<2.0" "mypy>=2.3.1" "opentelemetry-api>=1.45.0,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.16.0"
       - name: Type-check examples against the source tree
@@ -226,20 +213,28 @@ jobs:
       - name: Install mold
         uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
+      # Use the nightly from the stable release date, as the Makefile does. The
+      # Rust cache key hashes each toolchain, so nightly changes only with
+      # stable, which already changes the key.
+      - name: Install nightly Rust
+        run: |
+          nightly="nightly-$(rustc +stable -vV | sed -n 's/^commit-date: //p')"
+          rustup toolchain install "$nightly" --profile minimal
+          echo "RUST_NIGHTLY=$nightly" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
       - name: Install build dependencies
-        if: runner.os == 'Linux'
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: cmake libcurl4-openssl-dev protobuf-compiler
-          version: 1.0
-      - name: Install udeps from crates.io
-        uses: baptiste0928/cargo-install@v3
-        with:
-          crate: cargo-udeps
+        uses: ./.github/actions/build-dependencies
+      - name: Install cargo-udeps
+        env:
+          UDEPS_VERSION: 0.1.61
+        run: |
+          archive="cargo-udeps-v${UDEPS_VERSION}-x86_64-unknown-linux-musl"
+          curl -sSfL -o "$RUNNER_TEMP/udeps.tar.gz" \
+            "https://github.com/est31/cargo-udeps/releases/download/v${UDEPS_VERSION}/${archive}.tar.gz"
+          sudo tar -xzf "$RUNNER_TEMP/udeps.tar.gz" -C /usr/local/bin --strip-components=2 "./${archive}/cargo-udeps"
       - name: Run cargo udeps
-        run: cargo +nightly udeps
+        run: cargo +"$RUST_NIGHTLY" udeps
 
   docs:
     name: Documentation
@@ -256,10 +251,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install build dependencies
-        if: runner.os == 'Linux'
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: cmake libcurl4-openssl-dev protobuf-compiler
-          version: 1.0
+        uses: ./.github/actions/build-dependencies
       - name: Check documentation
-        run: RUSTDOCFLAGS="-D warnings" cargo doc
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps

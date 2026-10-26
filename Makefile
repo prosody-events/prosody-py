@@ -1,3 +1,7 @@
+# Use the nightly from the stable release date. Nightly then changes only when
+# stable changes.
+NIGHTLY = nightly-$(shell rustc +stable -vV | sed -n 's/^commit-date: //p')
+
 # Install Rust and necessary tools
 bootstrap:
 	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -67,10 +71,10 @@ test-tracing:
 shell: up build
 	python -m asyncio
 
-# Check for unused dependencies
-# note: requires installing nightly with `rustup install nightly`
+# Check for unused dependencies with the nightly from the stable release date,
+# as CI does. Install it with `rustup toolchain install $(NIGHTLY)`.
 dependencies:
-	cargo +nightly udeps
+	cargo +$(NIGHTLY) udeps
 
 # Stop and remove Docker containers and volumes
 reset:
