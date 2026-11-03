@@ -12,7 +12,6 @@ P = TypeVar("P", default=JSONValue)
 Response = TypeVar("Response", default=JSONValue)
 
 class _ShutdownEvent(Protocol):
-    def is_set(self) -> bool: ...
     def wait(self) -> Awaitable[object]: ...
 
 class EventHandler(ABC, Generic[P, Response]):
