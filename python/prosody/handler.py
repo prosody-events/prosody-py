@@ -56,7 +56,8 @@ Result = TypeVar("Result")
 
 
 class _ShutdownEvent(Protocol):
-    wait: Callable[[], Awaitable[None]]
+    def is_set(self) -> bool: ...
+    def wait(self) -> Awaitable[object]: ...
 
 
 class EventHandler(ABC, Generic[P, Response]):
@@ -135,8 +136,15 @@ class ProsodyHandler(Generic[P, Response]):
     ) -> Result:
         otel_context = extract(carrier=opentelemetry_context)
         with self.tracer.start_as_current_span(span_name, context=otel_context):
+            # Rust can set the event before this coroutine first runs.
+            # The handler must not start for a delivery that is already cancelled.
+            if shutdown_event.is_set():
+                raise asyncio.CancelledError("partition has been revoked")
+
+            # wait() returns a finished future, not a coroutine, if the event is set.
+            # Create the waiter first, so that a failure cannot orphan the handler task.
+            shutdown_task = asyncio.ensure_future(shutdown_event.wait())
             handler_task = asyncio.create_task(call())
-            shutdown_task = asyncio.create_task(shutdown_event.wait())
             try:
                 done, _ = await asyncio.wait(
                     {handler_task, shutdown_task},
