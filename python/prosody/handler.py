@@ -55,8 +55,11 @@ Response = TypeVar("Response", default=JSONValue)
 Result = TypeVar("Result")
 
 
+_REVOKED = "partition has been revoked"
+
+
 class _ShutdownEvent(Protocol):
-    wait: Callable[[], Awaitable[None]]
+    wait: Callable[[], Awaitable[object]]
 
 
 class EventHandler(ABC, Generic[P, Response]):
@@ -133,28 +136,27 @@ class ProsodyHandler(Generic[P, Response]):
         opentelemetry_context: Mapping[str, str],
         shutdown_event: _ShutdownEvent,
     ) -> Result:
+        """Run the handler as a task that the shutdown event cancels.
+
+        The handler never starts if Rust sets the event first.
+        No task outlives the dispatch.
+        """
         otel_context = extract(carrier=opentelemetry_context)
         with self.tracer.start_as_current_span(span_name, context=otel_context):
-            handler_task = asyncio.create_task(call())
-            shutdown_task = asyncio.create_task(shutdown_event.wait())
+            # wait() returns a finished future, not a coroutine, if the event is set.
+            shutdown_task = asyncio.ensure_future(shutdown_event.wait())
+            if shutdown_task.done():
+                raise asyncio.CancelledError(_REVOKED)
+
             try:
-                done, _ = await asyncio.wait(
-                    {handler_task, shutdown_task},
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                if shutdown_task in done:
-                    handler_task.cancel("partition has been revoked")
-                try:
-                    return await handler_task
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    _capture_handler_exception(event_type, details, exc)
-                    raise
+                handler_task = asyncio.create_task(call())
+                shutdown_task.add_done_callback(lambda _: handler_task.cancel(_REVOKED))
+                return await handler_task
+            except Exception as exc:
+                _capture_handler_exception(event_type, details, exc)
+                raise
             finally:
-                for task in {handler_task, shutdown_task}:
-                    if not task.done():
-                        task.cancel("task is shutting down")
+                shutdown_task.cancel()
 
     async def on_message(
         self,
