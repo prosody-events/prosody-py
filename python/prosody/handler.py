@@ -59,7 +59,7 @@ _REVOKED = "partition has been revoked"
 
 
 class _ShutdownEvent(Protocol):
-    def wait(self) -> Awaitable[object]: ...
+    wait: Callable[[], Awaitable[object]]
 
 
 class EventHandler(ABC, Generic[P, Response]):
