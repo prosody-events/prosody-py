@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "maturin"
-requires = ["maturin>=1.14,<2.0"]
+requires = ["maturin>=1.16,<2.0"]
 
 [project]
 classifiers = [
@@ -37,13 +37,13 @@ requires-python = ">=3.10"
 
 [project.optional-dependencies]
 dev = [
-    "mypy>=2.3.1",
-    "opentelemetry-exporter-otlp>=1.45.0,<2.0.0",
-    "opentelemetry-sdk>=1.45.0,<2.0.0",
-    "pytest-asyncio>=1.4.0,<2.0.0",
+    "mypy>=2.4.1",
+    "opentelemetry-exporter-otlp>=1.45.2,<2.0.0",
+    "opentelemetry-sdk>=1.45.2,<2.0.0",
+    "pytest-asyncio>=1.4.1,<2.0.0",
     "pytest-watch>=4.2.0",
-    "pytest>=9.1.1",
-    "sentry-sdk>=2.71.0,<3.0.0",
+    "pytest>=9.2.0",
+    "sentry-sdk>=2.74.0,<3.0.0",
 ]
 sentry = ["sentry-sdk>=2.66.0,<3.0.0"]
 
