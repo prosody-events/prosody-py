@@ -32,6 +32,15 @@ Prosody and mypy. Keyed-state definitions carry their declared value type throug
 An unsubscripted handler uses `JSONValue` for both types.
 See [Keyed State](#keyed-state) for typed examples.
 
+### Kafka version
+
+Prosody requires Kafka 4.0 or later. Consumers use the broker-side consumer
+group protocol (KIP-848). The broker assigns partitions, and a rebalance
+changes only the members whose partitions move. Brokers older than 4.0 do
+not support this protocol, and the client does not fall back to the classic
+protocol. A consumer that connects to an older broker logs a fatal error and
+gets no partitions, so its readiness probe stays unready.
+
 ## Quick Start
 
 ```python
