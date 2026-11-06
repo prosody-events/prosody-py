@@ -6,7 +6,9 @@
 
 use crate::client::ProsodyClient;
 use crate::state::StateEnv;
-use crate::util::{decode_duration, decode_optional_duration, option, string_or_vec};
+use crate::util::{
+    decode_duration, decode_optional_duration, option, optional_byte_size, string_or_vec,
+};
 use middleware::{
     build_dedup_config, build_defer_config, build_failure_topic_config,
     build_monopolization_config, build_retry_config, build_scheduler_config, build_timeout_config,
@@ -168,6 +170,18 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
 
     if let Some(statistics_interval) = option(config, "statistics_interval")? {
         builder.statistics_interval(decode_duration(&statistics_interval)?);
+    }
+
+    if let Some(size) = optional_byte_size(config, "partition_prefetch")? {
+        builder.partition_prefetch(size);
+    }
+
+    if let Some(size) = optional_byte_size(config, "fetch_max_bytes")? {
+        builder.fetch_max_bytes(size);
+    }
+
+    if let Some(fetch_wait) = option(config, "fetch_wait")? {
+        builder.fetch_wait(decode_duration(&fetch_wait)?);
     }
 
     // An explicit `None` turns the probe server off, so only this option

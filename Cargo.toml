@@ -32,6 +32,10 @@ tracing = { version = "0.1", features = ["log-always"] }
 tracing-opentelemetry = "0.34"
 tracing-subscriber = "0.3"
 
+# Temporary: build against unreleased prosody main. Remove after release.
+[patch.crates-io]
+prosody = { git = "https://github.com/prosody-events/prosody", rev = "656cb911c96df03632025738288998ffbccac0e3" }
+
 [lints.rust]
 missing_docs = "warn"
 unsafe_code = "forbid"

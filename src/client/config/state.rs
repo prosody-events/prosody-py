@@ -2,8 +2,7 @@
 //! collections.
 
 use super::collection::register_state_collection;
-use crate::util::{option, parse_read_cache};
-use prosody::ByteSize;
+use crate::util::{option, optional_byte_size, parse_read_cache};
 use prosody::consumer::KeyedStateConfiguration;
 use prosody::high_level::erased::ErasedReadCache;
 use prosody::subsystem::SubsystemName;
@@ -81,24 +80,4 @@ pub(super) fn build_keyed_state_config(
     }
 
     Ok(keyed)
-}
-
-/// Reads an optional byte size, such as `"64 MiB"`, from the client config.
-///
-/// Returns `None` when the field is absent or `None`, so the core default
-/// and its environment variable still apply.
-///
-/// # Errors
-///
-/// Returns a `PyValueError` naming `field` if the value is not a size string.
-fn optional_byte_size(config: &Bound<PyDict>, field: &str) -> PyResult<Option<ByteSize>> {
-    let Some(size) = option(config, field)? else {
-        return Ok(None);
-    };
-    let size: String = size
-        .extract()
-        .map_err(|_| PyValueError::new_err(format!("{field}: must be a size string")))?;
-    size.parse::<ByteSize>()
-        .map(Some)
-        .map_err(|error| PyValueError::new_err(format!("{field}: {error}")))
 }

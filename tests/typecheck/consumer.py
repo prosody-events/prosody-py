@@ -177,3 +177,4 @@ async def write_structured_payloads(client: ProsodyClient, context: Context) -> 
     await context.state(LOG).append(event)
     await context.state(LOG).appendleft(labels)
     assert_type(await context.state(CART).get(), JSONValue)
+    assert_type(await context.state(CART).contains(), bool)

@@ -34,6 +34,10 @@ class PublishedValue(Generic[T]):
         """Read the value for ``key``, or ``None`` when there is none."""
         return await self._native.get(key)
 
+    async def contains(self, key: str) -> bool:
+        """Report whether ``key`` has a value, without a decode of the value."""
+        return await self._native.contains(key)
+
 
 class PublishedMap(Generic[V]):
     """Read-only access to a map collection that another client publishes."""

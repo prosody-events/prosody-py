@@ -95,8 +95,11 @@ class ProsodyClient:
             stall_threshold: Threshold determining when message processing has stalled.
             shutdown_timeout: Shutdown budget; handlers complete freely before cancellation fires near the deadline.
             poll_interval: Time between message polls.
-            commit_interval: Time between offset commits.
+            commit_interval: Time between offset commits. Must be between 1 millisecond and 24 hours.
             statistics_interval: Time between librdkafka statistics reports. Env: ``PROSODY_STATISTICS_INTERVAL``. Defaults to 5 seconds.
+            partition_prefetch: Bytes of fetched records that wait for each assigned partition, such as ``"128 KiB"``. Fetched memory grows with the number of assigned partitions: about two times this value, plus one batch, per partition. Env: ``PROSODY_PARTITION_PREFETCH``. Defaults to 128 KiB.
+            fetch_max_bytes: Maximum bytes in one fetch response from one broker, such as ``"50 MiB"``. Env: ``PROSODY_FETCH_MAX_BYTES``. Defaults to 50 MiB.
+            fetch_wait: How long a broker can hold a fetch request when no new records are available. A shorter wait lowers the delay for a partition that is behind, but an idle consumer sends more fetch requests. Env: ``PROSODY_FETCH_WAIT``. Defaults to 500 milliseconds.
             mode: Operating mode ('pipeline', 'low-latency', or 'best-effort').
             retry_base: Initial delay for exponential backoff in retries.
             max_retries: Low-latency retries before routing to the failure topic. Zero routes the initial failure without retrying.
