@@ -11,7 +11,7 @@ strategies, and integrated OpenTelemetry support for distributed tracing.
 - **Timer System**: Persistent scheduled execution backed by Cassandra or in-memory store
 - **Quality of Service**: Fair scheduling limits concurrency and prevents failures from starving fresh traffic. Pipeline mode adds deferred retry and monopolization detection
 - **Distributed Tracing**: OpenTelemetry integration for tracing message flow across services
-- **Backpressure**: Pauses partitions when handlers fall behind
+- **Backpressure**: Stops reading a partition when handlers fall behind, and bounds fetched and decoded records
 - **Mocking**: In-memory Kafka broker for tests (`mock=True`)
 - **Failure Handling**: Pipeline (retry forever), Low-Latency (dead letter), Best-Effort (log and skip)
 - **Type Checking**: PEP 561 type information for mypy and other Python type checkers
@@ -114,7 +114,7 @@ Prosody enables efficient, parallel processing of Kafka messages while maintaini
 - **Partition-Level Parallelism**: Separate management of each Kafka partition
 - **Key-Based Queuing**: Ordered processing for each key within a partition
 - **Concurrent Processing**: Simultaneous processing of different keys
-- **Backpressure Management**: Pause consumption from backed-up partitions
+- **Backpressure Management**: Stop reading from backed-up partitions
 
 ## Quality of Service
 
@@ -656,7 +656,7 @@ Do not reuse a durable name for a different collection kind or payload type. Cre
 
 | Collection | JSON payload | Kafka message | Main operations |
 | --- | --- | --- | --- |
-| Value | `value` | `message_value` | `get`, `set`, `clear` |
+| Value | `value` | `message_value` | `get`, `contains`, `set`, `clear` |
 | Ordered string map | `map` | `message_map` | `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `set`, `remove`, `items`, `keys`, `values`, `clear` |
 | Ordered string set | `set` | - | `add`, `discard`, `contains`, `contains_many`, `is_empty`, `members`, `clear` |
 | Deque | `deque` | `message_deque` | `append`, `appendleft`, `pop`, `popleft`, `get`, `size`, `values`, `clear` |
@@ -1229,6 +1229,7 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 `ValueState[T]`:
 
 - `get() -> Optional[T]`
+- `contains() -> bool` — test whether a value exists, without a decode of the value
 - `set(value: T) -> None`
 - `clear() -> None`
 - `commit() -> StoreOutcome`
@@ -1287,7 +1288,7 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 
 `Demand`: a frozen dataclass with `kind: DemandKind` and `retry: int`. `DemandKind` is an enum with `DemandKind.NORMAL` and `DemandKind.FAILURE`.
 
-Published readers take the user key as their first argument. `PublishedValue[T]` provides `get`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `items`, `keys`, and `values`. `PublishedSet` provides `contains`, `contains_many`, `is_empty`, and `members`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, `values`, and `members` return async iterators directly and accept the handler query options.
+Published readers take the user key as their first argument. `PublishedValue[T]` provides `get` and `contains`. `PublishedMap[V]` provides `get`, `get_many`, `contains`, `contains_many`, `is_empty`, `items`, `keys`, and `values`. `PublishedSet` provides `contains`, `contains_many`, `is_empty`, and `members`. `PublishedDeque[T]` provides `get`, `size`, `is_empty`, `peek`, `peekleft`, and `values`. `items`, `keys`, `values`, and `members` return async iterators directly and accept the handler query options.
 
 Errors:
 

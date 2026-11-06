@@ -11,6 +11,7 @@ V = TypeVar("V", default=JSONValue)
 
 class PublishedValue(Generic[T]):
     async def get(self, key: str) -> Optional[T]: ...
+    async def contains(self, key: str) -> bool: ...
 
 
 class PublishedMap(Generic[V]):

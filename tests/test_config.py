@@ -71,7 +71,16 @@ class _Recorder(EventHandler):
         pass
 
 
-async def test_statistics_interval_reaches_the_consumer(client_factory):
+@pytest.mark.parametrize(
+    ("field", "accepted", "rejected"),
+    [
+        ("statistics_interval", timedelta(minutes=1), 0.0),
+        ("partition_prefetch", "256 KiB", "1 B"),
+        ("fetch_max_bytes", "16 MiB", "1 KiB"),
+        ("fetch_wait", timedelta(milliseconds=100), 0.0),
+    ],
+)
+async def test_consumer_option_reaches_the_consumer(field, accepted, rejected, client_factory):
     options = dict(
         bootstrap_servers="localhost:9092",
         group_id=f"test-group-{uuid.uuid4().hex}",
@@ -80,12 +89,12 @@ async def test_statistics_interval_reaches_the_consumer(client_factory):
         probe_port=None,
         mock=True,
     )
-    accepted = await client_factory(**options, statistics_interval=timedelta(minutes=1))
-    await accepted.subscribe(_Recorder("none"))
+    valid = await client_factory(**options, **{field: accepted})
+    await valid.subscribe(_Recorder("none"))
 
-    rejected = await client_factory(**options, statistics_interval=0.0)
-    with pytest.raises(RuntimeError, match="statistics_interval"):
-        await rejected.subscribe(_Recorder("none"))
+    invalid = await client_factory(**options, **{field: rejected})
+    with pytest.raises(RuntimeError, match=field):
+        await invalid.subscribe(_Recorder("none"))
 
 
 async def test_idempotence_cache_size_sizes_the_producer_cache(client_factory):

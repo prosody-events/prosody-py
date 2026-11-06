@@ -29,6 +29,12 @@ impl PublishedValue {
             json_object,
         )
     }
+
+    fn contains<'p>(&self, py: Python<'p>, key: String) -> PyResult<Bound<'p, PyAny>> {
+        let inner = self.inner.clone();
+        let op = async move { inner.contains(key).await };
+        run(py, &self.env, op, |_, _, found| Ok(found))
+    }
 }
 
 /// A read-only published map collection.
