@@ -132,7 +132,7 @@ jobs:
         run: |
           python -m venv venv
           source venv/bin/activate
-          pip install "maturin>=1.15,<2.0"
+          pip install "maturin>=1.16,<2.0"
           maturin develop --extras dev
           pytest -v
         env:
@@ -187,7 +187,7 @@ jobs:
       - name: Install build dependencies
         uses: ./.github/actions/build-dependencies
       - name: Install type-check dependencies
-        run: pip install "maturin>=1.15,<2.0" "mypy>=2.3.1" "opentelemetry-api>=1.45.0,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.16.0"
+        run: pip install "maturin>=1.16,<2.0" "mypy>=2.4.1" "opentelemetry-api>=1.45.2,<2.0.0" "threadsafe-async>=0.2.1,<1.0.0" "typing_extensions>=4.16.0"
       - name: Type-check examples against the source tree
         run: mypy
       - name: Build the wheel

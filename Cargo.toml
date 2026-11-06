@@ -19,15 +19,15 @@ name = "prosody"
 chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.33"
-parking_lot = "0.12"
-prosody = { version = "0.7.0", features = ["libz-static"] }
+parking_lot = "0.13"
+prosody = { version = "0.7.1", features = ["libz-static"] }
 pyo3 = { version = "0.29", features = ["chrono"] }
 pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
 pythonize = "0.29"
-rustfs-mimalloc = { version = "0.5.6", features = ["local_dynamic_tls"] }
+rustfs-mimalloc = { version = "0.7.3", features = ["local_dynamic_tls"] }
 serde_json = "1.0"
 thiserror = "2.0"
-tokio = { version = "1.53", features = ["rt-multi-thread"] }
+tokio = { version = "1.54", features = ["rt-multi-thread"] }
 tracing = { version = "0.1", features = ["log-always"] }
 tracing-opentelemetry = "0.34"
 tracing-subscriber = "0.3"
