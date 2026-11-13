@@ -306,4 +306,4 @@ jobs:
       - uses: actions/download-artifact@v8
       - uses: astral-sh/setup-uv@v10.2.0
       - name: Publish to PyPI
-        run: uv publish --trusted-publishing always wheels-*/*
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ wheels-*/*
