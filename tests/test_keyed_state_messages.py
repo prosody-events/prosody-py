@@ -32,9 +32,9 @@ async def test_message_value_roundtrip(state_client):
         obs[o["tag"]] = o
 
     assert "error" not in obs
-    assert obs["got"].pop("present") is True
+    assert obs["got"]["present"] is True
     orig = {k: v for k, v in obs["orig"].items() if k != "tag"}
-    got = {k: v for k, v in obs["got"].items() if k != "tag"}
+    got = {k: v for k, v in obs["got"].items() if k not in ("tag", "present")}
     # event2's offset differs from event1's, so equality proves the store
     # returned the recorded message rather than the live one.
     assert got == orig
