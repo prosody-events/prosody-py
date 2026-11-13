@@ -3,6 +3,7 @@
 //! This module provides helper functions to extract and convert data
 //! from Python objects into Rust-compatible types using the `PyO3` library.
 
+use prosody::ByteSize;
 use prosody::high_level::erased::ErasedReadCache;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods, PyBool, PyDelta, PyDict, PyDictMethods};
@@ -136,6 +137,26 @@ pub fn parse_read_cache(field: &str, value: Option<&Bound<PyAny>>) -> PyResult<E
 /// Returns a `PyErr` if the dict lookup fails.
 pub fn option<'py>(config: &Bound<'py, PyDict>, key: &str) -> PyResult<Option<Bound<'py, PyAny>>> {
     Ok(config.get_item(key)?.filter(|value| !value.is_none()))
+}
+
+/// Reads an optional byte size, such as `"64 MiB"`, from the client config.
+///
+/// Returns `None` when the field is absent or `None`, so the core default
+/// and its environment variable still apply.
+///
+/// # Errors
+///
+/// Returns a `PyValueError` naming `field` if the value is not a size string.
+pub fn optional_byte_size(config: &Bound<PyDict>, field: &str) -> PyResult<Option<ByteSize>> {
+    let Some(size) = option(config, field)? else {
+        return Ok(None);
+    };
+    let size: String = size
+        .extract()
+        .map_err(|_| PyValueError::new_err(format!("{field}: must be a size string")))?;
+    size.parse::<ByteSize>()
+        .map(Some)
+        .map_err(|error| PyValueError::new_err(format!("{field}: {error}")))
 }
 
 /// Rejects a call on a client that the current process did not create.

@@ -201,8 +201,8 @@ impl ProsodyClient {
 
     /// Opens a read-only published collection of `kind`: `"value"`, `"map"`,
     /// `"set"`, or `"deque"`.
-    #[pyo3(signature = (subsystem, kind, name, *, read_cache = None))]
-    fn _published<'p>(
+    #[pyo3(name = "_published", signature = (subsystem, kind, name, *, read_cache = None))]
+    fn published<'p>(
         &self,
         py: Python<'p>,
         subsystem: String,

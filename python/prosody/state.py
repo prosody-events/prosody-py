@@ -140,6 +140,14 @@ class ValueState(_Handle, Generic[T]):
         """Read the current value, or ``None`` when absent or cleared."""
         return await self._native.get()
 
+    async def contains(self) -> bool:
+        """Report whether a value exists, including buffered writes.
+
+        This check does not decode the value. A message value reports ``True``
+        even when Prosody can no longer fetch the Kafka message.
+        """
+        return await self._native.contains()
+
     async def set(self, value: T) -> None:
         """Buffer a write of ``value``.
 

@@ -17,7 +17,8 @@ async def test_message_value_roundtrip(state_client):
                 await results.send({"tag": "orig", **_msg_fields(msg)})
             else:
                 got = await _wait(lm.get())
-                await results.send({"tag": "got", **_msg_fields(got)})
+                present = await _wait(lm.contains())
+                await results.send({"tag": "got", "present": present, **_msg_fields(got)})
         except Exception as e:  # pragma: no cover
             await results.send({"tag": "error", "error": str(e)})
 
@@ -31,8 +32,9 @@ async def test_message_value_roundtrip(state_client):
         obs[o["tag"]] = o
 
     assert "error" not in obs
+    assert obs["got"]["present"] is True
     orig = {k: v for k, v in obs["orig"].items() if k != "tag"}
-    got = {k: v for k, v in obs["got"].items() if k != "tag"}
+    got = {k: v for k, v in obs["got"].items() if k not in ("tag", "present")}
     # event2's offset differs from event1's, so equality proves the store
     # returned the recorded message rather than the live one.
     assert got == orig

@@ -20,6 +20,7 @@ from prosody import (
     deque as deque_definition,
     map as map_definition,
     set as set_definition,
+    value as value_definition,
 )
 
 from support import (
@@ -248,9 +249,13 @@ async def test_published_readers_accept_query_options(
     totals = map_definition("pub-totals", published=True, read_cache=False)
     tags = set_definition("pub-tags", published=True, read_cache=False)
     backlog = deque_definition("pub-backlog", published=True, read_cache=False)
+    cart = value_definition("pub-cart", published=True, read_cache=False)
     client = await client_factory(
         **state_config(
-            topic, group, subsystem=subsystem, state_collections=[totals, tags, backlog]
+            topic,
+            group,
+            subsystem=subsystem,
+            state_collections=[totals, tags, backlog, cart],
         )
     )
     zero = map_definition("pub-totals", published=True, read_cache=timedelta(0))
@@ -264,12 +269,14 @@ async def test_published_readers_accept_query_options(
                     await _wait(ctx.state(totals).set(key, number))
                     await _wait(ctx.state(tags).add(key))
                     await _wait(ctx.state(backlog).append(number))
+                await _wait(ctx.state(cart).set({"items": 3}))
                 return
 
             key = msg.key
             m = await _wait(client.state(subsystem, totals))
             s = await _wait(client.state(subsystem, tags))
             d = await _wait(client.state(subsystem, backlog))
+            v = await _wait(client.state(subsystem, cart))
             await results.send(
                 {
                     "map_empty": await _wait(m.is_empty(key)),
@@ -286,6 +293,10 @@ async def test_published_readers_accept_query_options(
                         _collect(s.members(key, Direction.BACKWARD, before="a1"))
                     ),
                     "deque_values": await _wait(_collect(d.values(key, range=range(1, 3)))),
+                    "value_contains": [
+                        await _wait(v.contains(key)),
+                        await _wait(v.contains(nonce())),
+                    ],
                 }
             )
         except Exception as e:  # pragma: no cover - reported, not raised
@@ -309,3 +320,4 @@ async def test_published_readers_accept_query_options(
     assert obs["set_empty"] is False
     assert obs["set_members"] == ["b1", "a2"]
     assert obs["deque_values"] == [1, 2]
+    assert obs["value_contains"] == [True, False]

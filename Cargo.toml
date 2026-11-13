@@ -20,7 +20,7 @@ chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.33"
 parking_lot = "0.13"
-prosody = { version = "0.7.1", features = ["libz-static"] }
+prosody = { version = "0.8", features = ["libz-static"] }
 pyo3 = { version = "0.29", features = ["chrono"] }
 pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
 pythonize = "0.29"

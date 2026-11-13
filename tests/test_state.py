@@ -106,6 +106,7 @@ WRITES = {"set", "clear", "remove", "insert", "push_back", "push_front"}
 # whose Python name or arguments differ from, or match, the native call.
 MAPPINGS = [
     (ValueState, lambda s: s.get(), "get", ()),
+    (ValueState, lambda s: s.contains(), "contains", ()),
     (ValueState, lambda s: s.set(1), "set", (1,)),
     (ValueState, lambda s: s.clear(), "clear", ()),
     (MapState, lambda s: s.get("k"), "get", ("k",)),
@@ -133,6 +134,7 @@ MAPPINGS = [
     (DequeState, lambda s: s.is_empty(), "is_empty", ()),
     (DequeState, lambda s: s.clear(), "clear", ()),
     (PublishedValue, lambda s: s.get("u"), "get", ("u",)),
+    (PublishedValue, lambda s: s.contains("u"), "contains", ("u",)),
     (PublishedMap, lambda s: s.get("u", "a"), "get", ("u", "a")),
     (PublishedMap, lambda s: s.get_many("u", ["a"]), "get_many", ("u", ["a"])),
     (PublishedMap, lambda s: s.contains("u", "a"), "contains_key", ("u", "a")),
