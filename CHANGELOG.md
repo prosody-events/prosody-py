@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.6.1...prosody-py-v0.7.0) (2026-11-13)
+
+
+### Features
+
+* **deps:** upgrade prosody to 0.8.0 ([#61](https://github.com/prosody-events/prosody-py/issues/61)) ([164c6f0](https://github.com/prosody-events/prosody-py/commit/164c6f02239862c46b42497b411bd4b290667f5b))
+
+
+### Bug Fixes
+
+* **deps:** upgrade dependencies ([#60](https://github.com/prosody-events/prosody-py/issues/60)) ([e0ea573](https://github.com/prosody-events/prosody-py/commit/e0ea573ce1a35f0d894ed22c1085c5aae014e469))
+* **handler:** do not start a handler that was cancelled before dispatch ([#56](https://github.com/prosody-events/prosody-py/issues/56)) ([b1289b2](https://github.com/prosody-events/prosody-py/commit/b1289b2b318241a5fa83ae04916b683ccd6eced3))
+
 ## [0.6.1](https://github.com/prosody-events/prosody-py/compare/prosody-py-v0.6.0...prosody-py-v0.6.1) (2026-10-13)
 
 
