@@ -143,8 +143,8 @@ class ValueState(_Handle, Generic[T]):
     async def contains(self) -> bool:
         """Report whether a value exists, including buffered writes.
 
-        This check does not decode the value. A message value does not fetch
-        its Kafka message.
+        This check does not decode the value. A message value reports ``True``
+        even when Prosody can no longer fetch the Kafka message.
         """
         return await self._native.contains()
 

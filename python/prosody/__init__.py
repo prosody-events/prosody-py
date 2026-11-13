@@ -85,17 +85,17 @@ class ProsodyClient:
             source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
             send_timeout: Timeout for message send operations.
             group_id: Consumer group name.
-            idempotence_cache_size: Capacity of the producer idempotence cache and of the consumer deduplication cache. Must be at least 1. Default: 8192.
+            idempotence_cache_size: Capacity of the producer idempotence cache and of the consumer deduplication cache. Default: 8192.
             idempotence_version: Version string for cache-busting deduplication hashes. Changing this invalidates all previously recorded entries. Default: "1".
             idempotence_ttl: TTL for deduplication records in Cassandra. Default: 7 days.
             subscribed_topics: Topics to subscribe to.
             allowed_events: Allowed event type prefixes. All are allowed if unset.
             max_concurrency: Maximum global concurrency limit.
-            max_uncommitted: Max number of uncommitted messages.
+            max_uncommitted: Max decoded messages in flight across all partitions.
             stall_threshold: Threshold determining when message processing has stalled.
             shutdown_timeout: Shutdown budget; handlers complete freely before cancellation fires near the deadline.
-            poll_interval: Time between message polls.
-            commit_interval: Time between offset commits. Must be between 1 millisecond and 24 hours.
+            poll_interval: How often to serve Kafka events, such as rebalances, and store offsets.
+            commit_interval: Time between offset commits.
             statistics_interval: Time between librdkafka statistics reports. Env: ``PROSODY_STATISTICS_INTERVAL``. Defaults to 5 seconds.
             partition_prefetch: Bytes of fetched records that wait for each assigned partition, such as ``"128 KiB"``. Fetched memory grows with the number of assigned partitions: about two times this value, plus one batch, per partition. Env: ``PROSODY_PARTITION_PREFETCH``. Defaults to 128 KiB.
             fetch_max_bytes: Maximum bytes in one fetch response from one broker, such as ``"50 MiB"``. Env: ``PROSODY_FETCH_MAX_BYTES``. Defaults to 50 MiB.

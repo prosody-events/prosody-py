@@ -23,7 +23,7 @@ macro_rules! value_state {
                 run_item(py, &self.env, async move { state.get().await }, $restore)
             }
 
-            /// Reports whether a value exists, without a decode of the value.
+            /// Reports whether a value exists. It does not decode the value.
             fn contains<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
                 let state = Arc::clone(&self.state);
                 let op = async move { state.contains().await };

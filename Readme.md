@@ -1229,7 +1229,7 @@ Key scans (`MapState.items`, `keys`, and `values`, and `SetState.members`) accep
 `ValueState[T]`:
 
 - `get() -> Optional[T]`
-- `contains() -> bool` — test whether a value exists, without a decode of the value
+- `contains() -> bool` — test whether a value exists. It does not decode the value
 - `set(value: T) -> None`
 - `clear() -> None`
 - `commit() -> StoreOutcome`

@@ -35,7 +35,7 @@ class PublishedValue(Generic[T]):
         return await self._native.get(key)
 
     async def contains(self, key: str) -> bool:
-        """Report whether ``key`` has a value, without a decode of the value."""
+        """Report whether ``key`` has a value. This check does not decode the value."""
         return await self._native.contains(key)
 
 
