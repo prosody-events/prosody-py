@@ -1,5 +1,3 @@
-import logging
-
 from prosody.prosody import (
     _NativeProsodyClient,
     AdminClient,
@@ -203,5 +201,3 @@ _READERS = {
     SetDefinition: PublishedSet,
     DequeDefinition: PublishedDeque,
 }
-
-logging.getLogger('prosody.consumer.poll').setLevel(logging.ERROR)
