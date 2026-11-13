@@ -126,7 +126,9 @@ assert_type(wrapped_handler, ProsodyHandler[Event, Response])
 assert_type(wrapped_handler.handler, EventHandler[Event, Response])
 
 
-async def read_published_set(client: ProsodyClient) -> None:
+async def read_published(client: ProsodyClient) -> None:
+    cart = await client.state("checkout", CART)
+    assert_type(await cart.contains("user"), bool)
     reader = await client.state("checkout", TAGS)
     assert_type(reader, PublishedSet)
     assert_type(await reader.contains("user", "a"), bool)

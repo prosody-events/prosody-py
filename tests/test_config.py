@@ -75,8 +75,8 @@ class _Recorder(EventHandler):
     ("field", "accepted", "rejected"),
     [
         ("statistics_interval", timedelta(minutes=1), 0.0),
-        ("partition_prefetch", "256 KiB", "1 B"),
-        ("fetch_max_bytes", "16 MiB", "1 KiB"),
+        ("partition_prefetch", "256 KiB", "4 GiB"),
+        ("fetch_max_bytes", "16 MiB", "4 GiB"),
         ("fetch_wait", timedelta(milliseconds=100), 0.0),
     ],
 )
@@ -84,8 +84,8 @@ async def test_consumer_option_reaches_the_consumer(field, accepted, rejected, c
     options = dict(
         bootstrap_servers="localhost:9092",
         group_id=f"test-group-{uuid.uuid4().hex}",
-        subscribed_topics="statistics",
-        source_system="test-statistics",
+        subscribed_topics="consumer-option",
+        source_system="test-consumer-option",
         probe_port=None,
         mock=True,
     )

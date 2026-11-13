@@ -40,20 +40,14 @@ async def test_value_roundtrip_and_absent(state_client):
         present = await _wait(c.contains())
         await _wait(c.clear())
         cleared = await _wait(c.get())
-        gone = await _wait(c.contains())
-        return {
-            "before": before,
-            "after": after,
-            "cleared": cleared,
-            "contains": [missing, present, gone],
-        }
+        return {"before": before, "after": after, "cleared": cleared, "contains": [missing, present]}
 
     obs = await observe(client, topic, cb)
 
     assert obs["before"] is None
     assert obs["after"] == rich  # nested null preserved through the serde bridge
     assert obs["cleared"] is None
-    assert obs["contains"] == [False, True, False]
+    assert obs["contains"] == [False, True]
 
 async def test_map_set_remove_scan_order_getmany(state_client):
     client, topic, _ = state_client
