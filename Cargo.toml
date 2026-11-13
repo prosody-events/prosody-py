@@ -20,7 +20,7 @@ chrono = "0.4"
 futures = "0.3"
 opentelemetry = "0.33"
 parking_lot = "0.13"
-prosody = { version = "0.7.1", features = ["libz-static"] }
+prosody = { version = "0.8", features = ["libz-static"] }
 pyo3 = { version = "0.29", features = ["chrono"] }
 pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
 pythonize = "0.29"
@@ -31,10 +31,6 @@ tokio = { version = "1.54", features = ["rt-multi-thread"] }
 tracing = { version = "0.1", features = ["log-always"] }
 tracing-opentelemetry = "0.34"
 tracing-subscriber = "0.3"
-
-# Temporary: build against unreleased prosody main. Remove after release.
-[patch.crates-io]
-prosody = { git = "https://github.com/prosody-events/prosody", rev = "656cb911c96df03632025738288998ffbccac0e3" }
 
 [lints.rust]
 missing_docs = "warn"
