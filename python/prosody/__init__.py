@@ -83,6 +83,7 @@ class ProsodyClient:
             source_system: Identifier for the producing system to prevent loops. Defaults to the group_id if unspecified.
             send_timeout: Timeout for message send operations.
             group_id: Consumer group name.
+            kafka_rack: Availability zone (rack) of this process, sent to Kafka as ``client.rack`` so the consumer and deferred-message loader fetch from a replica in the same zone. Env: ``PROSODY_KAFKA_RACK``, or ``PROSODY_KAFKA_RACK_FILE`` to name a file that holds the value. Defaults to fetching from the partition leader.
             idempotence_cache_size: Capacity of the producer idempotence cache and of the consumer deduplication cache. Default: 8192.
             idempotence_version: Version string for cache-busting deduplication hashes. Changing this invalidates all previously recorded entries. Default: "1".
             idempotence_ttl: TTL for deduplication records in Cassandra. Default: 7 days.

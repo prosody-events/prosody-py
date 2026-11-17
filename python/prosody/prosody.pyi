@@ -70,6 +70,7 @@ class _ProsodyClientApi:
             source_system: Optional[str] = None,
             send_timeout: Optional[Duration] = None,
             group_id: Optional[str] = None,
+            kafka_rack: Optional[str] = None,
             idempotence_cache_size: Optional[int] = None,
             idempotence_version: Optional[str] = None,
             idempotence_ttl: Optional[Duration] = None,

@@ -140,6 +140,11 @@ fn build_consumer_config(config: &Bound<PyDict>) -> PyResult<ConsumerConfigurati
         builder.group_id(group_id.extract::<String>()?);
     }
 
+    // Kafka rack (optional); the message loader uses the same rack.
+    if let Some(rack) = option(config, "kafka_rack")? {
+        builder.rack(Some(rack.extract::<String>()?));
+    }
+
     if let Some(subscribed_topics) = option(config, "subscribed_topics")? {
         builder.subscribed_topics(string_or_vec(&subscribed_topics)?);
     }

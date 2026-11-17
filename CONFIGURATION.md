@@ -10,6 +10,7 @@ The Python client reports values it cannot convert to Prosody types. Prosody val
 |-----------------------------------------|---------------------------------------------------|--------------|
 | `bootstrap_servers` / `PROSODY_BOOTSTRAP_SERVERS` | Kafka servers to connect to             | -            |
 | `group_id` / `PROSODY_GROUP_ID`         | Consumer group name                               | -            |
+| `kafka_rack` / `PROSODY_KAFKA_RACK`     | Availability zone (rack) of this process, sent to Kafka as `client.rack` so the consumer and message loader fetch from a replica in the same zone. Or `PROSODY_KAFKA_RACK_FILE` to name a file that holds the value; the plain variable has priority; a blank file counts as unset | -            |
 | `subscribed_topics` / `PROSODY_SUBSCRIBED_TOPICS` | Topics to read from. A client that only reads published state needs none | -            |
 | `allowed_events` / `PROSODY_ALLOWED_EVENTS` | Only process events matching these prefixes   | (all)        |
 | `source_system` / `PROSODY_SOURCE_SYSTEM` | Tag for outgoing messages (prevents reprocessing)| `<group_id>` |
@@ -134,7 +135,7 @@ Persistent storage for timers, deferral, deduplication, and keyed state. It is n
 | `cassandra_user` / `PROSODY_CASSANDRA_USER` | Username                         | -       |
 | `cassandra_password` / `PROSODY_CASSANDRA_PASSWORD` | Password                   | -       |
 | `cassandra_datacenter` / `PROSODY_CASSANDRA_DATACENTER` | Prefer this datacenter for queries | - |
-| `cassandra_rack` / `PROSODY_CASSANDRA_RACK` | Prefer this rack for queries     | -       |
+| `cassandra_rack` / `PROSODY_CASSANDRA_RACK` | Prefer this rack for queries. Or `PROSODY_CASSANDRA_RACK_FILE` to name a file that holds the value; the plain variable has priority; a blank file counts as unset | -       |
 | `cassandra_retention` / `PROSODY_CASSANDRA_RETENTION` | Delete data older than this | 1y     |
 
 ## Keyed State
